@@ -22,13 +22,13 @@
       </div>
 
       <!-- Center: Support links -->
-      <div class="hidden min-w-0 flex-1 items-center justify-center gap-2 sm:flex">
+      <div class="flex min-w-0 flex-1 items-center justify-center gap-1 sm:gap-2">
         <a
           href="https://t.me/+hpoDcpyaZxkwMjNl"
           target="_blank"
           rel="noopener noreferrer"
           title="Support"
-          class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950/40"
+          class="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 sm:px-3 dark:text-teal-400 dark:hover:bg-teal-950/40"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -43,7 +43,7 @@
           target="_blank"
           rel="noopener noreferrer"
           title="福利群:930298099"
-          class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950/40"
+          class="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 sm:px-3 dark:text-teal-400 dark:hover:bg-teal-950/40"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
             <path
