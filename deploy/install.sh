@@ -34,7 +34,6 @@ NC='\033[0m' # No Color
 GITHUB_REPO="oneXixi-666/sub2api"
 INSTALL_DIR="/opt/sub2api"
 SERVICE_NAME="mysub2api"
-LEGACY_SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
 CONFIG_DIR="/etc/sub2api"
 
@@ -709,22 +708,6 @@ EOF
     print_success "$(msg 'service_installed')"
 }
 
-# Rename service units created by earlier custom releases without changing
-# their existing runtime configuration.
-migrate_legacy_service() {
-    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
-    local legacy_service_file="/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
-
-    if [ ! -f "$service_file" ] && [ -f "$legacy_service_file" ]; then
-        print_info "Migrating systemd service: ${LEGACY_SERVICE_NAME} -> ${SERVICE_NAME}"
-        systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
-        systemctl disable "$LEGACY_SERVICE_NAME" 2>/dev/null || true
-        mv "$legacy_service_file" "$service_file"
-        systemctl daemon-reload
-        systemctl enable "$SERVICE_NAME" 2>/dev/null || true
-    fi
-}
-
 # Prepare for setup wizard (no config file needed - setup wizard will create it)
 prepare_for_setup() {
     print_success "$(msg 'ready_for_setup')"
@@ -831,8 +814,6 @@ upgrade() {
 
     print_info "$(msg 'upgrading')"
 
-    migrate_legacy_service
-
     # Get current version
     CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
     print_info "$(msg 'current_version'): $CURRENT_VERSION"
@@ -877,8 +858,6 @@ install_version() {
     target_version=$(validate_version "$target_version")
 
     print_info "$(msg 'installing_version'): $target_version"
-
-    migrate_legacy_service
 
     # Get current version
     local current_version
@@ -961,12 +940,9 @@ uninstall() {
     print_info "$(msg 'stopping_service')"
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-    systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
-    systemctl disable "$LEGACY_SERVICE_NAME" 2>/dev/null || true
 
     print_info "$(msg 'removing_files')"
     rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
-    rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
     systemctl daemon-reload
 
     print_info "$(msg 'removing_install_dir')"
