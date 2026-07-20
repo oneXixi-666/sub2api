@@ -33,7 +33,8 @@ NC='\033[0m' # No Color
 # Configuration
 GITHUB_REPO="oneXixi-666/sub2api"
 INSTALL_DIR="/opt/sub2api"
-SERVICE_NAME="sub2api"
+SERVICE_NAME="mysub2api"
+LEGACY_SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
 CONFIG_DIR="/etc/sub2api"
 
@@ -667,7 +668,7 @@ install_service() {
     print_info "$(msg 'installing_service')"
 
     # Create service file with configured host and port
-    cat > /etc/systemd/system/sub2api.service << EOF
+    cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=Sub2API - AI API Gateway Platform
 Documentation=https://github.com/Wei-Shaw/sub2api
@@ -684,7 +685,7 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=sub2api
+SyslogIdentifier=${SERVICE_NAME}
 
 # Security hardening
 NoNewPrivileges=true
@@ -706,6 +707,22 @@ EOF
     systemctl daemon-reload
 
     print_success "$(msg 'service_installed')"
+}
+
+# Rename service units created by earlier custom releases without changing
+# their existing runtime configuration.
+migrate_legacy_service() {
+    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+    local legacy_service_file="/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
+
+    if [ ! -f "$service_file" ] && [ -f "$legacy_service_file" ]; then
+        print_info "Migrating systemd service: ${LEGACY_SERVICE_NAME} -> ${SERVICE_NAME}"
+        systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+        systemctl disable "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+        mv "$legacy_service_file" "$service_file"
+        systemctl daemon-reload
+        systemctl enable "$SERVICE_NAME" 2>/dev/null || true
+    fi
 }
 
 # Prepare for setup wizard (no config file needed - setup wizard will create it)
@@ -740,12 +757,12 @@ get_public_ip() {
 start_service() {
     print_info "$(msg 'starting_service')"
 
-    if systemctl start sub2api; then
+    if systemctl start "$SERVICE_NAME"; then
         print_success "$(msg 'service_started')"
         return 0
     else
         print_error "$(msg 'service_start_failed')"
-        print_info "sudo journalctl -u sub2api -n 50"
+        print_info "sudo journalctl -u ${SERVICE_NAME} -n 50"
         return 1
     fi
 }
@@ -754,7 +771,7 @@ start_service() {
 enable_autostart() {
     print_info "$(msg 'enabling_autostart')"
 
-    if systemctl enable sub2api 2>/dev/null; then
+    if systemctl enable "$SERVICE_NAME" 2>/dev/null; then
         print_success "$(msg 'autostart_enabled')"
         return 0
     else
@@ -795,10 +812,10 @@ print_completion() {
     echo "  $(msg 'useful_commands')"
     echo "=============================================="
     echo ""
-    echo "  $(msg 'cmd_status'):   sudo systemctl status sub2api"
-    echo "  $(msg 'cmd_logs'):     sudo journalctl -u sub2api -f"
-    echo "  $(msg 'cmd_restart'):  sudo systemctl restart sub2api"
-    echo "  $(msg 'cmd_stop'):     sudo systemctl stop sub2api"
+    echo "  $(msg 'cmd_status'):   sudo systemctl status ${SERVICE_NAME}"
+    echo "  $(msg 'cmd_logs'):     sudo journalctl -u ${SERVICE_NAME} -f"
+    echo "  $(msg 'cmd_restart'):  sudo systemctl restart ${SERVICE_NAME}"
+    echo "  $(msg 'cmd_stop'):     sudo systemctl stop ${SERVICE_NAME}"
     echo ""
     echo "=============================================="
 }
@@ -814,14 +831,16 @@ upgrade() {
 
     print_info "$(msg 'upgrading')"
 
+    migrate_legacy_service
+
     # Get current version
     CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
     print_info "$(msg 'current_version'): $CURRENT_VERSION"
 
     # Stop service
-    if systemctl is-active --quiet sub2api; then
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
         print_info "$(msg 'stopping_service')"
-        systemctl stop sub2api
+        systemctl stop "$SERVICE_NAME"
     fi
 
     # Backup current binary
@@ -837,7 +856,7 @@ upgrade() {
 
     # Start service
     print_info "$(msg 'starting_service')"
-    systemctl start sub2api
+    systemctl start "$SERVICE_NAME"
 
     print_success "$(msg 'upgrade_complete')"
 }
@@ -859,6 +878,8 @@ install_version() {
 
     print_info "$(msg 'installing_version'): $target_version"
 
+    migrate_legacy_service
+
     # Get current version
     local current_version
     current_version=$(get_current_version)
@@ -871,9 +892,9 @@ install_version() {
     fi
 
     # Stop service if running
-    if systemctl is-active --quiet sub2api; then
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
         print_info "$(msg 'stopping_service')"
-        systemctl stop sub2api
+        systemctl stop "$SERVICE_NAME"
     fi
 
     # Backup current binary (for potential recovery)
@@ -899,11 +920,11 @@ install_version() {
 
     # Start service
     print_info "$(msg 'starting_service')"
-    if systemctl start sub2api; then
+    if systemctl start "$SERVICE_NAME"; then
         print_success "$(msg 'service_started')"
     else
         print_error "$(msg 'service_start_failed')"
-        print_info "sudo journalctl -u sub2api -n 50"
+        print_info "sudo journalctl -u ${SERVICE_NAME} -n 50"
     fi
 
     # Print completion message
@@ -938,11 +959,14 @@ uninstall() {
     fi
 
     print_info "$(msg 'stopping_service')"
-    systemctl stop sub2api 2>/dev/null || true
-    systemctl disable sub2api 2>/dev/null || true
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$LEGACY_SERVICE_NAME" 2>/dev/null || true
 
     print_info "$(msg 'removing_files')"
-    rm -f /etc/systemd/system/sub2api.service
+    rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+    rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
     systemctl daemon-reload
 
     print_info "$(msg 'removing_install_dir')"
