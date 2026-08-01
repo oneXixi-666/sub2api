@@ -325,7 +325,7 @@ func assignNullInt(dst **int, n sql.NullInt64) {
 }
 
 // ComputeAvailability 计算指定窗口内每个模型的可用率与平均延迟。
-// "可用" = status IN (operational, degraded)。
+// "可用" = 不是请求错误（status != error）。
 //
 // 数据来源：明细表只保留 1 天；窗口前其余天数走聚合表。
 // 明细保留 30 天（monitorHistoryRetentionDays），窗口 <= 30 天时直接扫 histories，
@@ -337,7 +337,7 @@ func (r *channelMonitorRepository) ComputeAvailability(ctx context.Context, moni
 	const q = `
 		SELECT model,
 		       COUNT(*)                                                             AS total,
-		       COUNT(*) FILTER (WHERE status IN ('operational','degraded'))         AS ok,
+		       COUNT(*) FILTER (WHERE status <> 'error')                           AS ok,
 		       CASE WHEN COUNT(latency_ms) > 0
 		            THEN SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL)::float8 / COUNT(latency_ms)
 		            ELSE NULL END                                                   AS avg_latency_ms
@@ -539,7 +539,7 @@ func (r *channelMonitorRepository) ComputeAvailabilityForMonitors(ctx context.Co
 		SELECT monitor_id,
 		       model,
 		       COUNT(*)                                                             AS total,
-		       COUNT(*) FILTER (WHERE status IN ('operational','degraded'))         AS ok,
+		       COUNT(*) FILTER (WHERE status <> 'error')                           AS ok,
 		       CASE WHEN COUNT(latency_ms) > 0
 		            THEN SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL)::float8 / COUNT(latency_ms)
 		            ELSE NULL END                                                   AS avg_latency_ms
@@ -594,7 +594,7 @@ func (r *channelMonitorRepository) UpsertDailyRollupsFor(ctx context.Context, ta
 		    model,
 		    $1::date AS bucket_date,
 		    COUNT(*)                                                         AS total_checks,
-		    COUNT(*) FILTER (WHERE status IN ('operational','degraded'))     AS ok_count,
+		    COUNT(*) FILTER (WHERE status <> 'error')                       AS ok_count,
 		    COUNT(*) FILTER (WHERE status = 'operational')                   AS operational_count,
 		    COUNT(*) FILTER (WHERE status = 'degraded')                      AS degraded_count,
 		    COUNT(*) FILTER (WHERE status = 'failed')                        AS failed_count,

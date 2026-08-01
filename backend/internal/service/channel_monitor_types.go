@@ -210,7 +210,7 @@ type ChannelMonitorAvailability struct {
 	Model             string
 	WindowDays        int
 	TotalChecks       int
-	OperationalChecks int // operational + degraded 视为可用
+	OperationalChecks int // 除 error 外均视为可用（包括 operational/degraded/failed）
 	AvailabilityPct   float64
 	AvgLatencyMs      *int
 }

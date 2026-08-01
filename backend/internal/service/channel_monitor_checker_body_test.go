@@ -121,6 +121,36 @@ func setupFakeOpenAI(t *testing.T, handler *openAICaptureHandler) string {
 	return srv.URL
 }
 
+func TestFinalizeOperationalOrDegraded_UsesThirtySecondThreshold(t *testing.T) {
+	if monitorRequestTimeout <= monitorDegradedThreshold {
+		t.Fatalf("request timeout %s must leave room above degraded threshold %s", monitorRequestTimeout, monitorDegradedThreshold)
+	}
+	if monitorResponseHeaderTimeout <= monitorDegradedThreshold {
+		t.Fatalf("response header timeout %s must leave room above degraded threshold %s", monitorResponseHeaderTimeout, monitorDegradedThreshold)
+	}
+
+	tests := []struct {
+		name    string
+		latency time.Duration
+		status  string
+	}{
+		{name: "below threshold", latency: 29*time.Second + 999*time.Millisecond, status: MonitorStatusOperational},
+		{name: "at threshold", latency: 30 * time.Second, status: MonitorStatusDegraded},
+		{name: "above threshold", latency: 31 * time.Second, status: MonitorStatusDegraded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := &CheckResult{}
+			latencyMs := int(tt.latency / time.Millisecond)
+			got := finalizeOperationalOrDegraded(res, tt.latency, latencyMs)
+			if got.Status != tt.status {
+				t.Fatalf("latency %s: expected status %s, got %s", tt.latency, tt.status, got.Status)
+			}
+		})
+	}
+}
+
 func answerFromOpenAIRequest(body map[string]any) string {
 	prompt, _ := body["input"].(string)
 	if prompt == "" {
