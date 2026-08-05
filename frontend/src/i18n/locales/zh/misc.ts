@@ -78,6 +78,9 @@ export default {
     notConfiguredTitle: '页面链接未配置',
     notConfiguredDesc: '该自定义页面的 URL 未正确配置。',
     tableOfContents: '目录',
+    openContents: '打开目录',
+    closeContents: '收起目录',
+    loadFailed: '页面加载失败，请稍后重试。',
     copyCode: '复制',
     copiedCode: '已复制',
     copyCodeFailed: '失败'

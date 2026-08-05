@@ -1,6 +1,6 @@
 <template>
   <div
-    :class="['spinner', sizeClasses, colorClass]"
+    :class="['spinner promo-spinner', sizeClasses, colorClass]"
     role="status"
     :aria-label="t('common.loading')"
   >

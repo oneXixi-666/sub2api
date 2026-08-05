@@ -1,8 +1,8 @@
 <template>
-  <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
-    <div class="flex h-16 items-center gap-2 px-2 sm:px-4 md:px-6">
+  <header class="promo-header sticky top-0 z-30">
+    <div class="promo-header-inner flex h-16 items-center gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
-      <div class="flex shrink-0 items-center gap-2 sm:gap-4">
+      <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
         <button
           @click="toggleMobileSidebar"
           class="btn-ghost btn-icon lg:hidden"
@@ -11,11 +11,15 @@
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+        <div class="hidden min-w-0 lg:block">
+          <h1 class="promo-header-title truncate text-lg font-semibold" :title="pageTitle">
             {{ pageTitle }}
           </h1>
-          <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
+          <p
+            v-if="pageDescription"
+            class="promo-header-description truncate text-xs"
+            :title="pageDescription"
+          >
             {{ pageDescription }}
           </p>
         </div>
@@ -27,8 +31,8 @@
           href="https://t.me/+hpoDcpyaZxkwMjNl"
           target="_blank"
           rel="noopener noreferrer"
-          title="Support"
-          class="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 sm:px-3 dark:text-teal-400 dark:hover:bg-teal-950/40"
+          :title="t('common.support')"
+          class="promo-support-link inline-flex items-center gap-1.5 px-2 py-1.5 text-sm sm:px-3"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -36,14 +40,14 @@
               d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
             />
           </svg>
-          <span class="hidden xl:inline">Support</span>
+          <span class="hidden xl:inline">{{ t('common.support') }}</span>
         </a>
         <a
           href="https://qm.qq.com/q/M2mO6GbxOm"
           target="_blank"
           rel="noopener noreferrer"
-          title="福利群:930298099"
-          class="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-medium text-teal-600 transition-colors hover:bg-teal-50 sm:px-3 dark:text-teal-400 dark:hover:bg-teal-950/40"
+          :title="t('common.communityGroup')"
+          class="promo-support-link inline-flex items-center gap-1.5 px-2 py-1.5 text-sm sm:px-3"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -51,7 +55,7 @@
               d="M21.395 15.035a40 40 0 0 0-.803-2.264l-1.079-2.695c.001-.032.014-.562.014-.836C19.526 4.632 17.351 0 12 0S4.474 4.632 4.474 9.241c0 .274.013.804.014.836l-1.08 2.695a39 39 0 0 0-.802 2.264c-1.021 3.283-.69 4.643-.438 4.673.54.065 2.103-2.472 2.103-2.472 0 1.469.756 3.387 2.394 4.771-.612.188-1.363.479-1.845.835-.434.32-.379.646-.301.778.343.578 5.883.369 7.482.189 1.6.18 7.14.389 7.483-.189.078-.132.132-.458-.301-.778-.483-.356-1.233-.645-1.846-.836 1.637-1.384 2.393-3.302 2.393-4.771 0 0 1.563 2.537 2.103 2.472.251-.03.581-1.39-.438-4.673z"
             />
           </svg>
-          <span class="hidden xl:inline">福利群:930298099</span>
+          <span class="hidden xl:inline">{{ t('common.communityGroup') }}</span>
         </a>
       </div>
 
@@ -66,7 +70,7 @@
           :href="docUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+          class="promo-header-action hidden items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium sm:flex"
         >
           <Icon name="book" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
@@ -76,7 +80,7 @@
         <router-link
           v-if="user && modelPlazaEnabled"
           :to="{ path: '/model-plaza', query: { embedded: '1' } }"
-          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+          class="promo-header-action hidden items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium sm:flex"
         >
           <Icon name="grid" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
@@ -91,7 +95,7 @@
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          class="promo-balance-chip group relative hidden items-center gap-2 px-3 py-1.5 sm:flex"
         >
           <svg
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
@@ -116,7 +120,7 @@
             {{ balanceFrozenLabel }}
           </span>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            class="promo-balance-popover pointer-events-none absolute right-0 top-full mt-2 hidden w-56 p-3 text-xs group-hover:block"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
@@ -139,10 +143,10 @@
         <div v-if="user" class="relative" ref="dropdownRef">
           <button
             @click="toggleDropdown"
-            class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
+            class="promo-user-trigger flex items-center gap-2 p-1.5 transition-colors"
             :aria-label="t('common.userMenu')"
           >
-            <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white shadow-sm">
+            <div class="promo-avatar flex h-8 w-8 items-center justify-center overflow-hidden text-sm font-medium text-white">
               <img
                 v-if="avatarUrl"
                 :src="avatarUrl"

@@ -1,6 +1,13 @@
 export default {
   dashboard: {
     title: 'Dashboard',
+    workspaceEyebrow: 'Usage workspace',
+    workspaceTitle: 'Balance, keys, and requests at a glance',
+    workspaceDescription: 'See what happened today, then take the next action. Real data stays in charge.',
+    overviewLoadFailed: 'Account overview could not be loaded',
+    chartsLoadFailed: 'Trends and model distribution could not be loaded',
+    recentLoadFailed: 'Recent usage could not be loaded',
+    quotaLoadFailed: 'Platform quotas are temporarily unavailable. Other overview data is unaffected.',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
     balance: 'Balance',
     apiKeys: 'API Keys',

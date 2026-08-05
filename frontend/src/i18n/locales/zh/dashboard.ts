@@ -1,6 +1,13 @@
 export default {
   dashboard: {
     title: '仪表盘',
+    workspaceEyebrow: '用量工作台',
+    workspaceTitle: '余额、密钥、请求，一眼看全',
+    workspaceDescription: '先看今天发生了什么，再决定下一步操作。数据说话，不拿装饰数字凑热闹。',
+    overviewLoadFailed: '账户总览加载失败',
+    chartsLoadFailed: '趋势与模型分布加载失败',
+    recentLoadFailed: '最近使用记录加载失败',
+    quotaLoadFailed: '平台配额暂时无法加载，其余总览数据不受影响。',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
     balance: '余额',
     apiKeys: 'API 密钥',

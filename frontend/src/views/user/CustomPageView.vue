@@ -1,30 +1,20 @@
 <template>
   <AppLayout>
     <div class="custom-page-layout">
-      <div class="card flex-1 min-h-0 overflow-hidden">
-        <div v-if="loading" class="flex h-full items-center justify-center py-12">
-          <div
-            class="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"
-          ></div>
+      <div class="custom-page-frame flex-1 min-h-0 overflow-hidden">
+        <div v-if="loading" class="custom-page-state">
+          <LoadingSpinner size="lg" />
         </div>
 
-        <div
-          v-else-if="!menuItem"
-          class="flex h-full items-center justify-center p-10 text-center"
-        >
-          <div class="max-w-md">
-            <div
-              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
-            >
+        <div v-else-if="!menuItem" class="custom-page-state p-10">
+          <EmptyState
+            :title="t('customPage.notFoundTitle')"
+            :description="t('customPage.notFoundDesc')"
+          >
+            <template #icon>
               <Icon name="link" size="lg" class="text-gray-400" />
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('customPage.notFoundTitle') }}
-            </h3>
-            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-              {{ t('customPage.notFoundDesc') }}
-            </p>
-          </div>
+            </template>
+          </EmptyState>
         </div>
 
         <!-- Markdown mode with TOC -->
@@ -36,8 +26,13 @@
           >
             <div class="toc-header">
               <span class="toc-title">{{ t('customPage.tableOfContents') }}</span>
-              <button class="toc-close-btn" @click="tocVisible = false">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+              <button
+                class="toc-close-btn"
+                :aria-label="t('customPage.closeContents')"
+                :title="t('customPage.closeContents')"
+                @click="tocVisible = false"
+              >
+                <Icon name="chevronLeft" size="sm" :stroke-width="2" />
               </button>
             </div>
             <nav class="toc-nav">
@@ -61,9 +56,11 @@
           <button
             v-show="!tocVisible && tocItems.length > 0"
             class="toc-toggle-btn"
+            :aria-label="t('customPage.openContents')"
+            :title="t('customPage.openContents')"
             @click="tocVisible = true"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            <Icon name="menu" size="sm" :stroke-width="2" />
             <span class="ml-1 text-xs">{{ t('customPage.tableOfContents') }}</span>
           </button>
 
@@ -77,20 +74,15 @@
         </div>
 
         <!-- URL not configured -->
-        <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10 text-center">
-          <div class="max-w-md">
-            <div
-              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
-            >
+        <div v-else-if="!isValidUrl" class="custom-page-state p-10">
+          <EmptyState
+            :title="t('customPage.notConfiguredTitle')"
+            :description="t('customPage.notConfiguredDesc')"
+          >
+            <template #icon>
               <Icon name="link" size="lg" class="text-gray-400" />
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('customPage.notConfiguredTitle') }}
-            </h3>
-            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-              {{ t('customPage.notConfiguredDesc') }}
-            </p>
-          </div>
+            </template>
+          </EmptyState>
         </div>
 
         <!-- Iframe embed mode -->
@@ -106,6 +98,7 @@
           </a>
           <iframe
             :src="embeddedUrl"
+            :title="menuItem.label"
             class="custom-embed-frame"
             allowfullscreen
           ></iframe>
@@ -124,6 +117,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { buildApiUrl } from '@/api/client'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
 import { marked } from 'marked'
@@ -263,7 +258,7 @@ async function fetchAndRenderMarkdown(slug: string) {
     renderedHtml.value = withIds
     tocItems.value = toc
   } catch {
-    renderedHtml.value = '<p class="text-red-500">Failed to load page</p>'
+    renderedHtml.value = `<p class="custom-page-error">${t('customPage.loadFailed')}</p>`
   } finally {
     loading.value = false
     await nextTick()
@@ -334,6 +329,12 @@ function injectCopyButtons() {
   })
 }
 
+function syncCopyButtonLabels() {
+  markdownContainer.value?.querySelectorAll<HTMLButtonElement>('.copy-btn').forEach((button) => {
+    button.textContent = t('customPage.copyCode')
+  })
+}
+
 watch(markdownSlug, (slug) => {
   if (slug) {
     fetchAndRenderMarkdown(slug)
@@ -342,6 +343,11 @@ watch(markdownSlug, (slug) => {
     tocItems.value = []
   }
 }, { immediate: true })
+
+watch(locale, async () => {
+  await nextTick()
+  syncCopyButtonLabels()
+})
 
 onMounted(async () => {
   pageTheme.value = detectTheme()
@@ -375,54 +381,119 @@ onUnmounted(() => {
 
 <style scoped>
 .custom-page-layout {
-  @apply flex flex-col;
-  height: calc(100vh - 64px - 4rem);
+  position: relative;
+  display: flex;
+  min-height: 28rem;
+  height: calc(100dvh - var(--promo-header-height) - 4rem);
+  flex-direction: column;
+}
+
+.custom-page-frame {
+  position: relative;
+  border: 2px solid var(--promo-border);
+  border-radius: var(--promo-radius-sm);
+  background: var(--promo-surface);
+  box-shadow: var(--promo-shadow-sm);
+  color: var(--promo-text);
+}
+
+.custom-page-state {
+  display: flex;
+  height: 100%;
+  min-height: 22rem;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .toc-sidebar {
-  @apply flex flex-col h-full border-r border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-800;
+  display: flex;
   width: min(240px, 30%);
   min-width: 160px;
   max-width: 280px;
+  height: 100%;
+  flex-direction: column;
   overflow: hidden;
+  border-right: 2px solid var(--promo-border);
+  background: var(--promo-surface-muted);
 }
 
 @media (max-width: 640px) {
+  .custom-page-layout {
+    height: calc(100dvh - var(--promo-header-height) - 1.5rem);
+  }
+
   .toc-sidebar {
     position: absolute;
     left: 0;
     top: 0;
     z-index: 20;
-    width: 70%;
-    max-width: 240px;
+    width: min(82vw, 280px);
+    max-width: none;
     height: 100%;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    border-right-width: 3px;
+    box-shadow: 4px 0 0 var(--promo-red);
   }
 }
 
 .toc-header {
-  @apply flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-dark-600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--promo-border);
+  background: var(--promo-yellow);
 }
 
 .toc-title {
-  @apply text-sm font-semibold text-gray-700 dark:text-dark-200;
+  color: var(--promo-black);
+  font-family: var(--promo-font-data);
+  font-size: 0.875rem;
+  font-weight: 900;
 }
 
 .toc-close-btn {
-  @apply p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-dark-200 hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--promo-black);
+  border-radius: var(--promo-radius-xs);
+  background: var(--promo-white);
+  color: var(--promo-black);
 }
 
 .toc-nav {
-  @apply flex-1 overflow-y-auto py-2 px-2;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
 }
 
 .toc-item {
-  @apply block px-2 py-1.5 text-sm rounded transition-colors truncate;
-  @apply text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-dark-600;
+  display: block;
+  overflow: hidden;
+  padding-block: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--promo-radius-xs);
+  color: var(--promo-text-muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+  white-space: nowrap;
+}
+
+.toc-item:hover {
+  border-color: var(--promo-border-soft);
+  background: var(--promo-surface-raised);
+  color: var(--promo-text);
 }
 
 .toc-item.toc-active {
-  @apply text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 font-medium;
+  border-color: var(--promo-border);
+  background: var(--promo-red);
+  color: #ffffff;
+  font-weight: 800;
 }
 
 .toc-level-1 { padding-left: 8px; }
@@ -431,22 +502,36 @@ onUnmounted(() => {
 .toc-level-4 { padding-left: 44px; }
 
 .toc-toggle-btn {
-  @apply absolute left-2 top-2 z-10 flex items-center px-2 py-1.5 rounded-md text-sm;
-  @apply bg-white dark:bg-dark-700 border border-gray-200 dark:border-dark-500;
-  @apply text-gray-600 dark:text-dark-300 hover:bg-gray-100 dark:hover:bg-dark-600;
-  @apply shadow-sm transition-colors cursor-pointer;
+  position: absolute;
+  left: 0.75rem;
+  top: 0.75rem;
+  z-index: 10;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  padding: 0.4rem 0.65rem;
+  border: 2px solid var(--promo-border);
+  border-radius: var(--promo-radius-sm);
+  background: var(--promo-yellow);
+  box-shadow: var(--promo-shadow-xs);
+  color: var(--promo-black);
+  cursor: pointer;
+  font-size: 0.875rem;
 }
 
 .custom-embed-shell {
-  @apply relative;
-  @apply h-full w-full overflow-hidden rounded-2xl;
-  @apply bg-gradient-to-b from-gray-50 to-white dark:from-dark-900 dark:to-dark-950;
-  @apply p-0;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--promo-surface-muted);
 }
 
 .custom-open-fab {
-  @apply absolute right-3 top-3 z-10;
-  @apply shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-dark-800/80;
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  z-index: 10;
 }
 
 .custom-embed-frame {
@@ -455,35 +540,44 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
+  background: var(--promo-surface-raised);
 }
 </style>
 
 <style>
 .markdown-page-content {
-  line-height: 1.7;
-  color: inherit;
+  color: var(--promo-text);
+  line-height: 1.72;
 }
-.markdown-page-content h1 { @apply text-3xl font-bold mt-8 mb-4 pb-2 border-b border-gray-200 dark:border-dark-600; }
-.markdown-page-content h2 { @apply text-2xl font-bold mt-6 mb-3; }
-.markdown-page-content h3 { @apply text-xl font-semibold mt-5 mb-2; }
-.markdown-page-content h4 { @apply text-lg font-semibold mt-4 mb-2; }
-.markdown-page-content p { @apply mb-4; }
-.markdown-page-content ul { @apply list-disc pl-6 mb-4; }
-.markdown-page-content ol { @apply list-decimal pl-6 mb-4; }
-.markdown-page-content li { @apply mb-1; }
-.markdown-page-content a { @apply text-primary-500 hover:text-primary-600 underline; }
-.markdown-page-content blockquote { @apply border-l-4 border-gray-300 dark:border-dark-500 pl-4 italic text-gray-600 dark:text-dark-300 my-4; }
-.markdown-page-content img { @apply max-w-full h-auto rounded-lg my-4; }
-.markdown-page-content table { @apply w-full border-collapse my-4; }
-.markdown-page-content th { @apply border border-gray-300 dark:border-dark-500 px-3 py-2 bg-gray-50 dark:bg-dark-700 font-semibold text-left; }
-.markdown-page-content td { @apply border border-gray-300 dark:border-dark-500 px-3 py-2; }
-.markdown-page-content code { @apply bg-gray-100 dark:bg-dark-700 px-1.5 py-0.5 rounded text-sm font-mono; }
-.markdown-page-content pre { @apply bg-gray-900 dark:bg-dark-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4 relative; }
-.markdown-page-content pre code { @apply bg-transparent p-0 text-inherit; }
-.markdown-page-content hr { @apply my-6 border-gray-200 dark:border-dark-600; }
+.markdown-page-content h1,
+.markdown-page-content h2,
+.markdown-page-content h3,
+.markdown-page-content h4 {
+  color: var(--promo-text);
+  font-family: var(--promo-font-display);
+  letter-spacing: 0;
+  scroll-margin-top: 1rem;
+}
+.markdown-page-content h1 { margin: 2rem 0 1rem; padding-bottom: 0.6rem; border-bottom: 3px solid var(--promo-border); font-size: 1.875rem; font-weight: 900; }
+.markdown-page-content h2 { margin: 1.6rem 0 0.75rem; font-size: 1.5rem; font-weight: 900; }
+.markdown-page-content h3 { margin: 1.25rem 0 0.5rem; font-size: 1.25rem; font-weight: 800; }
+.markdown-page-content h4 { margin: 1rem 0 0.5rem; font-size: 1.125rem; font-weight: 800; }
+.markdown-page-content p { margin-bottom: 1rem; }
+.markdown-page-content ul { margin-bottom: 1rem; padding-left: 1.5rem; list-style: disc; }
+.markdown-page-content ol { margin-bottom: 1rem; padding-left: 1.5rem; list-style: decimal; }
+.markdown-page-content li { margin-bottom: 0.25rem; }
+.markdown-page-content a { color: var(--promo-red); font-weight: 700; text-decoration: underline; }
+.markdown-page-content a:hover { color: var(--promo-red-strong); }
+.markdown-page-content blockquote { margin-block: 1rem; padding: 0.8rem 1rem; border-left: 6px solid var(--promo-cyan-strong); background: var(--promo-surface-muted); color: var(--promo-text-muted); }
+.markdown-page-content img { max-width: 100%; height: auto; margin-block: 1rem; border: 2px solid var(--promo-border); border-radius: var(--promo-radius-sm); }
+.markdown-page-content table { display: block; width: 100%; margin-block: 1rem; overflow-x: auto; border-collapse: collapse; }
+.markdown-page-content th { padding: 0.6rem 0.75rem; border: 1px solid var(--promo-border); background: var(--promo-yellow); color: var(--promo-black); font-weight: 800; text-align: left; }
+.markdown-page-content td { padding: 0.6rem 0.75rem; border: 1px solid var(--promo-border-soft); }
+.markdown-page-content code { padding: 0.12rem 0.35rem; border-radius: var(--promo-radius-xs); background: var(--promo-surface-muted); font-family: var(--promo-font-data); font-size: 0.875rem; }
+.markdown-page-content pre { position: relative; margin-block: 1rem; overflow-x: auto; padding: 1rem; border: 2px solid var(--promo-border); border-radius: var(--promo-radius-sm); background: #111111; box-shadow: var(--promo-shadow-xs); color: #f5f0e6; }
+.markdown-page-content pre code { padding: 0; background: transparent; color: inherit; }
+.markdown-page-content hr { margin-block: 1.5rem; border: 0; border-top: 2px solid var(--promo-border); }
+.markdown-page-content .custom-page-error { padding: 0.8rem 1rem; border: 2px solid var(--promo-danger); background: color-mix(in srgb, var(--promo-danger) 10%, var(--promo-surface)); color: var(--promo-text); font-weight: 800; }
 
 .copy-btn {
   position: absolute;
@@ -491,15 +585,15 @@ onUnmounted(() => {
   right: 8px;
   padding: 4px 10px;
   font-size: 12px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #f5f0e6;
+  border-radius: var(--promo-radius-xs);
+  background: #ffd628;
+  color: #111111;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.82;
   transition: opacity 0.2s, background 0.2s;
   font-family: inherit;
 }
-.copy-btn:hover { background: rgba(255, 255, 255, 0.25); }
+.copy-btn:hover { background: #ffffff; opacity: 1; }
 pre:hover .copy-btn { opacity: 1; }
 </style>

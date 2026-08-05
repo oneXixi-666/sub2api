@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light;
+
+  --promo-red: #e21d25;
+  --promo-red-strong: #a50e15;
+  --promo-white: #fffdf7;
+  --promo-paper: #f5f0e6;
+  --promo-black: #111111;
+  --promo-yellow: #ffd628;
+  --promo-green: #0f9f58;
+  --promo-cyan: #79e6ec;
+  --promo-cyan-strong: #087b83;
+
+  --promo-canvas: #f5f0e6;
+  --promo-surface: #fffdf7;
+  --promo-surface-muted: #eee7dc;
+  --promo-surface-raised: #ffffff;
+  --promo-text: #111111;
+  --promo-text-muted: #665f56;
+  --promo-border: #111111;
+  --promo-border-soft: #bcb3a7;
+  --promo-overlay: rgb(17 17 17 / 72%);
+  --promo-focus: #087b83;
+
+  --promo-success: #0f9f58;
+  --promo-warning: #d99b00;
+  --promo-danger: #c9151c;
+  --promo-info: #087b83;
+
+  --promo-radius-xs: 2px;
+  --promo-radius-sm: 4px;
+  --promo-radius-md: 6px;
+  --promo-border-width: 2px;
+  --promo-shadow-xs: 2px 2px 0 #111111;
+  --promo-shadow-sm: 3px 3px 0 #111111;
+  --promo-shadow-md: 5px 5px 0 #111111;
+
+  --promo-font-display: "Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --promo-font-body: "DM Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --promo-font-data: "Arial Narrow", "SFMono-Regular", Consolas, monospace;
+
+  --promo-sidebar-width: 16rem;
+  --promo-sidebar-collapsed: 4.5rem;
+  --promo-header-height: 4rem;
+  --promo-content-max: 112rem;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --promo-canvas: #101010;
+  --promo-surface: #1a1a1a;
+  --promo-surface-muted: #242424;
+  --promo-surface-raised: #2c2c2c;
+  --promo-text: #fffdf7;
+  --promo-text-muted: #c5bdb2;
+  --promo-border: #f5f0e6;
+  --promo-border-soft: #57514a;
+  --promo-overlay: rgb(0 0 0 / 78%);
+  --promo-focus: #79e6ec;
+  --promo-shadow-xs: 2px 2px 0 #e21d25;
+  --promo-shadow-sm: 3px 3px 0 #e21d25;
+  --promo-shadow-md: 5px 5px 0 #e21d25;
+}
+
+.promo-light {
+  color-scheme: light;
+
+  --promo-canvas: #f5f0e6;
+  --promo-surface: #fffdf7;
+  --promo-surface-muted: #eee7dc;
+  --promo-surface-raised: #ffffff;
+  --promo-text: #111111;
+  --promo-text-muted: #665f56;
+  --promo-border: #111111;
+  --promo-border-soft: #bcb3a7;
+  --promo-overlay: rgb(17 17 17 / 72%);
+  --promo-focus: #087b83;
+  --promo-shadow-xs: 2px 2px 0 #111111;
+  --promo-shadow-sm: 3px 3px 0 #111111;
+  --promo-shadow-md: 5px 5px 0 #111111;
+}

@@ -80,6 +80,9 @@ export default {
     notConfiguredTitle: 'Page URL not configured',
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
     tableOfContents: 'Contents',
+    openContents: 'Open contents',
+    closeContents: 'Close contents',
+    loadFailed: 'Failed to load the page. Please try again later.',
     copyCode: 'Copy',
     copiedCode: 'Copied',
     copyCodeFailed: 'Failed'

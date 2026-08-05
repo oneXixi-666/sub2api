@@ -1,12 +1,12 @@
 <template>
-  <div class="relative" ref="dropdownRef">
+  <div class="locale-switcher relative" ref="dropdownRef">
     <button
       @click="toggleDropdown"
       :disabled="switching"
-      class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+      class="locale-switcher-trigger flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium"
       :title="currentLocale?.name"
     >
-      <span class="text-base">{{ currentLocale?.flag }}</span>
+      <Icon name="globe" size="sm" />
       <span class="hidden sm:inline">{{ currentLocale?.code.toUpperCase() }}</span>
       <Icon
         name="chevronDown"
@@ -19,21 +19,21 @@
     <transition name="dropdown">
       <div
         v-if="isOpen"
-        class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
+        class="locale-switcher-menu absolute right-0 z-50 mt-2 w-40 overflow-hidden"
       >
         <button
           v-for="locale in availableLocales"
           :key="locale.code"
           :disabled="switching"
           @click="selectLocale(locale.code)"
-          class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+          class="locale-switcher-option flex w-full items-center gap-2 px-3 py-2 text-sm"
           :class="{
             'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400':
               locale.code === currentLocaleCode
           }"
         >
-          <span class="text-base">{{ locale.flag }}</span>
-          <span>{{ locale.name }}</span>
+          <span class="font-mono text-xs font-bold">{{ locale.code.toUpperCase() }}</span>
+          <span class="min-w-0 flex-1 truncate text-left">{{ locale.name }}</span>
           <Icon v-if="locale.code === currentLocaleCode" name="check" size="sm" class="ml-auto text-primary-500" />
         </button>
       </div>
