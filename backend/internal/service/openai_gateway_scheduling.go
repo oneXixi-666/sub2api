@@ -1274,6 +1274,14 @@ func (s *OpenAIGatewayService) parentAccountLookup(ctx context.Context) func(int
 }
 
 func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
+	return s.recheckSelectedOpenAIAccountFromDBWithGroupCheck(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability, true)
+}
+
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForForcedRoute(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
+	return s.recheckSelectedOpenAIAccountFromDBWithGroupCheck(ctx, account, nil, platform, requestedModel, requireCompact, requiredCapability, false)
+}
+
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBWithGroupCheck(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, checkGroup bool) *Account {
 	if account == nil {
 		return nil
 	}
@@ -1295,7 +1303,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	if err != nil || latest == nil {
 		return nil
 	}
-	if !s.openAIAccountMatchesSchedulingGroup(latest, groupID) {
+	if checkGroup && !s.openAIAccountMatchesSchedulingGroup(latest, groupID) {
 		return nil
 	}
 	if !isOpenAICompatibleAccountEligibleForRequest(ctx, latest, platform, requestedModel, requireCompact, requiredCapability) {

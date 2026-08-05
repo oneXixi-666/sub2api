@@ -79,6 +79,7 @@ Desktop.ini
 # ===================
 tmp/
 temp/
+data/openai-api-key-account-routes.json
 *.tmp
 *.temp
 *.log
