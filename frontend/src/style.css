@@ -15,7 +15,8 @@
 
   body {
     @apply min-h-screen;
-    background: var(--promo-canvas);
+    background-color: var(--promo-canvas);
+    background-image: var(--promo-canvas-texture);
     color: var(--promo-text);
   }
 

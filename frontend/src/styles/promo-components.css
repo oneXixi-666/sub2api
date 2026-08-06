@@ -376,12 +376,25 @@ select.input:focus {
 }
 
 .switch-active {
-  background: var(--promo-red);
+  background: var(--promo-control-active);
 }
 
 .switch-thumb {
   border: 1px solid var(--promo-black);
+  background: var(--promo-control-thumb);
   box-shadow: none;
+}
+
+.promo-app-shell .promo-workbench-main :where(button[class~="bg-primary-500"][class~="rounded-full"], button[class~="bg-primary-600"][class~="rounded-full"]) {
+  background-color: var(--promo-control-active) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(button[class~="bg-primary-500"][class~="rounded-full"], button[class~="bg-primary-600"][class~="rounded-full"]):hover:not(:disabled) {
+  background-color: var(--promo-control-active-hover) !important;
+}
+
+.promo-app-shell .promo-workbench-main .peer:checked ~ [class~="peer-checked:bg-primary-600"] {
+  background-color: var(--promo-control-active) !important;
 }
 
 .skeleton {
@@ -414,6 +427,103 @@ select.input:focus {
 }
 
 /* Bring legacy utility-heavy screens into the shared workbench language. */
+.promo-app-shell .promo-workbench-main :where([class~="bg-white"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-white/90"], [class~="bg-white/95"]) {
+  background-color: var(--promo-surface) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where([class~="bg-gray-50"], [class~="bg-gray-50/50"], [class~="bg-gray-100"]) {
+  background-color: var(--promo-surface-muted) !important;
+}
+
+/* DataTable injects sticky backgrounds from scoped CSS after the shared theme loads. */
+.promo-app-shell .table-wrapper :where(.table-header, .sticky-header-cell) {
+  background-color: var(--promo-surface-muted) !important;
+}
+
+.promo-app-shell .table-wrapper thead th {
+  background-color: var(--promo-surface-muted) !important;
+}
+
+.promo-app-shell .table-wrapper tbody .sticky-col {
+  background-color: var(--promo-surface) !important;
+}
+
+.promo-app-shell .table-wrapper tbody tr:hover .sticky-col {
+  background-color: color-mix(in srgb, var(--promo-surface-muted) 72%, var(--promo-surface)) !important;
+}
+
+/* Teleported workbench menus and dialogs live beside #app, outside promo-workbench-main. */
+body:has(.promo-app-shell) > :not(#app) :where(
+  [class~="bg-white"],
+  [class~="bg-white/70"],
+  [class~="bg-white/80"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"]
+) {
+  background-color: var(--promo-surface) !important;
+}
+
+body:has(.promo-app-shell) > :not(#app) :where(
+  [class~="bg-gray-50"],
+  [class~="bg-gray-50/50"],
+  [class~="bg-gray-100"]
+) {
+  background-color: var(--promo-surface-muted) !important;
+}
+
+body:has(.promo-app-shell) > :not(#app) :where(.action-menu-content, [role="listbox"]) {
+  border: var(--promo-border-width) solid var(--promo-border);
+  border-radius: var(--promo-radius-sm) !important;
+  background-color: var(--promo-surface-raised) !important;
+  box-shadow: var(--promo-shadow-sm) !important;
+  color: var(--promo-text);
+}
+
+/* Standalone pages and Ops fullscreen do not render inside AppLayout. */
+#app > :where(.min-h-screen[class~="bg-gray-50"]) {
+  background-color: var(--promo-canvas) !important;
+  background-image: var(--promo-canvas-texture);
+  color: var(--promo-text);
+}
+
+#app > :where(.min-h-screen[class~="bg-gray-50"]) :where(
+  [class~="bg-white"],
+  [class~="bg-white/60"],
+  [class~="bg-white/70"],
+  [class~="bg-white/80"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"]
+) {
+  background-color: var(--promo-surface) !important;
+}
+
+#app > :where(.min-h-screen[class~="bg-gray-50"]) :where(
+  [class~="bg-gray-50"],
+  [class~="bg-gray-50/50"],
+  [class~="bg-gray-50/70"],
+  [class~="bg-gray-100"]
+) {
+  background-color: var(--promo-surface-muted) !important;
+}
+
+#app > :where(.min-h-screen[class~="bg-gray-50"]) :where(.rounded-xl, .rounded-2xl, .rounded-3xl) {
+  border-radius: var(--promo-radius-md) !important;
+}
+
+#app > :where(.min-h-screen[class~="bg-gray-50"]) :where(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl, .shadow-card) {
+  box-shadow: var(--promo-shadow-xs) !important;
+}
+
+.markdown-page-content .copy-btn {
+  border-color: var(--promo-border) !important;
+  background: var(--promo-yellow) !important;
+  color: var(--promo-black) !important;
+}
+
+.markdown-page-content .copy-btn:hover {
+  background: color-mix(in srgb, var(--promo-yellow) 76%, var(--promo-surface)) !important;
+}
+
 .promo-app-shell .promo-workbench-main :where(.rounded-xl, .rounded-2xl, .rounded-3xl) {
   border-radius: var(--promo-radius-md) !important;
 }

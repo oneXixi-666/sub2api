@@ -1,6 +1,7 @@
 .promo-app-shell {
   min-height: 100vh;
-  background: var(--promo-canvas);
+  background-color: var(--promo-canvas);
+  background-image: var(--promo-canvas-texture);
   color: var(--promo-text);
 }
 
@@ -24,8 +25,14 @@
 }
 
 .promo-main-content {
-  width: min(100%, var(--promo-content-max));
-  margin-inline: auto;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.promo-main-content > :where(.max-w-6xl) {
+  max-width: none;
+  margin-inline: 0;
 }
 
 .promo-header {
@@ -79,11 +86,16 @@
 }
 
 .promo-balance-chip {
-  border: 2px solid var(--promo-border);
+  border: 2px solid var(--promo-balance-border);
   border-radius: var(--promo-radius-sm);
-  background: var(--promo-yellow);
+  background: var(--promo-balance-bg);
   box-shadow: var(--promo-shadow-xs);
-  color: var(--promo-black);
+  color: var(--promo-balance-text);
+}
+
+.promo-balance-chip > svg,
+.promo-balance-chip > span {
+  color: var(--promo-balance-text) !important;
 }
 
 .promo-balance-popover {
@@ -585,7 +597,8 @@
   min-height: 100vh;
   flex-direction: column;
   overflow-x: hidden;
-  background: var(--promo-paper);
+  background-color: var(--promo-paper);
+  background-image: var(--promo-canvas-texture);
   color: var(--promo-black);
 }
 
@@ -827,7 +840,7 @@
 
 .promo-login-form .input {
   border-color: var(--promo-black);
-  background: #ffffff;
+  background: var(--promo-surface-raised);
   color: var(--promo-black);
 }
 

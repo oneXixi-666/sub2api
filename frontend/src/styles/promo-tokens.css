@@ -3,24 +3,33 @@
 
   --promo-red: #e21d25;
   --promo-red-strong: #a50e15;
-  --promo-white: #fffdf7;
-  --promo-paper: #f5f0e6;
+  --promo-white: #fbf4e8;
+  --promo-paper: #efe5d5;
   --promo-black: #111111;
   --promo-yellow: #ffd628;
   --promo-green: #0f9f58;
   --promo-cyan: #79e6ec;
   --promo-cyan-strong: #087b83;
 
-  --promo-canvas: #f5f0e6;
-  --promo-surface: #fffdf7;
-  --promo-surface-muted: #eee7dc;
-  --promo-surface-raised: #ffffff;
-  --promo-text: #111111;
-  --promo-text-muted: #665f56;
-  --promo-border: #111111;
-  --promo-border-soft: #bcb3a7;
+  --promo-canvas: #e9dfcf;
+  --promo-surface: #f3eadb;
+  --promo-surface-muted: #e4d7c5;
+  --promo-surface-raised: #f7efe2;
+  --promo-text: #1c1915;
+  --promo-text-muted: #655d52;
+  --promo-border: #29241e;
+  --promo-border-soft: #b8aa97;
   --promo-overlay: rgb(17 17 17 / 72%);
   --promo-focus: #087b83;
+  --promo-balance-bg: #ffd628;
+  --promo-balance-text: #29241e;
+  --promo-balance-border: #29241e;
+  --promo-control-active: #0f8f54;
+  --promo-control-active-hover: #0b7645;
+  --promo-control-thumb: #fbf4e8;
+  --promo-canvas-texture:
+    repeating-linear-gradient(7deg, rgb(84 64 40 / 2.2%) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(97deg, rgb(255 255 255 / 6%) 0 1px, transparent 1px 9px);
 
   --promo-success: #0f9f58;
   --promo-warning: #d99b00;
@@ -48,34 +57,75 @@
 .dark {
   color-scheme: dark;
 
-  --promo-canvas: #101010;
-  --promo-surface: #1a1a1a;
-  --promo-surface-muted: #242424;
-  --promo-surface-raised: #2c2c2c;
-  --promo-text: #fffdf7;
-  --promo-text-muted: #c5bdb2;
-  --promo-border: #f5f0e6;
-  --promo-border-soft: #57514a;
+  --promo-red: #b2363e;
+  --promo-red-strong: #922c32;
+  --promo-white: #e8e2d8;
+  --promo-paper: #211f1c;
+  --promo-yellow: #c9a227;
+  --promo-green: #398a5d;
+  --promo-cyan: #5ba9ad;
+  --promo-cyan-strong: #69b8bc;
+  --promo-canvas: #171614;
+  --promo-surface: #211f1c;
+  --promo-surface-muted: #2b2824;
+  --promo-surface-raised: #32302b;
+  --promo-text: #e8e2d8;
+  --promo-text-muted: #aaa39a;
+  --promo-border: #716a61;
+  --promo-border-soft: #403c37;
   --promo-overlay: rgb(0 0 0 / 78%);
-  --promo-focus: #79e6ec;
-  --promo-shadow-xs: 2px 2px 0 #e21d25;
-  --promo-shadow-sm: 3px 3px 0 #e21d25;
-  --promo-shadow-md: 5px 5px 0 #e21d25;
+  --promo-focus: #69b8bc;
+  --promo-balance-bg: #4b4024;
+  --promo-balance-text: #f0d77b;
+  --promo-balance-border: #8b7747;
+  --promo-control-active: #3f8564;
+  --promo-control-active-hover: #4b9874;
+  --promo-control-thumb: #e8e2d8;
+  --promo-success: #55a878;
+  --promo-warning: #c9a227;
+  --promo-danger: #d15a60;
+  --promo-info: #69b8bc;
+  --promo-canvas-texture: none;
+  --promo-shadow-xs: 1px 1px 0 rgb(7 6 5 / 72%);
+  --promo-shadow-sm: 2px 2px 0 rgb(7 6 5 / 72%);
+  --promo-shadow-md: 3px 3px 0 rgb(7 6 5 / 78%);
 }
 
 .promo-light {
   color-scheme: light;
 
-  --promo-canvas: #f5f0e6;
-  --promo-surface: #fffdf7;
-  --promo-surface-muted: #eee7dc;
-  --promo-surface-raised: #ffffff;
-  --promo-text: #111111;
-  --promo-text-muted: #665f56;
-  --promo-border: #111111;
-  --promo-border-soft: #bcb3a7;
+  --promo-red: #e21d25;
+  --promo-red-strong: #a50e15;
+  --promo-white: #fbf4e8;
+  --promo-paper: #efe5d5;
+  --promo-black: #111111;
+  --promo-yellow: #ffd628;
+  --promo-green: #0f9f58;
+  --promo-cyan: #79e6ec;
+  --promo-cyan-strong: #087b83;
+  --promo-canvas: #e9dfcf;
+  --promo-surface: #f3eadb;
+  --promo-surface-muted: #e4d7c5;
+  --promo-surface-raised: #f7efe2;
+  --promo-text: #1c1915;
+  --promo-text-muted: #655d52;
+  --promo-border: #29241e;
+  --promo-border-soft: #b8aa97;
   --promo-overlay: rgb(17 17 17 / 72%);
   --promo-focus: #087b83;
+  --promo-balance-bg: #ffd628;
+  --promo-balance-text: #29241e;
+  --promo-balance-border: #29241e;
+  --promo-control-active: #0f8f54;
+  --promo-control-active-hover: #0b7645;
+  --promo-control-thumb: #fbf4e8;
+  --promo-success: #0f9f58;
+  --promo-warning: #d99b00;
+  --promo-danger: #c9151c;
+  --promo-info: #087b83;
+  --promo-canvas-texture:
+    repeating-linear-gradient(7deg, rgb(84 64 40 / 2.2%) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(97deg, rgb(255 255 255 / 6%) 0 1px, transparent 1px 9px);
   --promo-shadow-xs: 2px 2px 0 #111111;
   --promo-shadow-sm: 3px 3px 0 #111111;
   --promo-shadow-md: 5px 5px 0 #111111;
