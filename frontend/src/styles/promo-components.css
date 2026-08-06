@@ -274,10 +274,10 @@ select.input:focus {
 
 .dropdown,
 .select-dropdown-portal {
-  border: var(--promo-border-width) solid var(--promo-border);
+  border: var(--promo-border-width) solid var(--promo-floating-border);
   border-radius: var(--promo-radius-sm);
-  background: var(--promo-surface-raised);
-  box-shadow: var(--promo-shadow-sm);
+  background: var(--promo-floating-surface);
+  box-shadow: var(--promo-floating-shadow);
   color: var(--promo-text);
 }
 
@@ -427,12 +427,169 @@ select.input:focus {
 }
 
 /* Bring legacy utility-heavy screens into the shared workbench language. */
-.promo-app-shell .promo-workbench-main :where([class~="bg-white"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-white/90"], [class~="bg-white/95"]) {
+.promo-app-shell .promo-workbench-main :where(
+  [class~="bg-white"],
+  [class~="bg-white/85"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"]
+) {
   background-color: var(--promo-surface) !important;
 }
 
-.promo-app-shell .promo-workbench-main :where([class~="bg-gray-50"], [class~="bg-gray-50/50"], [class~="bg-gray-100"]) {
+.promo-app-shell .promo-workbench-main :where(
+  [class~="bg-white/30"],
+  [class~="bg-white/40"],
+  [class~="bg-white/50"],
+  [class~="bg-white/60"],
+  [class~="bg-white/70"],
+  [class~="bg-white/80"]
+) {
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
+  [class~="bg-gray-50"],
+  [class~="bg-gray-100"]
+) {
   background-color: var(--promo-surface-muted) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
+  [class~="bg-gray-50/30"],
+  [class~="bg-gray-50/40"],
+  [class~="bg-gray-50/50"],
+  [class~="bg-gray-50/60"],
+  [class~="bg-gray-50/70"],
+  [class~="bg-gray-50/80"],
+  [class~="bg-gray-100/80"]
+) {
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+/* Checkbox wells stay visually light; platform color is reserved for compact identity cues. */
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) {
+  border-color: var(--promo-border-soft) !important;
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="flex"][class~="rounded-t-lg"]
+):has(+ [class~="grid"][class~="max-h-32"][class~="grid-cols-2"] > label > input[type="checkbox"]) {
+  border-color: var(--promo-border-soft) !important;
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) > label {
+  background-color: transparent;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) > label:has(> input[type="checkbox"]:checked) {
+  background-color: var(--promo-surface-selected) !important;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) > label:has(> input[type="checkbox"]:checked):hover {
+  background-color: var(--promo-surface-selected-hover) !important;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) > label > [class~="min-w-0"][class~="flex-1"] {
+  background-color: transparent !important;
+}
+
+body:has(.promo-app-shell) :where(
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"]
+):has(> label > input[type="checkbox"]) > label > [class~="min-w-0"][class~="flex-1"] > [class~="truncate"] {
+  color: var(--promo-text) !important;
+}
+
+/* Channel status cards use a translucent paper layer instead of blending into the canvas. */
+.promo-app-shell .promo-workbench-main :where(
+  button[class~="min-h-[280px]"][class~="bg-white/70"][class~="backdrop-blur-xl"],
+  [class~="min-h-[280px]"][class~="bg-white/70"][class~="animate-pulse"]
+) {
+  border-color: var(--promo-card-border) !important;
+  background-color: var(--promo-card-surface) !important;
+  box-shadow: var(--promo-card-shadow) !important;
+}
+
+.promo-app-shell .promo-workbench-main button[class~="min-h-[280px]"][class~="bg-white/70"][class~="backdrop-blur-xl"]:hover {
+  border-color: var(--promo-border) !important;
+  background-color: var(--promo-surface-raised) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
+}
+
+.promo-app-shell .promo-workbench-main button[class~="min-h-[280px]"][class~="bg-white/70"] [class~="bg-gray-50/80"] {
+  border-color: var(--promo-border-soft) !important;
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+.promo-app-shell .promo-workbench-main button[class~="min-h-[280px]"][class~="bg-white/70"] > [class~="items-start"] > span[class~="grid"][class~="place-items-center"] {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Monitor identity and status chips stay text-first on the paper canvas. */
+.promo-app-shell .promo-workbench-main button[class~="min-h-[280px]"][class~="bg-white/70"] :where(
+  span[class~="rounded-md"][class~="px-1.5"][class~="py-0.5"],
+  span[class~="rounded-full"][class~="px-2.5"][class~="py-1"]
+) {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: color-mix(in srgb, currentColor 34%, transparent) !important;
+}
+
+/* Group badges are reused inside selectors and option menus. Let the selected
+   row carry the state color while the badge itself remains transparent. */
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  .groupOptionItemBadge,
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"] > label > [class~="min-w-0"][class~="flex-1"]
+) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+:is(
+  #app:has(.promo-app-shell),
+  body:has(.promo-app-shell) > :not(#app)
+) :where(
+  .groupOptionItemBadge,
+  [class~="grid"][class~="max-h-32"][class~="grid-cols-2"] > label > [class~="min-w-0"][class~="flex-1"]
+) :where(
+  [class~="rounded"][class~="px-1.5"][class~="py-0.5"],
+  [class~="rounded-full"][class~="px-3"][class~="py-1"]
+) {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 /* DataTable injects sticky backgrounds from scoped CSS after the shared theme loads. */
@@ -444,39 +601,253 @@ select.input:focus {
   background-color: var(--promo-surface-muted) !important;
 }
 
-.promo-app-shell .table-wrapper tbody .sticky-col {
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper thead th[class~="cursor-pointer"]:hover {
+  background-color: var(--promo-surface-hover-strong) !important;
+}
+
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody .sticky-col {
   background-color: var(--promo-surface) !important;
 }
 
-.promo-app-shell .table-wrapper tbody tr:hover .sticky-col {
-  background-color: color-mix(in srgb, var(--promo-surface-muted) 72%, var(--promo-surface)) !important;
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr:hover {
+  background-color: var(--promo-surface-hover) !important;
+}
+
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr:hover > td,
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr:hover .sticky-col {
+  background-color: var(--promo-surface-hover) !important;
+}
+
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr[class~="bg-primary-50/40"],
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr[class~="bg-primary-50/40"] > td,
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .data-table-mobile-card[class~="bg-primary-50/40"] {
+  background-color: var(--promo-surface-selected) !important;
+}
+
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr[class~="bg-primary-50/40"]:hover,
+:is(
+  .promo-app-shell,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) .table-wrapper tbody tr[class~="bg-primary-50/40"]:hover > td {
+  background-color: var(--promo-surface-selected-hover) !important;
+}
+
+/* Neutral Tailwind hover utilities must stay in the warm workbench palette. */
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) :where(
+  [class~="hover:bg-white"],
+  [class~="hover:bg-white/40"],
+  [class~="hover:bg-white/50"],
+  [class~="hover:bg-white/60"],
+  [class~="hover:bg-white/70"],
+  [class~="hover:bg-white/80"],
+  [class~="hover:bg-white/85"],
+  [class~="hover:bg-white/90"],
+  [class~="hover:bg-white/95"],
+  [class~="hover:bg-gray-50"],
+  [class~="hover:bg-gray-50/30"],
+  [class~="hover:bg-gray-50/40"],
+  [class~="hover:bg-gray-50/50"],
+  [class~="hover:bg-gray-50/60"],
+  [class~="hover:bg-gray-50/70"],
+  [class~="hover:bg-gray-50/80"],
+  [class~="hover:bg-gray-100"],
+  [class~="hover:bg-gray-100/80"]
+):hover {
+  background-color: var(--promo-surface-hover) !important;
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) :where(
+  [class~="hover:bg-gray-200"],
+  [class~="hover:bg-gray-300"]
+):hover {
+  background-color: var(--promo-surface-hover-strong) !important;
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) :where(
+  [class~="enabled:hover:bg-gray-50"],
+  [class~="enabled:hover:bg-gray-100"]
+):hover:not(:disabled) {
+  background-color: var(--promo-surface-hover) !important;
+}
+
+:is(
+  .promo-app-shell .promo-workbench-main,
+  #app > :where(.min-h-screen[class~="bg-gray-50"])
+) :where(
+  [class~="group-hover:opacity-100"][class~="bg-white"]
+) {
+  border-color: var(--promo-floating-border) !important;
+  background-color: var(--promo-floating-surface) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
 }
 
 /* Teleported workbench menus and dialogs live beside #app, outside promo-workbench-main. */
-body:has(.promo-app-shell) > :not(#app) :where(
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app):where(
   [class~="bg-white"],
+  [class~="bg-white/40"],
+  [class~="bg-white/50"],
+  [class~="bg-white/60"],
   [class~="bg-white/70"],
   [class~="bg-white/80"],
+  [class~="bg-white/85"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"]
+) {
+  background-color: var(--promo-floating-surface) !important;
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(
+  [class~="bg-white"],
+  [class~="bg-white/85"],
   [class~="bg-white/90"],
   [class~="bg-white/95"]
 ) {
   background-color: var(--promo-surface) !important;
 }
 
-body:has(.promo-app-shell) > :not(#app) :where(
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(
+  [class~="bg-white/30"],
+  [class~="bg-white/40"],
+  [class~="bg-white/50"],
+  [class~="bg-white/60"],
+  [class~="bg-white/70"],
+  [class~="bg-white/80"]
+) {
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(
   [class~="bg-gray-50"],
+  [class~="bg-gray-50/30"],
+  [class~="bg-gray-50/40"],
   [class~="bg-gray-50/50"],
+  [class~="bg-gray-50/60"],
+  [class~="bg-gray-50/70"],
+  [class~="bg-gray-50/80"],
+  [class~="bg-gray-100/80"],
   [class~="bg-gray-100"]
 ) {
   background-color: var(--promo-surface-muted) !important;
 }
 
-body:has(.promo-app-shell) > :not(#app) :where(.action-menu-content, [role="listbox"]) {
-  border: var(--promo-border-width) solid var(--promo-border);
+/* Component-scoped dialog styles can otherwise bring back a pure-white select. */
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(
+  .input,
+  .select-trigger,
+  textarea.input,
+  select.input
+) {
+  border-color: var(--promo-border-soft) !important;
+  background: var(--promo-surface-raised) !important;
+  color: var(--promo-text) !important;
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app):where(.action-menu-content, [role="listbox"]),
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(.action-menu-content, [role="listbox"]) {
+  border: var(--promo-border-width) solid var(--promo-floating-border);
   border-radius: var(--promo-radius-sm) !important;
-  background-color: var(--promo-surface-raised) !important;
-  box-shadow: var(--promo-shadow-sm) !important;
+  background-color: var(--promo-floating-surface) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
   color: var(--promo-text);
+}
+
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app):where([role="tooltip"][class~="bg-white"]) {
+  background-color: var(--promo-floating-surface) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
+}
+
+/* Custom portals do not always expose a role or shared component class. A
+   shadowed white panel is still a raised surface, including announcement dialogs. */
+body:where(
+  :has(.promo-app-shell),
+  :has(#app > :where(.min-h-screen[class~="bg-gray-50"]))
+) > :not(#app) :where(
+  [class~="bg-white"][class~="shadow-lg"],
+  [class~="bg-white"][class~="shadow-xl"],
+  [class~="bg-white"][class~="shadow-2xl"]
+) {
+  border-color: var(--promo-floating-border) !important;
+  background-color: var(--promo-floating-surface) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
+}
+
+/* In-app absolute/fixed menus inherit the same paper layer as teleported menus. */
+.promo-app-shell .promo-workbench-main :where(
+  [class~="absolute"][class~="z-10"][class~="bg-white"],
+  [class~="absolute"][class~="z-20"][class~="bg-white"],
+  [class~="absolute"][class~="z-50"][class~="bg-white"],
+  [class~="fixed"][class~="z-[9999]"][class~="bg-white"],
+  [class~="fixed"][class~="z-[100000020]"][class~="bg-white"]
+) {
+  border-color: var(--promo-floating-border) !important;
+  background-color: var(--promo-floating-surface) !important;
+  box-shadow: var(--promo-floating-shadow) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
+  [class~="absolute"][class~="z-20"][class~="bg-white"]
+) > [class~="rotate-45"][class~="bg-white"] {
+  background-color: var(--promo-floating-surface) !important;
 }
 
 /* Standalone pages and Ops fullscreen do not render inside AppLayout. */
@@ -488,9 +859,7 @@ body:has(.promo-app-shell) > :not(#app) :where(.action-menu-content, [role="list
 
 #app > :where(.min-h-screen[class~="bg-gray-50"]) :where(
   [class~="bg-white"],
-  [class~="bg-white/60"],
-  [class~="bg-white/70"],
-  [class~="bg-white/80"],
+  [class~="bg-white/85"],
   [class~="bg-white/90"],
   [class~="bg-white/95"]
 ) {
@@ -498,9 +867,25 @@ body:has(.promo-app-shell) > :not(#app) :where(.action-menu-content, [role="list
 }
 
 #app > :where(.min-h-screen[class~="bg-gray-50"]) :where(
+  [class~="bg-white/30"],
+  [class~="bg-white/40"],
+  [class~="bg-white/50"],
+  [class~="bg-white/60"],
+  [class~="bg-white/70"],
+  [class~="bg-white/80"]
+) {
+  background-color: var(--promo-surface-translucent) !important;
+}
+
+#app > :where(.min-h-screen[class~="bg-gray-50"]) :where(
   [class~="bg-gray-50"],
+  [class~="bg-gray-50/30"],
+  [class~="bg-gray-50/40"],
   [class~="bg-gray-50/50"],
+  [class~="bg-gray-50/60"],
   [class~="bg-gray-50/70"],
+  [class~="bg-gray-50/80"],
+  [class~="bg-gray-100/80"],
   [class~="bg-gray-100"]
 ) {
   background-color: var(--promo-surface-muted) !important;
