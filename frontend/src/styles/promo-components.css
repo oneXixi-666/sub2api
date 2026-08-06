@@ -428,6 +428,53 @@ select.input:focus {
 
 /* Bring legacy utility-heavy screens into the shared workbench language. */
 .promo-app-shell .promo-workbench-main :where(
+  [class~="border-gray-100"],
+  [class~="border-gray-200"],
+  [class~="border-gray-300"],
+  [class~="border-gray-400"]
+) {
+  border-color: var(--promo-border-soft) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
+  [class~="hover:border-gray-300"],
+  [class~="hover:border-gray-400"]
+):hover {
+  border-color: var(--promo-border) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
+  [class~="border-primary-400"],
+  [class~="border-primary-500"],
+  [class~="border-primary-600"]
+) {
+  border-color: var(--promo-red) !important;
+}
+
+.dark .promo-app-shell .promo-workbench-main :where(
+  [class~="dark:border-dark-500"],
+  [class~="dark:border-dark-600"],
+  [class~="dark:border-dark-700"]
+) {
+  border-color: var(--promo-border-soft) !important;
+}
+
+.dark .promo-app-shell .promo-workbench-main :where(
+  [class~="dark:hover:border-dark-500"],
+  [class~="dark:hover:border-dark-600"]
+):hover {
+  border-color: var(--promo-border) !important;
+}
+
+.dark .promo-app-shell .promo-workbench-main :where(
+  [class~="dark:border-primary-300"],
+  [class~="dark:border-primary-400"],
+  [class~="dark:border-primary-500"]
+) {
+  border-color: var(--promo-red) !important;
+}
+
+.promo-app-shell .promo-workbench-main :where(
   [class~="bg-white"],
   [class~="bg-white/85"],
   [class~="bg-white/90"],
