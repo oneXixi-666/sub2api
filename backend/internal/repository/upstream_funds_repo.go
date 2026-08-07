@@ -37,7 +37,8 @@ func (r *upstreamFundsRepository) GetWallet(ctx context.Context, id int64) (*ser
 func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, search string) ([]service.UpstreamWallet, error) {
 	query := `
 		SELECT
-			w.id, w.name, w.provider, w.currency, w.recharge_mode, w.tier, w.enabled,
+			w.id, w.name, w.provider, w.currency, w.recharge_mode,
+			COALESCE(w.extra->>'card_site_url', ''), w.tier, w.enabled,
 			w.balance, w.balance_updated_at, w.balance_error, w.alert_days, w.target_days,
 			w.created_at, w.updated_at,
 			COALESCE(costs.cost_1h, 0), COALESCE(costs.cost_today, 0),
@@ -48,10 +49,10 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		FROM upstream_wallets w
 		LEFT JOIN LATERAL (
 			SELECT
-				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '1 hour'), 0) AS cost_1h,
-				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= DATE_TRUNC('day', NOW())), 0) AS cost_today,
-				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '24 hours'), 0) AS cost_24h,
-				COALESCE(SUM(ul.actual_cost), 0) AS cost_7d
+				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '1 hour'), 0) AS cost_1h,
+				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= DATE_TRUNC('day', NOW())), 0) AS cost_today,
+				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '24 hours'), 0) AS cost_24h,
+				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) AS cost_7d
 			FROM upstream_wallet_accounts uwa
 			JOIN usage_logs ul ON ul.account_id = uwa.account_id
 			WHERE uwa.wallet_id = w.id
@@ -116,7 +117,7 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		var balanceUpdatedAt sql.NullTime
 		var accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
 		if err := rows.Scan(
-			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode,
+			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode, &wallet.CardSiteURL,
 			&wallet.Tier, &wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
 			&wallet.AlertDays, &wallet.TargetDays, &wallet.CreatedAt, &wallet.UpdatedAt,
 			&wallet.Cost1H, &wallet.CostToday, &wallet.Cost24H, &wallet.Cost7D,
@@ -166,10 +167,10 @@ func (r *upstreamFundsRepository) CreateWallet(ctx context.Context, input servic
 	var id int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO upstream_wallets (
-			name, provider, currency, recharge_mode, tier, enabled, alert_days, target_days
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			name, provider, currency, recharge_mode, tier, enabled, alert_days, target_days, extra
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, jsonb_build_object('card_site_url', $9::text))
 		RETURNING id
-	`, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays).Scan(&id)
+	`, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays, input.CardSiteURL).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("insert upstream wallet: %w", err)
 	}
@@ -195,9 +196,10 @@ func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, in
 	result, err := tx.ExecContext(ctx, `
 		UPDATE upstream_wallets
 		SET name = $2, provider = $3, currency = $4, recharge_mode = $5, tier = $6,
-			enabled = $7, alert_days = $8, target_days = $9, updated_at = NOW()
+			enabled = $7, alert_days = $8, target_days = $9,
+			extra = jsonb_set(extra, '{card_site_url}', to_jsonb($10::text), true), updated_at = NOW()
 		WHERE id = $1
-	`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays)
+	`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays, input.CardSiteURL)
 	if err != nil {
 		return nil, fmt.Errorf("update upstream wallet: %w", err)
 	}
@@ -216,36 +218,83 @@ func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, in
 	return r.GetWallet(ctx, id)
 }
 
-func (r *upstreamFundsRepository) RecordBalance(ctx context.Context, id int64, balance float64) (*service.UpstreamWallet, error) {
+func (r *upstreamFundsRepository) RecordBalanceSuccess(
+	ctx context.Context,
+	id int64,
+	balance float64,
+	currency string,
+	source string,
+) (*service.UpstreamWallet, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin record upstream balance: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var currency string
+	var walletCurrency string
 	err = tx.QueryRowContext(ctx, `
 		UPDATE upstream_wallets
 		SET balance = $2, balance_updated_at = NOW(), balance_error = '', updated_at = NOW()
 		WHERE id = $1
 		RETURNING currency
-	`, id, balance).Scan(&currency)
+	`, id, balance).Scan(&walletCurrency)
 	if err == sql.ErrNoRows {
 		return nil, service.ErrUpstreamWalletNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update upstream balance: %w", err)
 	}
+	if !strings.EqualFold(walletCurrency, currency) {
+		return nil, fmt.Errorf("record upstream balance: snapshot currency does not match wallet currency")
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO upstream_balance_snapshots (wallet_id, balance, currency, status, source)
-		VALUES ($1, $2, $3, 'success', 'manual')
-	`, id, balance, currency); err != nil {
+		VALUES ($1, $2, $3, 'success', $4)
+	`, id, balance, walletCurrency, source); err != nil {
 		return nil, fmt.Errorf("insert upstream balance snapshot: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit upstream balance: %w", err)
 	}
 	return r.GetWallet(ctx, id)
+}
+
+func (r *upstreamFundsRepository) RecordBalanceFailure(
+	ctx context.Context,
+	id int64,
+	errorSummary string,
+	source string,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin record upstream balance failure: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var currency string
+	err = tx.QueryRowContext(ctx, `
+		UPDATE upstream_wallets
+		SET balance_error = $2, updated_at = NOW()
+		WHERE id = $1
+		RETURNING currency
+	`, id, strings.TrimSpace(errorSummary)).Scan(&currency)
+	if err == sql.ErrNoRows {
+		return service.ErrUpstreamWalletNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("update upstream balance failure: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO upstream_balance_snapshots (
+			wallet_id, balance, currency, status, error_summary, source
+		) VALUES ($1, NULL, $2, 'failed', $3, $4)
+	`, id, currency, strings.TrimSpace(errorSummary), source); err != nil {
+		return fmt.Errorf("insert upstream balance failure snapshot: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upstream balance failure: %w", err)
+	}
+	return nil
 }
 
 func (r *upstreamFundsRepository) ListAccountOptions(ctx context.Context) ([]service.UpstreamFundsAccount, error) {

@@ -122,6 +122,8 @@ export type {
   UpstreamFundsAccount,
   UpstreamFundsOverview,
   UpstreamFundsSummary,
+	UpstreamPaymentChannel,
+	UpstreamRechargeOrder,
   UpstreamWallet,
   UpstreamWalletInput
 } from './upstreamFunds'

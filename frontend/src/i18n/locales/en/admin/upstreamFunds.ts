@@ -5,11 +5,46 @@ export default {
     createWallet: 'Add upstream wallet',
     editWallet: 'Edit upstream wallet',
     recordBalance: 'Record balance',
+		refreshBalance: 'Sync balance',
     recharge: 'Top up',
+		openCardSite: 'Open card site',
+		redeemCode: 'Redeem code',
+		redeeming: 'Redeeming',
     adapterPending: 'Adapter pending',
     phaseOne: 'Phase 1',
     adapterPendingHint: 'Funds monitoring and manual balance snapshots are available. Automatic top-up requires a verified upstream adapter.',
     searchPlaceholder: 'Search wallet or provider',
+		tabs: {
+			label: 'Filter by balance status',
+			all: 'All',
+			healthy: 'Well funded',
+			normal: 'Normal',
+			alert: 'Alert',
+			unknown: 'Not synced'
+		},
+		rechargeForm: {
+			amount: 'Recharge amount',
+			channel: 'Payment channel',
+			createOrder: 'Create payment order',
+			openPayment: 'Open payment page',
+			faceValue: 'Expected credit',
+			payAmount: 'Amount to pay',
+			balanceAfter: 'Balance after credit',
+			manualReason: 'Manual confirmation reason',
+			manualComplete: 'Confirm credited',
+			unavailable: 'Secure upstream panel credentials are not configured, so a real payment order cannot be created.'
+		},
+		rechargeStatus: {
+			creating: 'Creating',
+			pending_payment: 'Awaiting payment',
+			paid: 'Paid',
+			verifying: 'Verifying credit',
+			completed: 'Completed',
+			manual_review: 'Manual review',
+			failed: 'Failed',
+			expired: 'Expired',
+			cancelled: 'Cancelled'
+		},
     summary: {
       wallets: 'Upstream wallets',
       enabled: '{count} enabled',
@@ -42,7 +77,8 @@ export default {
       noAccounts: 'No linked accounts',
       noGroups: 'No groups',
       disabled: 'Disabled',
-      attention: 'Funds alert'
+			attention: 'Funds alert',
+			syncFailed: 'The latest sync failed; the last valid balance was preserved'
     },
     tier: { primary: 'Primary', hot_backup: 'Hot backup', cold_backup: 'Cold backup' },
     mode: { direct: 'Direct', product: 'Product / voucher', manual: 'Manual' },
@@ -53,6 +89,8 @@ export default {
       providerPlaceholder: 'Example: provider_a',
       currency: 'Balance currency',
       rechargeMode: 'Top-up mode',
+			cardSiteURL: 'Card site URL',
+			cardSiteURLPlaceholder: 'https://cards.example.com',
       tier: 'Operating tier',
       alertDays: 'Runway alert days',
       targetDays: 'Target reserve days',
@@ -62,11 +100,15 @@ export default {
       accountOwned: 'Assigned to {wallet}',
       selectedAccounts: '{count} accounts selected',
       balance: 'Latest balance',
-      balanceHint: 'This creates a new immutable balance snapshot.'
+			balanceHint: 'This creates a new immutable balance snapshot.',
+			redeemCode: 'Upstream redeem code',
+			redeemUnavailable: 'Secure upstream panel credentials are not configured. Open the card site to redeem manually.'
     },
     empty: {
       title: 'No upstream wallets yet',
-      description: 'Start by grouping upstream accounts that share one real balance.'
+			description: 'Start by grouping upstream accounts that share one real balance.',
+			filterTitle: 'No wallets in this balance range',
+			filterDescription: 'Choose another balance tab to view wallets.'
     },
     messages: {
       loadFailed: 'Failed to load upstream funds',
@@ -75,6 +117,20 @@ export default {
       created: 'Upstream wallet created',
       updated: 'Upstream wallet updated',
       balanceRecorded: 'Balance snapshot recorded',
+			balanceSynced: 'Upstream balance synced',
+			allBalancesSynced: 'All configured wallet balances were updated',
+			syncUnavailable: 'No wallet has an automatic balance adapter configured',
+			syncFailed: 'Failed to sync upstream balance',
+			syncPartial: '{failed} of {total} wallet syncs failed; existing balances were preserved',
+			redeemVerified: 'Redeemed and verified by a balance increase',
+			redeemManualReview: 'The upstream accepted the code, but the balance increase needs manual review',
+			redeemFailed: 'Failed to submit the redeem code',
+			channelsFailed: 'Failed to load upstream payment channels',
+			rechargeCreateFailed: 'Failed to create the upstream recharge order',
+			rechargePollFailed: 'Failed to query the upstream recharge order',
+			rechargeCompleted: 'Recharge credit verified',
+			rechargeManualReview: 'The payment result or balance increase could not be verified automatically',
+			manualCompleteFailed: 'Failed to complete the recharge manually',
       invalidReserve: 'Target reserve days cannot be lower than alert days'
     }
   }

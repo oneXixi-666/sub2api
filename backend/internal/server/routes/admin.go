@@ -132,7 +132,16 @@ func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		upstreamFunds.POST("/wallets", h.Admin.UpstreamFunds.CreateWallet)
 		upstreamFunds.GET("/wallets/:id", h.Admin.UpstreamFunds.GetWallet)
 		upstreamFunds.PUT("/wallets/:id", h.Admin.UpstreamFunds.UpdateWallet)
-		upstreamFunds.POST("/wallets/:id/refresh-balance", h.Admin.UpstreamFunds.RecordBalance)
+		upstreamFunds.POST("/wallets/:id/refresh-balance", h.Admin.UpstreamFunds.RefreshBalance)
+		upstreamFunds.POST("/wallets/:id/manual-balance", h.Admin.UpstreamFunds.RecordManualBalance)
+		upstreamFunds.POST("/wallets/:id/redeem-code", h.Admin.UpstreamFunds.RedeemCode)
+		upstreamFunds.GET("/wallets/:id/recharge-products", h.Admin.UpstreamFunds.ListRechargeProducts)
+		upstreamFunds.PUT("/wallets/:id/recharge-products", h.Admin.UpstreamFunds.ReplaceRechargeProducts)
+		upstreamFunds.GET("/wallets/:id/payment-channels", h.Admin.UpstreamFunds.ListPaymentChannels)
+		upstreamFunds.POST("/wallets/:id/recharge-orders", h.Admin.UpstreamFunds.CreateRechargeOrder)
+		upstreamFunds.GET("/recharge-orders/:id", h.Admin.UpstreamFunds.GetRechargeOrder)
+		upstreamFunds.POST("/recharge-orders/:id/poll", h.Admin.UpstreamFunds.PollRechargeOrder)
+		upstreamFunds.POST("/recharge-orders/:id/manual-complete", h.Admin.UpstreamFunds.ManualCompleteRechargeOrder)
 		upstreamFunds.GET("/accounts", h.Admin.UpstreamFunds.ListAccounts)
 	}
 }

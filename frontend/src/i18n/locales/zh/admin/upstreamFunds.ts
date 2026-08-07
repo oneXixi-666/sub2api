@@ -5,11 +5,46 @@ export default {
     createWallet: '新增上游钱包',
     editWallet: '编辑上游钱包',
     recordBalance: '录入余额',
+		refreshBalance: '同步余额',
     recharge: '充值',
+		openCardSite: '打开卡网',
+		redeemCode: '兑换码',
+		redeeming: '兑换中',
     adapterPending: '待接入适配器',
     phaseOne: '监控阶段',
     adapterPendingHint: '当前仅支持资金监控和手工余额快照；自动充值需接入真实上游适配器后启用。',
     searchPlaceholder: '搜索钱包或上游标识',
+		tabs: {
+			label: '按余额状态筛选',
+			all: '全部',
+			healthy: '资金充足',
+			normal: '一般',
+			alert: '告警',
+			unknown: '未同步'
+		},
+		rechargeForm: {
+			amount: '充值面额',
+			channel: '支付渠道',
+			createOrder: '生成支付订单',
+			openPayment: '打开支付页面',
+			faceValue: '预计到账',
+			payAmount: '实际支付',
+			balanceAfter: '到账后余额',
+			manualReason: '人工确认原因',
+			manualComplete: '确认已到账',
+			unavailable: '当前钱包未配置安全的上游面板凭据，无法创建真实支付订单。'
+		},
+		rechargeStatus: {
+			creating: '创建中',
+			pending_payment: '等待支付',
+			paid: '已支付',
+			verifying: '验证到账',
+			completed: '已完成',
+			manual_review: '人工复核',
+			failed: '失败',
+			expired: '已过期',
+			cancelled: '已取消'
+		},
     summary: {
       wallets: '上游钱包',
       enabled: '{count} 个启用',
@@ -42,7 +77,8 @@ export default {
       noAccounts: '尚未关联账号',
       noGroups: '暂无分组',
       disabled: '已停用',
-      attention: '资金告警'
+			attention: '资金告警',
+			syncFailed: '最近一次自动同步失败，已保留上次有效余额'
     },
     tier: {
       primary: '主力',
@@ -61,6 +97,8 @@ export default {
       providerPlaceholder: '例如：provider_a',
       currency: '余额币种',
       rechargeMode: '充值模式',
+			cardSiteURL: '卡网地址',
+			cardSiteURLPlaceholder: 'https://cards.example.com',
       tier: '运营层级',
       alertDays: '余额告警天数',
       targetDays: '目标储备天数',
@@ -70,11 +108,15 @@ export default {
       accountOwned: '已归属：{wallet}',
       selectedAccounts: '已选择 {count} 个账号',
       balance: '最新余额',
-      balanceHint: '本次录入会新增一条不可覆盖的余额快照。'
+			balanceHint: '本次录入会新增一条不可覆盖的余额快照。',
+			redeemCode: '上游兑换码',
+			redeemUnavailable: '当前钱包未配置安全的上游面板凭据，请先打开卡网人工兑换。'
     },
     empty: {
       title: '还没有上游钱包',
-      description: '先把共用同一份真实余额的上游账号归到一个钱包。'
+			description: '先把共用同一份真实余额的上游账号归到一个钱包。',
+			filterTitle: '这个余额区间没有钱包',
+			filterDescription: '切换其他余额栏目查看钱包。'
     },
     messages: {
       loadFailed: '加载上游资金数据失败',
@@ -83,6 +125,20 @@ export default {
       created: '上游钱包已创建',
       updated: '上游钱包已更新',
       balanceRecorded: '余额快照已记录',
+			balanceSynced: '上游余额已同步',
+			allBalancesSynced: '所有可同步钱包已更新',
+			syncUnavailable: '没有已配置自动余额适配器的钱包',
+			syncFailed: '上游余额同步失败',
+			syncPartial: '{total} 个钱包中有 {failed} 个同步失败，已保留原余额',
+			redeemVerified: '兑换成功，余额增长已验证',
+			redeemManualReview: '上游已受理兑换，但余额增长未能确认，请人工复核',
+			redeemFailed: '兑换码提交失败',
+			channelsFailed: '获取上游支付渠道失败',
+			rechargeCreateFailed: '创建上游充值订单失败',
+			rechargePollFailed: '查询上游充值订单失败',
+			rechargeCompleted: '充值到账已验证',
+			rechargeManualReview: '支付结果或余额增长无法自动确认，请人工复核',
+			manualCompleteFailed: '人工确认充值完成失败',
       invalidReserve: '目标储备天数不能小于告警天数'
     }
   }

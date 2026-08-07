@@ -24,6 +24,7 @@ export interface UpstreamWallet {
   currency: string
   cost_currency: string
   recharge_mode: UpstreamRechargeMode
+	card_site_url: string
   tier: UpstreamWalletTier
   enabled: boolean
   balance: number | null
@@ -44,6 +45,8 @@ export interface UpstreamWallet {
   recommended_top_up: number | null
   needs_attention: boolean
   adapter_configured: boolean
+	redeem_configured: boolean
+	recharge_configured: boolean
   created_at: string
   updated_at: string
 }
@@ -67,6 +70,7 @@ export interface UpstreamWalletInput {
   provider: string
   currency: string
   recharge_mode: UpstreamRechargeMode
+	card_site_url: string
   tier: UpstreamWalletTier
   enabled: boolean
   alert_days: number
@@ -74,9 +78,53 @@ export interface UpstreamWalletInput {
   account_ids: number[]
 }
 
+export interface UpstreamRedeemResult {
+	status: 'verified' | 'manual_review'
+	wallet: UpstreamWallet
+}
+
+export interface UpstreamPaymentChannel {
+	id: string
+	name: string
+	currency: string
+	single_min: number
+	single_max: number
+	fee_rate: number
+	daily_remaining: number
+}
+
+export interface UpstreamRechargeOrder {
+	id: number
+	order_no: string
+	wallet_id: number
+	provider_order_id: string
+	payment_channel_id: string
+	face_value: number
+	pay_amount: number
+	currency: string
+	status: 'creating' | 'pending_payment' | 'paid' | 'verifying' | 'completed' | 'manual_review' | 'failed' | 'expired' | 'cancelled'
+	payment_qr: string
+	payment_url: string
+	payment_expires_at: string | null
+	balance_before: number | null
+	balance_after: number | null
+	error_code: string
+	error_message: string
+	created_at: string
+	updated_at: string
+	completed_at: string | null
+}
+
 export async function list(search?: string): Promise<UpstreamFundsOverview> {
   const { data } = await apiClient.get<UpstreamFundsOverview>('/admin/upstream-funds/wallets', {
     params: search ? { search } : undefined
+  })
+  return data
+}
+
+export async function listAll(): Promise<UpstreamFundsOverview> {
+  const { data } = await apiClient.get<UpstreamFundsOverview>('/admin/upstream-funds/wallets', {
+    params: { search: '' }
   })
   return data
 }
@@ -96,12 +144,52 @@ export async function update(id: number, input: UpstreamWalletInput): Promise<Up
   return data
 }
 
+export async function refreshBalance(id: number): Promise<UpstreamWallet> {
+	const { data } = await apiClient.post<UpstreamWallet>(
+		`/admin/upstream-funds/wallets/${id}/refresh-balance`
+	)
+	return data
+}
+
 export async function recordBalance(id: number, balance: number): Promise<UpstreamWallet> {
   const { data } = await apiClient.post<UpstreamWallet>(
-    `/admin/upstream-funds/wallets/${id}/refresh-balance`,
+		`/admin/upstream-funds/wallets/${id}/manual-balance`,
     { balance }
   )
   return data
+}
+
+export async function redeemCode(id: number, code: string): Promise<UpstreamRedeemResult> {
+	const { data } = await apiClient.post<UpstreamRedeemResult>(
+		`/admin/upstream-funds/wallets/${id}/redeem-code`,
+		{ code }
+	)
+	return data
+}
+
+export async function listPaymentChannels(id: number): Promise<UpstreamPaymentChannel[]> {
+	const { data } = await apiClient.get<UpstreamPaymentChannel[]>(`/admin/upstream-funds/wallets/${id}/payment-channels`)
+	return data
+}
+
+export async function createRechargeOrder(id: number, input: { amount: number; payment_channel_id: string; idempotency_key: string }): Promise<UpstreamRechargeOrder> {
+	const { data } = await apiClient.post<UpstreamRechargeOrder>(`/admin/upstream-funds/wallets/${id}/recharge-orders`, input)
+	return data
+}
+
+export async function getRechargeOrder(id: number): Promise<UpstreamRechargeOrder> {
+	const { data } = await apiClient.get<UpstreamRechargeOrder>(`/admin/upstream-funds/recharge-orders/${id}`)
+	return data
+}
+
+export async function pollRechargeOrder(id: number): Promise<UpstreamRechargeOrder> {
+	const { data } = await apiClient.post<UpstreamRechargeOrder>(`/admin/upstream-funds/recharge-orders/${id}/poll`)
+	return data
+}
+
+export async function manualCompleteRechargeOrder(id: number, input: { balance_after: number; reason: string }): Promise<UpstreamRechargeOrder> {
+	const { data } = await apiClient.post<UpstreamRechargeOrder>(`/admin/upstream-funds/recharge-orders/${id}/manual-complete`, input)
+	return data
 }
 
 export async function listAccounts(): Promise<UpstreamFundsAccount[]> {
@@ -109,5 +197,5 @@ export async function listAccounts(): Promise<UpstreamFundsAccount[]> {
   return data
 }
 
-const upstreamFundsAPI = { list, getById, create, update, recordBalance, listAccounts }
+const upstreamFundsAPI = { list, listAll, getById, create, update, refreshBalance, recordBalance, redeemCode, listPaymentChannels, createRechargeOrder, getRechargeOrder, pollRechargeOrder, manualCompleteRechargeOrder, listAccounts }
 export default upstreamFundsAPI
