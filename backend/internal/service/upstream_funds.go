@@ -48,37 +48,39 @@ type UpstreamFundsGroup struct {
 }
 
 type UpstreamWallet struct {
-	ID                 int64                  `json:"id"`
-	Name               string                 `json:"name"`
-	Provider           string                 `json:"provider"`
-	Currency           string                 `json:"currency"`
-	CostCurrency       string                 `json:"cost_currency"`
-	RechargeMode       string                 `json:"recharge_mode"`
-	CardSiteURL        string                 `json:"card_site_url"`
-	Tier               string                 `json:"tier"`
-	Enabled            bool                   `json:"enabled"`
-	Balance            *float64               `json:"balance"`
-	BalanceUpdatedAt   *time.Time             `json:"balance_updated_at"`
-	BalanceError       string                 `json:"balance_error"`
-	AlertDays          int                    `json:"alert_days"`
-	TargetDays         int                    `json:"target_days"`
-	AccountIDs         []int64                `json:"account_ids"`
-	Accounts           []UpstreamFundsAccount `json:"accounts"`
-	ConfiguredGroups   []UpstreamFundsGroup   `json:"configured_groups"`
-	ActualGroups       []UpstreamFundsGroup   `json:"actual_groups"`
-	Cost1H             float64                `json:"cost_1h"`
-	CostToday          float64                `json:"cost_today"`
-	Cost24H            float64                `json:"cost_24h"`
-	Cost7D             float64                `json:"cost_7d"`
-	DailyCost7D        float64                `json:"daily_cost_7d"`
-	RunwayDays         *float64               `json:"runway_days"`
-	RecommendedTopUp   *float64               `json:"recommended_top_up"`
-	NeedsAttention     bool                   `json:"needs_attention"`
-	AdapterConfigured  bool                   `json:"adapter_configured"`
-	RedeemConfigured   bool                   `json:"redeem_configured"`
-	RechargeConfigured bool                   `json:"recharge_configured"`
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
+	ID                     int64                     `json:"id"`
+	Name                   string                    `json:"name"`
+	Provider               string                    `json:"provider"`
+	Currency               string                    `json:"currency"`
+	CostCurrency           string                    `json:"cost_currency"`
+	RechargeMode           string                    `json:"recharge_mode"`
+	CardSiteURL            string                    `json:"card_site_url"`
+	Tier                   string                    `json:"tier"`
+	Enabled                bool                      `json:"enabled"`
+	Balance                *float64                  `json:"balance"`
+	BalanceUpdatedAt       *time.Time                `json:"balance_updated_at"`
+	BalanceError           string                    `json:"balance_error"`
+	AlertDays              int                       `json:"alert_days"`
+	TargetDays             int                       `json:"target_days"`
+	AccountIDs             []int64                   `json:"account_ids"`
+	Accounts               []UpstreamFundsAccount    `json:"accounts"`
+	ConfiguredGroups       []UpstreamFundsGroup      `json:"configured_groups"`
+	ActualGroups           []UpstreamFundsGroup      `json:"actual_groups"`
+	Cost1H                 float64                   `json:"cost_1h"`
+	CostToday              float64                   `json:"cost_today"`
+	Cost24H                float64                   `json:"cost_24h"`
+	Cost7D                 float64                   `json:"cost_7d"`
+	DailyCost7D            float64                   `json:"daily_cost_7d"`
+	RunwayDays             *float64                  `json:"runway_days"`
+	RecommendedTopUp       *float64                  `json:"recommended_top_up"`
+	NeedsAttention         bool                      `json:"needs_attention"`
+	AdapterConfigured      bool                      `json:"adapter_configured"`
+	RedeemConfigured       bool                      `json:"redeem_configured"`
+	RechargeConfigured     bool                      `json:"recharge_configured"`
+	PanelSession           UpstreamPanelSessionState `json:"panel_session"`
+	PanelSessionCiphertext string                    `json:"-"`
+	CreatedAt              time.Time                 `json:"created_at"`
+	UpdatedAt              time.Time                 `json:"updated_at"`
 }
 
 type UpstreamWalletInput struct {
@@ -138,6 +140,7 @@ type UpstreamFundsService struct {
 	rechargeProvider UpstreamRechargeProvider
 	refreshGroup     singleflight.Group
 	orderPollGroup   singleflight.Group
+	panelSessions    *upstreamPanelSessionRuntime
 }
 
 func NewUpstreamFundsService(
@@ -146,13 +149,15 @@ func NewUpstreamFundsService(
 	accountTestService *AccountTestService,
 ) *UpstreamFundsService {
 	provider := NewSub2APIUsageBalanceProvider(accountTestService)
-	return &UpstreamFundsService{
+	svc := &UpstreamFundsService{
 		repo:             repo,
 		accountRepo:      accountRepo,
 		balanceProvider:  provider,
 		codeRedeemer:     provider,
 		rechargeProvider: provider,
 	}
+	provider.panelSessions = svc
+	return svc
 }
 
 func (s *UpstreamFundsService) ListWallets(ctx context.Context, search string) (*UpstreamFundsOverview, error) {
@@ -192,10 +197,7 @@ func (s *UpstreamFundsService) GetWallet(ctx context.Context, id int64) (*Upstre
 	if err != nil {
 		return nil, err
 	}
-	wallet.AdapterConfigured = s.walletBalanceRefreshConfigured(ctx, wallet)
-	wallet.RedeemConfigured = s.walletRedeemConfigured(ctx, wallet)
-	wallet.RechargeConfigured = s.walletRechargeConfigured(ctx, wallet)
-	calculateUpstreamWalletMetrics(wallet)
+	s.enrichWallet(ctx, wallet)
 	return wallet, nil
 }
 
@@ -207,10 +209,7 @@ func (s *UpstreamFundsService) CreateWallet(ctx context.Context, input UpstreamW
 	if err != nil {
 		return nil, err
 	}
-	wallet.AdapterConfigured = s.walletBalanceRefreshConfigured(ctx, wallet)
-	wallet.RedeemConfigured = s.walletRedeemConfigured(ctx, wallet)
-	wallet.RechargeConfigured = s.walletRechargeConfigured(ctx, wallet)
-	calculateUpstreamWalletMetrics(wallet)
+	s.enrichWallet(ctx, wallet)
 	return wallet, nil
 }
 
@@ -222,10 +221,7 @@ func (s *UpstreamFundsService) UpdateWallet(ctx context.Context, id int64, input
 	if err != nil {
 		return nil, err
 	}
-	wallet.AdapterConfigured = s.walletBalanceRefreshConfigured(ctx, wallet)
-	wallet.RedeemConfigured = s.walletRedeemConfigured(ctx, wallet)
-	wallet.RechargeConfigured = s.walletRechargeConfigured(ctx, wallet)
-	calculateUpstreamWalletMetrics(wallet)
+	s.enrichWallet(ctx, wallet)
 	return wallet, nil
 }
 
@@ -241,10 +237,7 @@ func (s *UpstreamFundsService) RecordManualBalance(ctx context.Context, id int64
 	if err != nil {
 		return nil, err
 	}
-	wallet.AdapterConfigured = s.walletBalanceRefreshConfigured(ctx, wallet)
-	wallet.RedeemConfigured = s.walletRedeemConfigured(ctx, wallet)
-	wallet.RechargeConfigured = s.walletRechargeConfigured(ctx, wallet)
-	calculateUpstreamWalletMetrics(wallet)
+	s.enrichWallet(ctx, wallet)
 	return wallet, nil
 }
 
@@ -350,6 +343,9 @@ func (s *UpstreamFundsService) ListAccountOptions(ctx context.Context) ([]Upstre
 }
 
 func (s *UpstreamFundsService) attachAdapterCapabilities(ctx context.Context, wallets []UpstreamWallet) error {
+	for i := range wallets {
+		s.normalizePanelSessionState(&wallets[i])
+	}
 	if len(wallets) == 0 || s.accountRepo == nil || s.balanceProvider == nil {
 		return nil
 	}
@@ -389,6 +385,17 @@ func (s *UpstreamFundsService) attachAdapterCapabilities(ctx context.Context, wa
 		wallets[i].RechargeConfigured = s.rechargeProvider != nil && s.rechargeProvider.RechargeConfigured(&wallets[i], linked)
 	}
 	return nil
+}
+
+func (s *UpstreamFundsService) enrichWallet(ctx context.Context, wallet *UpstreamWallet) {
+	if wallet == nil {
+		return
+	}
+	s.normalizePanelSessionState(wallet)
+	wallet.AdapterConfigured = s.walletBalanceRefreshConfigured(ctx, wallet)
+	wallet.RedeemConfigured = s.walletRedeemConfigured(ctx, wallet)
+	wallet.RechargeConfigured = s.walletRechargeConfigured(ctx, wallet)
+	calculateUpstreamWalletMetrics(wallet)
 }
 
 func (s *UpstreamFundsService) walletBalanceRefreshConfigured(ctx context.Context, wallet *UpstreamWallet) bool {

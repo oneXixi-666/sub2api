@@ -42,6 +42,7 @@ type UpstreamCodeRedeemer interface {
 
 type sub2APIUsageBalanceProvider struct {
 	accountTestService *AccountTestService
+	panelSessions      *UpstreamFundsService
 }
 
 type upstreamBalanceAdapterError struct {
@@ -102,12 +103,15 @@ func (p *sub2APIUsageBalanceProvider) RefreshBalance(
 	return nil, &upstreamBalanceAdapterError{code: strings.Join(failures, ",")}
 }
 
-func (p *sub2APIUsageBalanceProvider) RedeemConfigured(_ *UpstreamWallet, accounts []*Account) bool {
+func (p *sub2APIUsageBalanceProvider) RedeemConfigured(wallet *UpstreamWallet, accounts []*Account) bool {
 	if p == nil || p.accountTestService == nil || p.accountTestService.httpUpstream == nil {
 		return false
 	}
+	if p.panelSessions != nil && p.panelSessions.panelSessionConfigured(wallet, accounts) {
+		return true
+	}
 	for _, account := range accounts {
-		if upstreamRedeemAccountConfigured(account) {
+		if upstreamLegacyPanelAccountConfigured(account) {
 			return true
 		}
 	}
@@ -123,71 +127,7 @@ func (p *sub2APIUsageBalanceProvider) RedeemCode(
 	if !p.RedeemConfigured(wallet, accounts) {
 		return &upstreamBalanceAdapterError{code: "redeem_not_configured"}
 	}
-	for _, account := range accounts {
-		if !upstreamRedeemAccountConfigured(account) {
-			continue
-		}
-		if err := p.redeemCodeWithAccount(ctx, account, code); err == nil {
-			return nil
-		} else {
-			return err
-		}
-	}
-	return &upstreamBalanceAdapterError{code: "redeem_not_configured"}
-}
-
-func (p *sub2APIUsageBalanceProvider) redeemCodeWithAccount(ctx context.Context, account *Account, code string) error {
-	baseURL, err := p.accountTestService.validateUpstreamBaseURL(strings.TrimSpace(account.GetCredential("base_url")))
-	if err != nil {
-		return &upstreamBalanceAdapterError{code: "invalid_base_url"}
-	}
-	proxyURL := ""
-	if account.ProxyID != nil {
-		if account.Proxy == nil || account.Proxy.ID != *account.ProxyID {
-			return &upstreamBalanceAdapterError{code: "proxy_unavailable"}
-		}
-		proxyURL = account.Proxy.URL()
-	}
-	payload, err := json.Marshal(map[string]string{"code": code})
-	if err != nil {
-		return &upstreamBalanceAdapterError{code: "request_build_failed"}
-	}
-	requestCtx, cancel := context.WithTimeout(ctx, upstreamBalanceRequestTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(
-		requestCtx,
-		http.MethodPost,
-		buildSub2APIPanelEndpointURL(baseURL, "/api/v1/redeem"),
-		bytes.NewReader(payload),
-	)
-	if err != nil {
-		return &upstreamBalanceAdapterError{code: "request_build_failed"}
-	}
-	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileDefault)))
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(account.GetCredential("upstream_funds_panel_token")))
-
-	var tlsProfile *tlsfingerprint.Profile
-	if p.accountTestService.tlsFPProfileService != nil {
-		tlsProfile = p.accountTestService.tlsFPProfileService.ResolveTLSProfile(account)
-	}
-	resp, err := p.accountTestService.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
-	if err != nil {
-		return &upstreamBalanceAdapterError{code: "redeem_request_failed"}
-	}
-	if resp == nil || resp.Body == nil {
-		return &upstreamBalanceAdapterError{code: "redeem_empty_response"}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, upstreamBalanceMaxBodyBytes+1))
-	if readErr != nil || len(bodyBytes) > upstreamBalanceMaxBodyBytes {
-		return &upstreamBalanceAdapterError{code: "redeem_response_read_failed"}
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return &upstreamBalanceAdapterError{code: fmt.Sprintf("redeem_http_%d", resp.StatusCode)}
-	}
-	return validateSub2APIRedeemResponse(bodyBytes)
+	return p.doPanelJSON(ctx, wallet, accounts, http.MethodPost, "/api/v1/redeem", map[string]string{"code": code}, nil)
 }
 
 func validateSub2APIRedeemResponse(body []byte) error {
@@ -287,7 +227,7 @@ func upstreamBalanceAccountConfigured(account *Account) bool {
 		strings.TrimSpace(account.GetCredential("base_url")) != ""
 }
 
-func upstreamRedeemAccountConfigured(account *Account) bool {
+func upstreamLegacyPanelAccountConfigured(account *Account) bool {
 	return upstreamBalanceAccountConfigured(account) &&
 		strings.TrimSpace(account.GetCredential("upstream_funds_panel_token")) != ""
 }

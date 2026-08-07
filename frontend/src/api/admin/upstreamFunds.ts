@@ -2,6 +2,7 @@ import { apiClient } from '../client'
 
 export type UpstreamRechargeMode = 'direct' | 'product' | 'manual'
 export type UpstreamWalletTier = 'primary' | 'hot_backup' | 'cold_backup'
+export type UpstreamPanelSessionStatus = 'not_configured' | 'unchecked' | 'healthy' | 'degraded' | 'expired'
 
 export interface UpstreamFundsAccount {
   id: number
@@ -15,6 +16,25 @@ export interface UpstreamFundsAccount {
 export interface UpstreamFundsGroup {
   id: number
   name: string
+}
+
+export interface UpstreamPanelSessionState {
+	configured: boolean
+	encryption_key_configured: boolean
+	status: UpstreamPanelSessionStatus
+	identity?: string
+	account_id?: number
+	account_name?: string
+	expires_at?: string
+	last_checked_at?: string
+	next_check_at?: string
+	last_error?: string
+}
+
+export interface UpstreamPanelLoginResult {
+	requires_2fa: boolean
+	challenge?: string
+	session: UpstreamPanelSessionState
 }
 
 export interface UpstreamWallet {
@@ -47,6 +67,7 @@ export interface UpstreamWallet {
   adapter_configured: boolean
 	redeem_configured: boolean
 	recharge_configured: boolean
+	panel_session: UpstreamPanelSessionState
   created_at: string
   updated_at: string
 }
@@ -167,6 +188,31 @@ export async function redeemCode(id: number, code: string): Promise<UpstreamRede
 	return data
 }
 
+export async function getPanelSession(id: number): Promise<UpstreamPanelSessionState> {
+	const { data } = await apiClient.get<UpstreamPanelSessionState>(`/admin/upstream-funds/wallets/${id}/panel-session`)
+	return data
+}
+
+export async function loginPanelSession(id: number, input: { account_id: number; email: string; password: string }): Promise<UpstreamPanelLoginResult> {
+	const { data } = await apiClient.post<UpstreamPanelLoginResult>(`/admin/upstream-funds/wallets/${id}/panel-session/login`, input)
+	return data
+}
+
+export async function completePanelSessionTwoFactor(id: number, input: { challenge: string; code: string }): Promise<UpstreamPanelLoginResult> {
+	const { data } = await apiClient.post<UpstreamPanelLoginResult>(`/admin/upstream-funds/wallets/${id}/panel-session/login/2fa`, input)
+	return data
+}
+
+export async function checkPanelSession(id: number): Promise<UpstreamPanelSessionState> {
+	const { data } = await apiClient.post<UpstreamPanelSessionState>(`/admin/upstream-funds/wallets/${id}/panel-session/check`)
+	return data
+}
+
+export async function deletePanelSession(id: number): Promise<UpstreamPanelSessionState> {
+	const { data } = await apiClient.delete<UpstreamPanelSessionState>(`/admin/upstream-funds/wallets/${id}/panel-session`)
+	return data
+}
+
 export async function listPaymentChannels(id: number): Promise<UpstreamPaymentChannel[]> {
 	const { data } = await apiClient.get<UpstreamPaymentChannel[]>(`/admin/upstream-funds/wallets/${id}/payment-channels`)
 	return data
@@ -197,5 +243,9 @@ export async function listAccounts(): Promise<UpstreamFundsAccount[]> {
   return data
 }
 
-const upstreamFundsAPI = { list, listAll, getById, create, update, refreshBalance, recordBalance, redeemCode, listPaymentChannels, createRechargeOrder, getRechargeOrder, pollRechargeOrder, manualCompleteRechargeOrder, listAccounts }
+const upstreamFundsAPI = {
+	list, listAll, getById, create, update, refreshBalance, recordBalance, redeemCode,
+	getPanelSession, loginPanelSession, completePanelSessionTwoFactor, checkPanelSession, deletePanelSession,
+	listPaymentChannels, createRechargeOrder, getRechargeOrder, pollRechargeOrder, manualCompleteRechargeOrder, listAccounts
+}
 export default upstreamFundsAPI

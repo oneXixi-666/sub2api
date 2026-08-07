@@ -80,12 +80,15 @@ type sub2APIPaymentOrder struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func (p *sub2APIUsageBalanceProvider) RechargeConfigured(_ *UpstreamWallet, accounts []*Account) bool {
+func (p *sub2APIUsageBalanceProvider) RechargeConfigured(wallet *UpstreamWallet, accounts []*Account) bool {
 	if p == nil || p.accountTestService == nil || p.accountTestService.httpUpstream == nil {
 		return false
 	}
+	if p.panelSessions != nil && p.panelSessions.panelSessionConfigured(wallet, accounts) {
+		return true
+	}
 	for _, account := range accounts {
-		if upstreamRedeemAccountConfigured(account) {
+		if upstreamLegacyPanelAccountConfigured(account) {
 			return true
 		}
 	}
@@ -97,12 +100,11 @@ func (p *sub2APIUsageBalanceProvider) ListPaymentChannels(
 	wallet *UpstreamWallet,
 	accounts []*Account,
 ) ([]UpstreamPaymentChannel, error) {
-	account := firstRechargeAccount(accounts)
-	if account == nil || !p.RechargeConfigured(wallet, accounts) {
+	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
 	var checkout sub2APICheckoutInfo
-	if err := p.doPanelJSON(ctx, account, http.MethodGet, "/api/v1/payment/checkout-info", nil, &checkout); err != nil {
+	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodGet, "/api/v1/payment/checkout-info", nil, &checkout); err != nil {
 		return nil, err
 	}
 	if checkout.BalanceDisabled {
@@ -136,8 +138,7 @@ func (p *sub2APIUsageBalanceProvider) CreateRechargeOrder(
 	amount float64,
 	channelID string,
 ) (*UpstreamProviderOrderUpdate, error) {
-	account := firstRechargeAccount(accounts)
-	if account == nil || !p.RechargeConfigured(wallet, accounts) {
+	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
 	payload := map[string]any{
@@ -145,7 +146,7 @@ func (p *sub2APIUsageBalanceProvider) CreateRechargeOrder(
 		"is_mobile": false, "payment_source": "upstream_funds",
 	}
 	var result sub2APICreateOrderResponse
-	if err := p.doPanelJSON(ctx, account, http.MethodPost, "/api/v1/payment/orders", payload, &result); err != nil {
+	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodPost, "/api/v1/payment/orders", payload, &result); err != nil {
 		return nil, err
 	}
 	if result.OrderID <= 0 || (strings.TrimSpace(result.QRCode) == "" && strings.TrimSpace(result.PayURL) == "") {
@@ -164,13 +165,12 @@ func (p *sub2APIUsageBalanceProvider) QueryRechargeOrder(
 	accounts []*Account,
 	providerOrderID string,
 ) (*UpstreamProviderOrderUpdate, error) {
-	account := firstRechargeAccount(accounts)
-	if account == nil || !p.RechargeConfigured(wallet, accounts) {
+	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
 	var result sub2APIPaymentOrder
 	path := "/api/v1/payment/orders/" + strings.TrimSpace(providerOrderID)
-	if err := p.doPanelJSON(ctx, account, http.MethodGet, path, nil, &result); err != nil {
+	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	if result.ID <= 0 {
@@ -184,11 +184,16 @@ func (p *sub2APIUsageBalanceProvider) QueryRechargeOrder(
 
 func (p *sub2APIUsageBalanceProvider) doPanelJSON(
 	ctx context.Context,
-	account *Account,
+	wallet *UpstreamWallet,
+	accounts []*Account,
 	method, endpoint string,
 	payload any,
 	destination any,
 ) error {
+	account, token, err := p.resolvePanelCredential(ctx, wallet, accounts)
+	if err != nil {
+		return err
+	}
 	baseURL, err := p.accountTestService.validateUpstreamBaseURL(strings.TrimSpace(account.GetCredential("base_url")))
 	if err != nil {
 		return &upstreamBalanceAdapterError{code: "invalid_base_url"}
@@ -209,7 +214,7 @@ func (p *sub2APIUsageBalanceProvider) doPanelJSON(
 	}
 	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileDefault)))
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(account.GetCredential("upstream_funds_panel_token")))
+	req.Header.Set("Authorization", "Bearer "+token)
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -240,7 +245,13 @@ func (p *sub2APIUsageBalanceProvider) doPanelJSON(
 		return &upstreamBalanceAdapterError{code: fmt.Sprintf("http_%d", resp.StatusCode)}
 	}
 	var envelope sub2APIEnvelope
-	if err := json.Unmarshal(bodyBytes, &envelope); err != nil || envelope.Code != 0 || len(envelope.Data) == 0 {
+	if err := json.Unmarshal(bodyBytes, &envelope); err != nil || envelope.Code != 0 {
+		return &upstreamBalanceAdapterError{code: "invalid_response"}
+	}
+	if destination == nil {
+		return nil
+	}
+	if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
 		return &upstreamBalanceAdapterError{code: "invalid_response"}
 	}
 	if err := json.Unmarshal(envelope.Data, destination); err != nil {
@@ -249,13 +260,16 @@ func (p *sub2APIUsageBalanceProvider) doPanelJSON(
 	return nil
 }
 
-func firstRechargeAccount(accounts []*Account) *Account {
+func (p *sub2APIUsageBalanceProvider) resolvePanelCredential(ctx context.Context, wallet *UpstreamWallet, accounts []*Account) (*Account, string, error) {
+	if p.panelSessions != nil && p.panelSessions.panelSessionConfigured(wallet, accounts) {
+		return p.panelSessions.resolvePanelCredential(ctx, wallet, accounts)
+	}
 	for _, account := range accounts {
-		if upstreamRedeemAccountConfigured(account) {
-			return account
+		if upstreamLegacyPanelAccountConfigured(account) {
+			return account, strings.TrimSpace(account.GetCredential("upstream_funds_panel_token")), nil
 		}
 	}
-	return nil
+	return nil, "", &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 }
 
 func timePointer(value time.Time) *time.Time {

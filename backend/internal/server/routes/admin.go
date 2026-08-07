@@ -43,7 +43,7 @@ func RegisterAdminRoutes(
 		registerAccountRoutes(admin, h, stepUpAuth)
 
 		// 上游采购资金中心
-		registerUpstreamFundsRoutes(admin, h)
+		registerUpstreamFundsRoutes(admin, h, stepUpAuth)
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
@@ -125,7 +125,7 @@ func RegisterAdminRoutes(
 	}
 }
 
-func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	upstreamFunds := admin.Group("/upstream-funds")
 	{
 		upstreamFunds.GET("/wallets", h.Admin.UpstreamFunds.ListWallets)
@@ -135,6 +135,11 @@ func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		upstreamFunds.POST("/wallets/:id/refresh-balance", h.Admin.UpstreamFunds.RefreshBalance)
 		upstreamFunds.POST("/wallets/:id/manual-balance", h.Admin.UpstreamFunds.RecordManualBalance)
 		upstreamFunds.POST("/wallets/:id/redeem-code", h.Admin.UpstreamFunds.RedeemCode)
+		upstreamFunds.GET("/wallets/:id/panel-session", h.Admin.UpstreamFunds.GetPanelSession)
+		upstreamFunds.POST("/wallets/:id/panel-session/login", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.LoginPanelSession)
+		upstreamFunds.POST("/wallets/:id/panel-session/login/2fa", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.CompletePanelSessionTwoFactor)
+		upstreamFunds.POST("/wallets/:id/panel-session/check", h.Admin.UpstreamFunds.CheckPanelSession)
+		upstreamFunds.DELETE("/wallets/:id/panel-session", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.DeletePanelSession)
 		upstreamFunds.GET("/wallets/:id/recharge-products", h.Admin.UpstreamFunds.ListRechargeProducts)
 		upstreamFunds.PUT("/wallets/:id/recharge-products", h.Admin.UpstreamFunds.ReplaceRechargeProducts)
 		upstreamFunds.GET("/wallets/:id/payment-channels", h.Admin.UpstreamFunds.ListPaymentChannels)

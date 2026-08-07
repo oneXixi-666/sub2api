@@ -49,6 +49,17 @@ type upstreamManualCompleteRequest struct {
 	Reason       string   `json:"reason" binding:"required,max=500"`
 }
 
+type upstreamPanelLoginRequest struct {
+	AccountID int64  `json:"account_id" binding:"required,gt=0"`
+	Email     string `json:"email" binding:"required,email,max=320"`
+	Password  string `json:"password" binding:"required,max=4096"`
+}
+
+type upstreamPanelTwoFactorRequest struct {
+	Challenge string `json:"challenge" binding:"required,max=16384"`
+	Code      string `json:"code" binding:"required,len=6"`
+}
+
 func (h *UpstreamFundsHandler) ListWallets(c *gin.Context) {
 	overview, err := h.service.ListWallets(c.Request.Context(), c.Query("search"))
 	if response.ErrorFrom(c, err) {
@@ -151,6 +162,80 @@ func (h *UpstreamFundsHandler) RedeemCode(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func (h *UpstreamFundsHandler) GetPanelSession(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	state, err := h.service.PanelSession(c.Request.Context(), id)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, state)
+}
+
+func (h *UpstreamFundsHandler) LoginPanelSession(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	var req upstreamPanelLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "valid upstream account, email and password are required")
+		return
+	}
+	result, err := h.service.LoginPanelSession(c.Request.Context(), id, service.UpstreamPanelLoginInput{
+		AccountID: req.AccountID, Email: req.Email, Password: req.Password,
+	})
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *UpstreamFundsHandler) CompletePanelSessionTwoFactor(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	var req upstreamPanelTwoFactorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "valid upstream verification challenge and code are required")
+		return
+	}
+	result, err := h.service.CompletePanelSessionTwoFactor(c.Request.Context(), id, service.UpstreamPanelTwoFactorInput{
+		Challenge: req.Challenge, Code: req.Code,
+	})
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *UpstreamFundsHandler) CheckPanelSession(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	state, err := h.service.CheckPanelSession(c.Request.Context(), id)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, state)
+}
+
+func (h *UpstreamFundsHandler) DeletePanelSession(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	state, err := h.service.DeletePanelSession(c.Request.Context(), id)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, state)
 }
 
 func (h *UpstreamFundsHandler) ListRechargeProducts(c *gin.Context) {

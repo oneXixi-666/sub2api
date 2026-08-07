@@ -1,22 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get, post, put } = vi.hoisted(() => ({
+const { get, post, put, del } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
-  put: vi.fn()
+  put: vi.fn(),
+	del: vi.fn()
 }))
 
 vi.mock('../client', () => ({
-  apiClient: { get, post, put }
+  apiClient: { get, post, put, delete: del }
 }))
 
 import {
   create,
 	createRechargeOrder,
+	checkPanelSession,
+	completePanelSessionTwoFactor,
+	deletePanelSession,
+	getPanelSession,
 	list,
 	listAll,
 	listAccounts,
   listPaymentChannels,
+	loginPanelSession,
   manualCompleteRechargeOrder,
   pollRechargeOrder,
   recordBalance,
@@ -115,4 +121,26 @@ describe('admin upstream funds API', () => {
       reason: 'verified'
     })
   })
+
+	it('manages the encrypted upstream panel authorization through wallet-scoped endpoints', async () => {
+		const session = { configured: true, status: 'healthy' }
+		const loginResult = { requires_2fa: false, session }
+		get.mockResolvedValueOnce({ data: session })
+		post.mockResolvedValueOnce({ data: loginResult })
+		post.mockResolvedValueOnce({ data: loginResult })
+		post.mockResolvedValueOnce({ data: session })
+		del.mockResolvedValueOnce({ data: { configured: false, status: 'not_configured' } })
+
+		await expect(getPanelSession(9)).resolves.toBe(session)
+		await expect(loginPanelSession(9, { account_id: 42, email: 'owner@example.com', password: 'transient' })).resolves.toBe(loginResult)
+		await expect(completePanelSessionTwoFactor(9, { challenge: 'opaque', code: '123456' })).resolves.toBe(loginResult)
+		await expect(checkPanelSession(9)).resolves.toBe(session)
+		await deletePanelSession(9)
+
+		expect(get).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session')
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/login', { account_id: 42, email: 'owner@example.com', password: 'transient' })
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/login/2fa', { challenge: 'opaque', code: '123456' })
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/check')
+		expect(del).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session')
+	})
 })

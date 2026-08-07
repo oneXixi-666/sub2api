@@ -38,7 +38,10 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 	query := `
 		SELECT
 			w.id, w.name, w.provider, w.currency, w.recharge_mode,
-			COALESCE(w.extra->>'card_site_url', ''), w.tier, w.enabled,
+			COALESCE(w.extra->>'card_site_url', ''),
+			COALESCE(w.extra->>'panel_session_ciphertext', ''),
+			COALESCE(w.extra->'panel_session_state', '{}'::jsonb),
+			w.tier, w.enabled,
 			w.balance, w.balance_updated_at, w.balance_error, w.alert_days, w.target_days,
 			w.created_at, w.updated_at,
 			COALESCE(costs.cost_1h, 0), COALESCE(costs.cost_today, 0),
@@ -115,9 +118,10 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		var wallet service.UpstreamWallet
 		var balance sql.NullFloat64
 		var balanceUpdatedAt sql.NullTime
-		var accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
+		var panelSessionJSON, accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
 		if err := rows.Scan(
 			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode, &wallet.CardSiteURL,
+			&wallet.PanelSessionCiphertext, &panelSessionJSON,
 			&wallet.Tier, &wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
 			&wallet.AlertDays, &wallet.TargetDays, &wallet.CreatedAt, &wallet.UpdatedAt,
 			&wallet.Cost1H, &wallet.CostToday, &wallet.Cost24H, &wallet.Cost7D,
@@ -132,6 +136,9 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		if balanceUpdatedAt.Valid {
 			value := balanceUpdatedAt.Time
 			wallet.BalanceUpdatedAt = &value
+		}
+		if err := json.Unmarshal(panelSessionJSON, &wallet.PanelSession); err != nil {
+			return nil, fmt.Errorf("decode upstream panel session state: %w", err)
 		}
 		if err := json.Unmarshal(accountsJSON, &wallet.Accounts); err != nil {
 			return nil, fmt.Errorf("decode wallet accounts: %w", err)

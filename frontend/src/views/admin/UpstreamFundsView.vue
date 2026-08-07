@@ -91,6 +91,7 @@
                 <h2 class="wallet-name truncate">{{ wallet.name }}</h2>
                 <span class="badge badge-gray">{{ tierLabel(wallet.tier) }}</span>
                 <span class="badge" :class="balanceStatusBadgeClass(wallet)">{{ balanceStatusLabel(wallet) }}</span>
+				<span class="badge" :class="panelSessionBadgeClass(wallet.panel_session.status)">{{ panelSessionStatusLabel(wallet.panel_session.status) }}</span>
               </div>
               <p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-dark-300">
                 <span class="font-mono">{{ wallet.provider }}</span>
@@ -161,6 +162,7 @@
             </div>
             <div v-else class="text-xs text-gray-500 dark:text-dark-300">{{ runwayUnavailableReason(wallet) }}</div>
             <div class="flex items-center gap-1">
+				<button type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.panelSession.manage')" @click="openPanelSessionDialog(wallet)"><Icon name="shield" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.panelSession.manage') }}</span></button>
 				<a v-if="wallet.recharge_mode === 'product' && wallet.card_site_url" class="btn btn-ghost btn-sm" :href="wallet.card_site_url" target="_blank" rel="noopener noreferrer" :title="t('admin.upstreamFunds.openCardSite')"><Icon name="externalLink" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.openCardSite') }}</span></a>
 				<button v-if="wallet.recharge_mode === 'product'" type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.redeemCode')" @click="openRedeemDialog(wallet)"><Icon name="key" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.redeemCode') }}</span></button>
               <button type="button" class="btn btn-ghost btn-sm btn-icon" :disabled="isWalletRefreshing(wallet.id) || !wallet.adapter_configured" :title="t('admin.upstreamFunds.refreshBalance')" @click="refreshOneWallet(wallet)"><Icon name="refresh" size="sm" :class="isWalletRefreshing(wallet.id) ? 'animate-spin' : ''" /></button>
@@ -225,6 +227,49 @@
       <template #footer><div class="flex justify-end gap-3"><button type="button" class="btn btn-secondary" @click="closeBalanceDialog">{{ t('common.cancel') }}</button><button type="submit" form="upstream-balance-form" class="btn btn-primary" :disabled="savingBalance">{{ savingBalance ? t('common.saving') : t('common.save') }}</button></div></template>
     </BaseDialog>
 
+		<BaseDialog :show="showPanelSessionDialog" :title="t('admin.upstreamFunds.panelSession.title')" @close="closePanelSessionDialog">
+			<div class="space-y-5">
+				<div v-if="panelWallet" class="panel-session-summary">
+					<div class="min-w-0">
+						<p class="text-sm font-bold text-[var(--promo-text)]">{{ panelWallet.name }}</p>
+						<p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ panelWallet.provider }}</p>
+					</div>
+					<span class="badge" :class="panelSessionBadgeClass(panelWallet.panel_session.status)">{{ panelSessionStatusLabel(panelWallet.panel_session.status) }}</span>
+				</div>
+
+				<div v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" class="panel-session-details">
+					<div><span>{{ t('admin.upstreamFunds.panelSession.identity') }}</span><strong>{{ panelWallet.panel_session.identity || '—' }}</strong></div>
+					<div><span>{{ t('admin.upstreamFunds.panelSession.account') }}</span><strong>{{ panelWallet.panel_session.account_name || `#${panelWallet.panel_session.account_id || '—'}` }}</strong></div>
+					<div><span>{{ t('admin.upstreamFunds.panelSession.lastChecked') }}</span><strong>{{ panelWallet.panel_session.last_checked_at ? formatRelativeTime(panelWallet.panel_session.last_checked_at) : '—' }}</strong></div>
+					<div><span>{{ t('admin.upstreamFunds.panelSession.expiresAt') }}</span><strong>{{ panelWallet.panel_session.expires_at ? formatRelativeTime(panelWallet.panel_session.expires_at) : '—' }}</strong></div>
+				</div>
+
+				<p v-if="panelWallet && !panelWallet.panel_session.encryption_key_configured" class="redeem-warning">{{ t('admin.upstreamFunds.panelSession.ephemeralKeyWarning') }}</p>
+				<p v-if="panelWallet?.panel_session.last_error" class="redeem-warning">{{ t('admin.upstreamFunds.panelSession.lastError') }}</p>
+
+				<form v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" id="upstream-panel-login-form" class="space-y-4" @submit.prevent="submitPanelLogin">
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.linkedAccount') }}</label><Select v-model="panelAccountID" :options="panelAccountOptions" :disabled="panelAuthorizing" /></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.email') }}</label><input v-model.trim="panelEmail" class="input" type="email" maxlength="320" autocomplete="username" required /></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.password') }}</label><input v-model="panelPassword" class="input" type="password" maxlength="4096" autocomplete="current-password" required /><p class="input-hint">{{ t('admin.upstreamFunds.panelSession.passwordHint') }}</p></div>
+				</form>
+
+				<form v-else-if="panelAwaitingTwoFactor" id="upstream-panel-2fa-form" class="space-y-4" @submit.prevent="submitPanelTwoFactor">
+					<p class="text-sm text-gray-600 dark:text-dark-200">{{ t('admin.upstreamFunds.panelSession.twoFactorHint') }}</p>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.twoFactorCode') }}</label><input v-model.trim="panelTwoFactorCode" class="input data-number text-center" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus /></div>
+				</form>
+			</div>
+			<template #footer>
+				<div class="flex flex-wrap justify-end gap-3">
+					<button v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-danger" :disabled="panelRemoving" @click="removePanelSession">{{ t('admin.upstreamFunds.panelSession.remove') }}</button>
+					<button v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-secondary" :disabled="panelChecking" @click="checkPanelSessionNow"><Icon name="refresh" size="sm" class="mr-2" :class="panelChecking ? 'animate-spin' : ''" />{{ t('admin.upstreamFunds.panelSession.checkNow') }}</button>
+					<button v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-primary" @click="beginPanelRelogin">{{ t('admin.upstreamFunds.panelSession.relogin') }}</button>
+					<button type="button" class="btn btn-secondary" @click="closePanelSessionDialog">{{ t('common.cancel') }}</button>
+					<button v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="submit" form="upstream-panel-login-form" class="btn btn-primary" :disabled="panelAuthorizing || !panelAccountID || !panelEmail || !panelPassword">{{ panelAuthorizing ? t('common.processing') : t('admin.upstreamFunds.panelSession.login') }}</button>
+					<button v-if="panelAwaitingTwoFactor" type="submit" form="upstream-panel-2fa-form" class="btn btn-primary" :disabled="panelAuthorizing || !isValidPanelTwoFactorCode">{{ panelAuthorizing ? t('common.verifying') : t('admin.upstreamFunds.panelSession.verify') }}</button>
+				</div>
+			</template>
+		</BaseDialog>
+
 		<BaseDialog :show="showRedeemDialog" :title="t('admin.upstreamFunds.redeemCode')" @close="closeRedeemDialog">
 			<form id="upstream-redeem-form" class="space-y-4" @submit.prevent="submitRedeemCode">
 				<div><p class="text-sm font-bold text-[var(--promo-text)]">{{ redeemWallet?.name }}</p><p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ redeemWallet?.provider }}</p></div>
@@ -252,14 +297,16 @@
 			</form>
 			<template #footer><div class="flex justify-end gap-3"><button type="button" class="btn btn-secondary" @click="closeRechargeDialog">{{ rechargeOrder ? t('common.close') : t('common.cancel') }}</button><button v-if="rechargeOrder?.status === 'manual_review'" type="button" class="btn btn-primary" :disabled="completingRechargeOrder || manualBalanceAfter < 0 || !manualCompleteReason" @click="manualCompleteRecharge">{{ t('admin.upstreamFunds.rechargeForm.manualComplete') }}</button><button v-if="!rechargeOrder" type="submit" form="upstream-recharge-form" class="btn btn-primary" :disabled="creatingRechargeOrder || !rechargeWallet?.recharge_configured || !selectedPaymentChannelID || rechargeAmount <= 0">{{ creatingRechargeOrder ? t('common.processing') : t('admin.upstreamFunds.rechargeForm.createOrder') }}</button></div></template>
 		</BaseDialog>
+		<TotpStepUpDialog :controller="panelSessionStepUp" />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type UpstreamFundsAccount, type UpstreamFundsSummary, type UpstreamPaymentChannel, type UpstreamRechargeOrder, type UpstreamWallet, type UpstreamWalletInput } from '@/api/admin'
+import { adminAPI, type UpstreamFundsAccount, type UpstreamFundsSummary, type UpstreamPanelSessionStatus, type UpstreamPaymentChannel, type UpstreamRechargeOrder, type UpstreamWallet, type UpstreamWalletInput } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
+import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from '@/composables/useStepUp'
 import { formatCurrency, formatRelativeTime } from '@/utils/format'
 import {
 	isUpstreamRechargePollingTerminal,
@@ -273,6 +320,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import QRCode from 'qrcode'
 
 const { t } = useI18n()
@@ -294,10 +342,12 @@ const showWalletDialog = ref(false)
 const showBalanceDialog = ref(false)
 const showRedeemDialog = ref(false)
 const showRechargeDialog = ref(false)
+const showPanelSessionDialog = ref(false)
 const editingWallet = ref<UpstreamWallet | null>(null)
 const balanceWallet = ref<UpstreamWallet | null>(null)
 const redeemWallet = ref<UpstreamWallet | null>(null)
 const rechargeWallet = ref<UpstreamWallet | null>(null)
+const panelWallet = ref<UpstreamWallet | null>(null)
 const balanceValue = ref<number | null>(null)
 const redeemCodeValue = ref('')
 const rechargeAmount = ref(100)
@@ -310,6 +360,16 @@ const rechargeOrder = ref<UpstreamRechargeOrder | null>(null)
 const manualBalanceAfter = ref(0)
 const manualCompleteReason = ref('')
 const rechargeQRCanvas = ref<HTMLCanvasElement | null>(null)
+const panelAccountID = ref<number | null>(null)
+const panelEmail = ref('')
+const panelPassword = ref('')
+const panelChallenge = ref('')
+const panelTwoFactorCode = ref('')
+const panelAuthorizing = ref(false)
+const panelChecking = ref(false)
+const panelRemoving = ref(false)
+const panelAwaitingTwoFactor = ref(false)
+const panelSessionStepUp = useStepUp()
 const activeBalanceTab = ref<BalanceTab>('all')
 const summary = reactive<UpstreamFundsSummary>({ wallet_count: 0, enabled_count: 0, attention_count: 0, cost_today: 0, cost_24h: 0, balance_by_currency: {} })
 const walletForm = reactive<UpstreamWalletInput>({ name: '', provider: '', currency: 'USD', recharge_mode: 'manual', card_site_url: '', tier: 'primary', enabled: true, alert_days: 2, target_days: 7, account_ids: [] })
@@ -345,6 +405,11 @@ const paymentChannelOptions = computed(() => paymentChannels.value.map(channel =
 	value: channel.id,
 	label: `${channel.name} · ${channel.currency}`
 })))
+const panelAccountOptions = computed(() => (panelWallet.value?.accounts || []).map(account => ({
+	value: account.id,
+	label: `${account.name} · #${account.id}`
+})))
+const isValidPanelTwoFactorCode = computed(() => /^[0-9]{6}$/.test(panelTwoFactorCode.value))
 
 let searchTimer: number | null = null
 let syncTimer: number | null = null
@@ -538,6 +603,131 @@ function openBalanceDialog(wallet: UpstreamWallet) {
 }
 
 function closeBalanceDialog() { showBalanceDialog.value = false; balanceWallet.value = null; balanceValue.value = null }
+
+function resetPanelLoginForm() {
+	panelAccountID.value = panelWallet.value?.panel_session.account_id || panelWallet.value?.accounts[0]?.id || null
+	panelEmail.value = ''
+	panelPassword.value = ''
+	panelChallenge.value = ''
+	panelTwoFactorCode.value = ''
+	panelAwaitingTwoFactor.value = false
+}
+
+function openPanelSessionDialog(wallet: UpstreamWallet) {
+	panelWallet.value = wallet
+	resetPanelLoginForm()
+	showPanelSessionDialog.value = true
+}
+
+function closePanelSessionDialog() {
+	if (panelAuthorizing.value || panelChecking.value || panelRemoving.value) return
+	showPanelSessionDialog.value = false
+	panelWallet.value = null
+	panelEmail.value = ''
+	panelPassword.value = ''
+	panelChallenge.value = ''
+	panelTwoFactorCode.value = ''
+	panelAwaitingTwoFactor.value = false
+}
+
+function beginPanelRelogin() {
+	if (!panelWallet.value) return
+	panelWallet.value = {
+		...panelWallet.value,
+		panel_session: { ...panelWallet.value.panel_session, configured: false, status: 'not_configured' }
+	}
+	resetPanelLoginForm()
+}
+
+function handlePanelSensitiveError(error: any, fallbackKey: string) {
+	if (isStepUpCancelled(error)) return
+	if (isStepUpBlocked(error)) {
+		appStore.showError(stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN' ? t('stepUp.adminApiKeyForbidden') : t('stepUp.notEnabled'))
+		return
+	}
+	appStore.showError(error?.message || t(fallbackKey))
+}
+
+async function submitPanelLogin() {
+	if (!panelWallet.value || !panelAccountID.value || !panelEmail.value || !panelPassword.value) return
+	panelAuthorizing.value = true
+	try {
+		const result = await panelSessionStepUp.run(() => adminAPI.upstreamFunds.loginPanelSession(panelWallet.value!.id, {
+			account_id: panelAccountID.value!, email: panelEmail.value, password: panelPassword.value
+		}))
+		panelPassword.value = ''
+		if (result.requires_2fa && result.challenge) {
+			panelChallenge.value = result.challenge
+			panelAwaitingTwoFactor.value = true
+			return
+		}
+		appStore.showSuccess(t('admin.upstreamFunds.messages.panelAuthorized'))
+		await refreshPanelWallet()
+	} catch (error: any) {
+		panelPassword.value = ''
+		handlePanelSensitiveError(error, 'admin.upstreamFunds.messages.panelLoginFailed')
+	} finally {
+		panelAuthorizing.value = false
+	}
+}
+
+async function submitPanelTwoFactor() {
+	if (!panelWallet.value || !panelChallenge.value || !isValidPanelTwoFactorCode.value) return
+	panelAuthorizing.value = true
+	try {
+		await panelSessionStepUp.run(() => adminAPI.upstreamFunds.completePanelSessionTwoFactor(panelWallet.value!.id, {
+			challenge: panelChallenge.value, code: panelTwoFactorCode.value
+		}))
+		panelChallenge.value = ''
+		panelTwoFactorCode.value = ''
+		panelAwaitingTwoFactor.value = false
+		appStore.showSuccess(t('admin.upstreamFunds.messages.panelAuthorized'))
+		await refreshPanelWallet()
+	} catch (error: any) {
+		panelTwoFactorCode.value = ''
+		handlePanelSensitiveError(error, 'admin.upstreamFunds.messages.panelVerifyFailed')
+	} finally {
+		panelAuthorizing.value = false
+	}
+}
+
+async function refreshPanelWallet() {
+	if (!panelWallet.value) return
+	const updated = await adminAPI.upstreamFunds.getById(panelWallet.value.id)
+	panelWallet.value = updated
+	replaceWalletInCollections(updated)
+	await loadOverview({ silent: true })
+}
+
+async function checkPanelSessionNow() {
+	if (!panelWallet.value) return
+	panelChecking.value = true
+	try {
+		const state = await adminAPI.upstreamFunds.checkPanelSession(panelWallet.value.id)
+		panelWallet.value = { ...panelWallet.value, panel_session: state }
+		appStore.showSuccess(state.status === 'healthy' ? t('admin.upstreamFunds.messages.panelHealthy') : t('admin.upstreamFunds.messages.panelUnhealthy'))
+		await refreshPanelWallet()
+	} catch (error: any) {
+		appStore.showError(error?.message || t('admin.upstreamFunds.messages.panelCheckFailed'))
+	} finally {
+		panelChecking.value = false
+	}
+}
+
+async function removePanelSession() {
+	if (!panelWallet.value) return
+	panelRemoving.value = true
+	try {
+		await panelSessionStepUp.run(() => adminAPI.upstreamFunds.deletePanelSession(panelWallet.value!.id))
+		appStore.showSuccess(t('admin.upstreamFunds.messages.panelRemoved'))
+		await refreshPanelWallet()
+		resetPanelLoginForm()
+	} catch (error: any) {
+		handlePanelSensitiveError(error, 'admin.upstreamFunds.messages.panelRemoveFailed')
+	} finally {
+		panelRemoving.value = false
+	}
+}
 
 async function saveBalance() {
   if (!balanceWallet.value || balanceValue.value === null || !Number.isFinite(balanceValue.value) || balanceValue.value < 0) return
@@ -742,6 +932,13 @@ function balanceStatusBadgeClass(wallet: UpstreamWallet) {
 	const status = walletBalanceStatus(wallet)
 	return status === 'healthy' ? 'badge-success' : status === 'normal' ? 'badge-warning' : status === 'alert' ? 'badge-danger' : 'badge-gray'
 }
+function panelSessionStatusLabel(status: UpstreamPanelSessionStatus) { return t(`admin.upstreamFunds.panelSession.status.${status}`) }
+function panelSessionBadgeClass(status: UpstreamPanelSessionStatus) {
+	if (status === 'healthy') return 'badge-success'
+	if (status === 'degraded' || status === 'unchecked') return 'badge-warning'
+	if (status === 'expired') return 'badge-danger'
+	return 'badge-gray'
+}
 function runwayClass(wallet: UpstreamWallet) { return wallet.runway_days !== null && wallet.runway_days < wallet.alert_days ? 'runway-low' : wallet.runway_days !== null ? 'runway-healthy' : 'runway-unknown' }
 function runwayPercent(wallet: UpstreamWallet) { return wallet.runway_days === null || wallet.target_days <= 0 ? 0 : Math.min(100, Math.max(0, wallet.runway_days / wallet.target_days * 100)) }
 function markerPercent(days: number, target: number) { return target <= 0 ? 0 : Math.min(100, Math.max(0, days / target * 100)) }
@@ -835,4 +1032,10 @@ onBeforeUnmount(() => {
 .account-option:hover { background: var(--promo-surface-hover); }
 .account-option-disabled { cursor: not-allowed; opacity: 0.55; }
 .account-option input { height: 1rem; width: 1rem; flex-shrink: 0; }
+.panel-session-summary { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--promo-border-soft); padding-bottom: 1rem; }
+.panel-session-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.panel-session-details > div { min-width: 0; border-left: 3px solid var(--promo-cyan-strong); padding-left: 0.65rem; }
+.panel-session-details span { display: block; color: var(--promo-text-muted); font-size: 0.72rem; line-height: 1.4; }
+.panel-session-details strong { display: block; margin-top: 0.2rem; overflow-wrap: anywhere; color: var(--promo-text); font-size: 0.82rem; line-height: 1.4; }
+@media (max-width: 480px) { .panel-session-details { grid-template-columns: minmax(0, 1fr); } }
 </style>
