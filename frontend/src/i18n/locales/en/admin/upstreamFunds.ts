@@ -1,0 +1,81 @@
+export default {
+  upstreamFunds: {
+    title: 'Upstream funds',
+    description: 'Group accounts by real upstream wallet and track procurement balance, cost, and runway.',
+    createWallet: 'Add upstream wallet',
+    editWallet: 'Edit upstream wallet',
+    recordBalance: 'Record balance',
+    recharge: 'Top up',
+    adapterPending: 'Adapter pending',
+    phaseOne: 'Phase 1',
+    adapterPendingHint: 'Funds monitoring and manual balance snapshots are available. Automatic top-up requires a verified upstream adapter.',
+    searchPlaceholder: 'Search wallet or provider',
+    summary: {
+      wallets: 'Upstream wallets',
+      enabled: '{count} enabled',
+      todayCost: 'Upstream cost today',
+      balance: 'Known balance',
+      attention: 'Needs attention',
+      costCurrency: 'Costs are tracked in USD',
+      cost24h: '24-hour cost'
+    },
+    wallet: {
+      balance: 'Current balance',
+      updated: 'Updated {time}',
+      neverUpdated: 'Not recorded',
+      runway: 'Estimated runway',
+      runwayDays: '{days} days',
+      runwayUnknown: 'Pending',
+      runwayCurrencyMismatch: 'Balance and cost currencies differ, so runway is unavailable',
+      runwayNoCost: 'No upstream cost was recorded in the last 7 days, so runway is unavailable',
+      alertLine: 'Alert at {days} days',
+      targetLine: 'Target {days} days',
+      cost1h: 'Last hour',
+      costToday: 'Today',
+      cost24h: 'Last 24 hours',
+      cost7d: 'Last 7 days',
+      suggestedTopUp: 'Suggested top-up {amount}',
+      healthyReserve: 'Reserve is on target',
+      accounts: 'Linked accounts',
+      configuredGroups: 'Configured groups',
+      actualGroups: 'Active groups in 7 days',
+      noAccounts: 'No linked accounts',
+      noGroups: 'No groups',
+      disabled: 'Disabled',
+      attention: 'Funds alert'
+    },
+    tier: { primary: 'Primary', hot_backup: 'Hot backup', cold_backup: 'Cold backup' },
+    mode: { direct: 'Direct', product: 'Product / voucher', manual: 'Manual' },
+    form: {
+      name: 'Wallet name',
+      namePlaceholder: 'Example: Primary OpenAI wallet',
+      provider: 'Provider key',
+      providerPlaceholder: 'Example: provider_a',
+      currency: 'Balance currency',
+      rechargeMode: 'Top-up mode',
+      tier: 'Operating tier',
+      alertDays: 'Runway alert days',
+      targetDays: 'Target reserve days',
+      enabled: 'Enable funds monitoring',
+      accounts: 'Accounts sharing this wallet',
+      accountSearch: 'Search account or platform',
+      accountOwned: 'Assigned to {wallet}',
+      selectedAccounts: '{count} accounts selected',
+      balance: 'Latest balance',
+      balanceHint: 'This creates a new immutable balance snapshot.'
+    },
+    empty: {
+      title: 'No upstream wallets yet',
+      description: 'Start by grouping upstream accounts that share one real balance.'
+    },
+    messages: {
+      loadFailed: 'Failed to load upstream funds',
+      saveFailed: 'Failed to save upstream wallet',
+      balanceFailed: 'Failed to record balance',
+      created: 'Upstream wallet created',
+      updated: 'Upstream wallet updated',
+      balanceRecorded: 'Balance snapshot recorded',
+      invalidReserve: 'Target reserve days cannot be lower than alert days'
+    }
+  }
+}

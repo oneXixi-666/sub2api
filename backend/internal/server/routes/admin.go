@@ -42,6 +42,9 @@ func RegisterAdminRoutes(
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
 
+		// 上游采购资金中心
+		registerUpstreamFundsRoutes(admin, h)
+
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 
@@ -119,6 +122,18 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	upstreamFunds := admin.Group("/upstream-funds")
+	{
+		upstreamFunds.GET("/wallets", h.Admin.UpstreamFunds.ListWallets)
+		upstreamFunds.POST("/wallets", h.Admin.UpstreamFunds.CreateWallet)
+		upstreamFunds.GET("/wallets/:id", h.Admin.UpstreamFunds.GetWallet)
+		upstreamFunds.PUT("/wallets/:id", h.Admin.UpstreamFunds.UpdateWallet)
+		upstreamFunds.POST("/wallets/:id/refresh-balance", h.Admin.UpstreamFunds.RecordBalance)
+		upstreamFunds.GET("/accounts", h.Admin.UpstreamFunds.ListAccounts)
 	}
 }
 

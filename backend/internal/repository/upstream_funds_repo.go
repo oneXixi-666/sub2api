@@ -1,0 +1,326 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
+)
+
+type upstreamFundsRepository struct {
+	db *sql.DB
+}
+
+func NewUpstreamFundsRepository(db *sql.DB) service.UpstreamFundsRepository {
+	return &upstreamFundsRepository{db: db}
+}
+
+func (r *upstreamFundsRepository) ListWallets(ctx context.Context, search string) ([]service.UpstreamWallet, error) {
+	return r.queryWallets(ctx, nil, search)
+}
+
+func (r *upstreamFundsRepository) GetWallet(ctx context.Context, id int64) (*service.UpstreamWallet, error) {
+	wallets, err := r.queryWallets(ctx, &id, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(wallets) == 0 {
+		return nil, service.ErrUpstreamWalletNotFound
+	}
+	return &wallets[0], nil
+}
+
+func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, search string) ([]service.UpstreamWallet, error) {
+	query := `
+		SELECT
+			w.id, w.name, w.provider, w.currency, w.recharge_mode, w.tier, w.enabled,
+			w.balance, w.balance_updated_at, w.balance_error, w.alert_days, w.target_days,
+			w.created_at, w.updated_at,
+			COALESCE(costs.cost_1h, 0), COALESCE(costs.cost_today, 0),
+			COALESCE(costs.cost_24h, 0), COALESCE(costs.cost_7d, 0),
+			COALESCE(accounts.items, '[]'::jsonb),
+			COALESCE(configured_groups.items, '[]'::jsonb),
+			COALESCE(actual_groups.items, '[]'::jsonb)
+		FROM upstream_wallets w
+		LEFT JOIN LATERAL (
+			SELECT
+				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '1 hour'), 0) AS cost_1h,
+				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= DATE_TRUNC('day', NOW())), 0) AS cost_today,
+				COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '24 hours'), 0) AS cost_24h,
+				COALESCE(SUM(ul.actual_cost), 0) AS cost_7d
+			FROM upstream_wallet_accounts uwa
+			JOIN usage_logs ul ON ul.account_id = uwa.account_id
+			WHERE uwa.wallet_id = w.id
+			  AND ul.created_at >= NOW() - INTERVAL '7 days'
+		) costs ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT jsonb_agg(jsonb_build_object(
+				'id', a.id, 'name', a.name, 'platform', a.platform, 'type', a.type
+			) ORDER BY a.name, a.id) AS items
+			FROM upstream_wallet_accounts uwa
+			JOIN accounts a ON a.id = uwa.account_id AND a.deleted_at IS NULL
+			WHERE uwa.wallet_id = w.id
+		) accounts ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT jsonb_agg(jsonb_build_object('id', grouped.id, 'name', grouped.name) ORDER BY grouped.name, grouped.id) AS items
+			FROM (
+				SELECT DISTINCT g.id, g.name
+				FROM upstream_wallet_accounts uwa
+				JOIN account_groups ag ON ag.account_id = uwa.account_id
+				JOIN groups g ON g.id = ag.group_id AND g.deleted_at IS NULL
+				WHERE uwa.wallet_id = w.id
+			) grouped
+		) configured_groups ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT jsonb_agg(jsonb_build_object('id', grouped.id, 'name', grouped.name) ORDER BY grouped.name, grouped.id) AS items
+			FROM (
+				SELECT DISTINCT g.id, g.name
+				FROM upstream_wallet_accounts uwa
+				JOIN usage_logs ul ON ul.account_id = uwa.account_id
+				JOIN groups g ON g.id = ul.group_id AND g.deleted_at IS NULL
+				WHERE uwa.wallet_id = w.id
+				  AND ul.created_at >= NOW() - INTERVAL '7 days'
+			) grouped
+		) actual_groups ON TRUE
+	`
+
+	args := make([]any, 0, 2)
+	conditions := make([]string, 0, 2)
+	if id != nil {
+		args = append(args, *id)
+		conditions = append(conditions, fmt.Sprintf("w.id = $%d", len(args)))
+	}
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		args = append(args, "%"+trimmed+"%")
+		conditions = append(conditions, fmt.Sprintf("(w.name ILIKE $%d OR w.provider ILIKE $%d)", len(args), len(args)))
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY w.enabled DESC, w.name ASC, w.id ASC"
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query upstream wallets: %w", err)
+	}
+	defer rows.Close()
+
+	wallets := make([]service.UpstreamWallet, 0)
+	for rows.Next() {
+		var wallet service.UpstreamWallet
+		var balance sql.NullFloat64
+		var balanceUpdatedAt sql.NullTime
+		var accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
+		if err := rows.Scan(
+			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode,
+			&wallet.Tier, &wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
+			&wallet.AlertDays, &wallet.TargetDays, &wallet.CreatedAt, &wallet.UpdatedAt,
+			&wallet.Cost1H, &wallet.CostToday, &wallet.Cost24H, &wallet.Cost7D,
+			&accountsJSON, &configuredGroupsJSON, &actualGroupsJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan upstream wallet: %w", err)
+		}
+		if balance.Valid {
+			value := balance.Float64
+			wallet.Balance = &value
+		}
+		if balanceUpdatedAt.Valid {
+			value := balanceUpdatedAt.Time
+			wallet.BalanceUpdatedAt = &value
+		}
+		if err := json.Unmarshal(accountsJSON, &wallet.Accounts); err != nil {
+			return nil, fmt.Errorf("decode wallet accounts: %w", err)
+		}
+		if err := json.Unmarshal(configuredGroupsJSON, &wallet.ConfiguredGroups); err != nil {
+			return nil, fmt.Errorf("decode configured groups: %w", err)
+		}
+		if err := json.Unmarshal(actualGroupsJSON, &wallet.ActualGroups); err != nil {
+			return nil, fmt.Errorf("decode actual groups: %w", err)
+		}
+		wallet.AccountIDs = make([]int64, 0, len(wallet.Accounts))
+		for _, account := range wallet.Accounts {
+			wallet.AccountIDs = append(wallet.AccountIDs, account.ID)
+		}
+		wallets = append(wallets, wallet)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate upstream wallets: %w", err)
+	}
+	return wallets, nil
+}
+
+func (r *upstreamFundsRepository) CreateWallet(ctx context.Context, input service.UpstreamWalletInput) (*service.UpstreamWallet, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create upstream wallet: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := validateWalletAccounts(ctx, tx, 0, input.AccountIDs); err != nil {
+		return nil, err
+	}
+	var id int64
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO upstream_wallets (
+			name, provider, currency, recharge_mode, tier, enabled, alert_days, target_days
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("insert upstream wallet: %w", err)
+	}
+	if err := replaceWalletAccounts(ctx, tx, id, input.AccountIDs); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create upstream wallet: %w", err)
+	}
+	return r.GetWallet(ctx, id)
+}
+
+func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, input service.UpstreamWalletInput) (*service.UpstreamWallet, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin update upstream wallet: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := validateWalletAccounts(ctx, tx, id, input.AccountIDs); err != nil {
+		return nil, err
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE upstream_wallets
+		SET name = $2, provider = $3, currency = $4, recharge_mode = $5, tier = $6,
+			enabled = $7, alert_days = $8, target_days = $9, updated_at = NOW()
+		WHERE id = $1
+	`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays)
+	if err != nil {
+		return nil, fmt.Errorf("update upstream wallet: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected == 0 {
+		if err != nil {
+			return nil, fmt.Errorf("read upstream wallet update result: %w", err)
+		}
+		return nil, service.ErrUpstreamWalletNotFound
+	}
+	if err := replaceWalletAccounts(ctx, tx, id, input.AccountIDs); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit update upstream wallet: %w", err)
+	}
+	return r.GetWallet(ctx, id)
+}
+
+func (r *upstreamFundsRepository) RecordBalance(ctx context.Context, id int64, balance float64) (*service.UpstreamWallet, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin record upstream balance: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var currency string
+	err = tx.QueryRowContext(ctx, `
+		UPDATE upstream_wallets
+		SET balance = $2, balance_updated_at = NOW(), balance_error = '', updated_at = NOW()
+		WHERE id = $1
+		RETURNING currency
+	`, id, balance).Scan(&currency)
+	if err == sql.ErrNoRows {
+		return nil, service.ErrUpstreamWalletNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update upstream balance: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO upstream_balance_snapshots (wallet_id, balance, currency, status, source)
+		VALUES ($1, $2, $3, 'success', 'manual')
+	`, id, balance, currency); err != nil {
+		return nil, fmt.Errorf("insert upstream balance snapshot: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit upstream balance: %w", err)
+	}
+	return r.GetWallet(ctx, id)
+}
+
+func (r *upstreamFundsRepository) ListAccountOptions(ctx context.Context) ([]service.UpstreamFundsAccount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, a.name, a.platform, a.type, uwa.wallet_id, COALESCE(w.name, '')
+		FROM accounts a
+		LEFT JOIN upstream_wallet_accounts uwa ON uwa.account_id = a.id
+		LEFT JOIN upstream_wallets w ON w.id = uwa.wallet_id
+		WHERE a.deleted_at IS NULL
+		ORDER BY a.platform, a.name, a.id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list upstream account options: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]service.UpstreamFundsAccount, 0)
+	for rows.Next() {
+		var item service.UpstreamFundsAccount
+		var walletID sql.NullInt64
+		if err := rows.Scan(&item.ID, &item.Name, &item.Platform, &item.Type, &walletID, &item.Wallet); err != nil {
+			return nil, fmt.Errorf("scan upstream account option: %w", err)
+		}
+		if walletID.Valid {
+			value := walletID.Int64
+			item.WalletID = &value
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func validateWalletAccounts(ctx context.Context, tx *sql.Tx, walletID int64, accountIDs []int64) error {
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	var existing int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM accounts WHERE deleted_at IS NULL AND id = ANY($1)
+	`, pq.Array(accountIDs)).Scan(&existing); err != nil {
+		return fmt.Errorf("validate upstream accounts: %w", err)
+	}
+	if existing != len(accountIDs) {
+		return service.ErrUpstreamAccountNotFound
+	}
+
+	var assigned int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM upstream_wallet_accounts
+		WHERE account_id = ANY($1) AND wallet_id <> $2
+	`, pq.Array(accountIDs), walletID).Scan(&assigned); err != nil {
+		return fmt.Errorf("check upstream account assignments: %w", err)
+	}
+	if assigned > 0 {
+		return service.ErrUpstreamAccountAssigned
+	}
+	return nil
+}
+
+func replaceWalletAccounts(ctx context.Context, tx *sql.Tx, walletID int64, accountIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM upstream_wallet_accounts WHERE wallet_id = $1", walletID); err != nil {
+		return fmt.Errorf("clear upstream wallet accounts: %w", err)
+	}
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO upstream_wallet_accounts (wallet_id, account_id)
+		SELECT $1, account_id FROM UNNEST($2::bigint[]) AS account_id
+	`, walletID, pq.Array(accountIDs)); err != nil {
+		if isUniqueViolation(err) {
+			return service.ErrUpstreamAccountAssigned
+		}
+		return fmt.Errorf("assign upstream wallet accounts: %w", err)
+	}
+	return nil
+}
