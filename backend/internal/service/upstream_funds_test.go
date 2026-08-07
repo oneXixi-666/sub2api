@@ -10,10 +10,19 @@ import (
 type upstreamFundsRepositoryStub struct {
 	wallets      []UpstreamWallet
 	createdInput UpstreamWalletInput
+	groupID      int64
 }
 
-func (s *upstreamFundsRepositoryStub) ListWallets(context.Context, string) ([]UpstreamWallet, error) {
+func (s *upstreamFundsRepositoryStub) ListWallets(_ context.Context, _ string, groupID int64) ([]UpstreamWallet, error) {
+	s.groupID = groupID
 	return append([]UpstreamWallet(nil), s.wallets...), nil
+}
+
+func TestUpstreamFundsListAcceptsGroupFilter(t *testing.T) {
+	repo := &upstreamFundsRepositoryStub{}
+	_, err := NewUpstreamFundsService(repo, nil, nil).ListWallets(context.Background(), "", 17)
+	require.NoError(t, err)
+	require.Equal(t, int64(17), repo.groupID)
 }
 
 func (s *upstreamFundsRepositoryStub) GetWallet(context.Context, int64) (*UpstreamWallet, error) {
@@ -22,7 +31,7 @@ func (s *upstreamFundsRepositoryStub) GetWallet(context.Context, int64) (*Upstre
 
 func (s *upstreamFundsRepositoryStub) CreateWallet(_ context.Context, input UpstreamWalletInput) (*UpstreamWallet, error) {
 	s.createdInput = input
-	return &UpstreamWallet{ID: 1, Name: input.Name, Currency: input.Currency, AlertDays: input.AlertDays, TargetDays: input.TargetDays, AccountIDs: input.AccountIDs}, nil
+	return &UpstreamWallet{ID: 1, Name: input.Name, Currency: input.Currency, AccountIDs: input.AccountIDs}, nil
 }
 
 func (s *upstreamFundsRepositoryStub) UpdateWallet(context.Context, int64, UpstreamWalletInput) (*UpstreamWallet, error) {
@@ -63,29 +72,26 @@ func (s *upstreamFundsRepositoryStub) ListAccountOptions(context.Context) ([]Ups
 	return nil, nil
 }
 
-func TestUpstreamFundsListCalculatesRunwayAndSummary(t *testing.T) {
+func TestUpstreamFundsListCalculatesConsumptionAndSummary(t *testing.T) {
 	healthyBalance := 70.0
 	lowBalance := 10.0
 	repo := &upstreamFundsRepositoryStub{wallets: []UpstreamWallet{
-		{ID: 1, Currency: "USD", Enabled: true, Balance: &healthyBalance, AlertDays: 2, TargetDays: 7, CostToday: 8, Cost24H: 10, Cost7D: 70},
-		{ID: 2, Currency: "USD", Enabled: true, Balance: &lowBalance, AlertDays: 2, TargetDays: 7, CostToday: 2, Cost24H: 4, Cost7D: 70},
-		{ID: 3, Currency: "CNY", Enabled: false, Balance: &healthyBalance, AlertDays: 2, TargetDays: 7, Cost7D: 70},
+		{ID: 1, Currency: "USD", Enabled: true, Balance: &healthyBalance, ConsumptionToday: 8, Consumption24H: 10},
+		{ID: 2, Currency: "USD", Enabled: true, Balance: &lowBalance, ConsumptionToday: 2, Consumption24H: 4},
+		{ID: 3, Currency: "CNY", Enabled: false, Balance: &healthyBalance, Consumption24H: 70},
 	}}
 
-	overview, err := NewUpstreamFundsService(repo, nil, nil).ListWallets(context.Background(), "")
+	overview, err := NewUpstreamFundsService(repo, nil, nil).ListWallets(context.Background(), "", 0)
 	require.NoError(t, err)
 	require.Equal(t, 3, overview.Summary.WalletCount)
 	require.Equal(t, 2, overview.Summary.EnabledCount)
-	require.Equal(t, 1, overview.Summary.AttentionCount)
-	require.InDelta(t, 10, overview.Summary.CostToday, 0.000001)
+	require.Equal(t, 0, overview.Summary.AttentionCount)
+	require.InDelta(t, 10, overview.Summary.ConsumptionToday, 0.000001)
 	require.InDelta(t, 80, overview.Summary.BalanceByCurrency["USD"], 0.000001)
 	require.InDelta(t, 70, overview.Summary.BalanceByCurrency["CNY"], 0.000001)
-	require.NotNil(t, overview.Wallets[0].RunwayDays)
-	require.InDelta(t, 7, *overview.Wallets[0].RunwayDays, 0.000001)
 	require.False(t, overview.Wallets[0].NeedsAttention)
-	require.InDelta(t, 60, *overview.Wallets[1].RecommendedTopUp, 0.000001)
-	require.True(t, overview.Wallets[1].NeedsAttention)
-	require.Nil(t, overview.Wallets[2].RunwayDays)
+	require.False(t, overview.Wallets[1].NeedsAttention)
+	require.False(t, overview.Wallets[2].NeedsAttention)
 }
 
 func TestUpstreamFundsCreateNormalizesAndDeduplicatesAccounts(t *testing.T) {
@@ -96,10 +102,7 @@ func TestUpstreamFundsCreateNormalizesAndDeduplicatesAccounts(t *testing.T) {
 		Currency:     "usd",
 		RechargeMode: "MANUAL",
 		CardSiteURL:  "https://cards.example.com/buy",
-		Tier:         "PRIMARY",
 		Enabled:      true,
-		AlertDays:    2,
-		TargetDays:   7,
 		AccountIDs:   []int64{9, 3, 9},
 	})
 	require.NoError(t, err)
@@ -110,17 +113,11 @@ func TestUpstreamFundsCreateNormalizesAndDeduplicatesAccounts(t *testing.T) {
 	require.Equal(t, []int64{3, 9}, repo.createdInput.AccountIDs)
 }
 
-func TestUpstreamFundsCreateRejectsInvalidReserveAndCurrency(t *testing.T) {
+func TestUpstreamFundsCreateRejectsInvalidCurrency(t *testing.T) {
 	svc := NewUpstreamFundsService(&upstreamFundsRepositoryStub{}, nil, nil)
-	base := UpstreamWalletInput{Name: "wallet", Provider: "provider", Currency: "USD", RechargeMode: "manual", Tier: "primary", AlertDays: 3, TargetDays: 2}
-
-	_, err := svc.CreateWallet(context.Background(), base)
-	require.Error(t, err)
-
-	base.AlertDays = 2
-	base.TargetDays = 7
+	base := UpstreamWalletInput{Name: "wallet", Provider: "provider", Currency: "USD", RechargeMode: "manual"}
 	base.Currency = "USDT"
-	_, err = svc.CreateWallet(context.Background(), base)
+	_, err := svc.CreateWallet(context.Background(), base)
 	require.Error(t, err)
 }
 
@@ -132,9 +129,6 @@ func TestUpstreamFundsCreateRejectsUnsafeCardSiteURL(t *testing.T) {
 		Currency:     "USD",
 		RechargeMode: "product",
 		CardSiteURL:  "https://user:password@cards.example.com/buy",
-		Tier:         "primary",
-		AlertDays:    2,
-		TargetDays:   7,
 	})
 	require.Error(t, err)
 }

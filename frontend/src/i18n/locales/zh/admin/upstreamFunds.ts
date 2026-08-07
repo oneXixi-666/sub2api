@@ -1,7 +1,7 @@
 export default {
   upstreamFunds: {
     title: '上游资金中心',
-    description: '按真实上游钱包归并账号，跟踪采购余额、实际成本和资金储备。',
+    description: '按真实上游钱包归并账号，跟踪余额、消耗和当前分组。',
     createWallet: '新增上游钱包',
     editWallet: '编辑上游钱包',
     recordBalance: '录入余额',
@@ -16,7 +16,16 @@ export default {
 			linkedAccount: '关联的上游账号',
 			email: '上游面板邮箱',
 			password: '上游面板密码',
-			passwordHint: '密码只用于本次登录请求，不会保存到数据库。登录成功后仅保存 AES-256-GCM 加密的会话令牌。',
+			passwordHint: '密码仅用于登录，并会以加密形式保存，供后台定时探活时复用。',
+			savedPasswordHint: '已保存登录凭据，密码留空即可复用；填写新密码会更新保存的凭据。',
+			useManualImport: '改用浏览器凭证导入',
+			usePasswordLogin: '改用账号密码登录',
+			manualImportHint: '如果上游登录被 Cloudflare 人机验证拦截，请先在浏览器完成登录，再粘贴登录响应中的访问令牌。令牌只会加密保存，不会回显。',
+			accessToken: '访问令牌',
+			refreshToken: '刷新令牌（可选）',
+			identityOptional: '登录邮箱（可选）',
+			expiresIn: '有效期（秒，可选）',
+			importSession: '导入并授权',
 			login: '登录并授权',
 			verify: '完成验证',
 			twoFactorHint: '上游面板要求双因素验证，请输入该面板生成的 6 位验证码。',
@@ -41,7 +50,11 @@ export default {
     adapterPending: '待接入适配器',
     phaseOne: '监控阶段',
     adapterPendingHint: '当前仅支持资金监控和手工余额快照；自动充值需接入真实上游适配器后启用。',
-    searchPlaceholder: '搜索钱包或上游标识',
+	    searchPlaceholder: '搜索钱包或上游标识',
+		groupFilter: {
+			label: '按分组筛选上游钱包',
+			all: '全部分组'
+		},
 		tabs: {
 			label: '按余额状态筛选',
 			all: '全部',
@@ -53,6 +66,7 @@ export default {
 		rechargeForm: {
 			amount: '充值面额',
 			channel: '支付渠道',
+			alipay: '支付宝（固定渠道）',
 			createOrder: '生成支付订单',
 			openPayment: '打开支付页面',
 			faceValue: '预计到账',
@@ -76,42 +90,26 @@ export default {
     summary: {
       wallets: '上游钱包',
       enabled: '{count} 个启用',
-      todayCost: '今日实际上游成本',
+      todayConsumption: '今日上游消耗',
       balance: '可查询余额',
       attention: '需要关注',
-      costCurrency: '成本统一按 USD 统计',
-      cost24h: '近 24 小时成本'
+      consumptionCurrency: '消耗统一按 USD 统计',
+      consumption24h: '近 24 小时消耗'
     },
     wallet: {
       balance: '当前余额',
       updated: '更新于 {time}',
       neverUpdated: '尚未录入',
-      runway: '预计可用',
-      runwayDays: '{days} 天',
-      runwayUnknown: '待计算',
-      runwayCurrencyMismatch: '余额币种与成本币种不同，暂不计算可用天数',
-      runwayNoCost: '近 7 天暂无实际上游成本，暂不计算可用天数',
-      alertLine: '告警线 {days} 天',
-      targetLine: '目标 {days} 天',
-      cost1h: '近 1 小时',
-      costToday: '今日',
-      cost24h: '近 24 小时',
-      cost7d: '近 7 天',
-      suggestedTopUp: '建议补充 {amount}',
-      healthyReserve: '当前储备达到目标',
+      consumption1h: '近 1 小时消耗',
+      consumptionToday: '今日消耗',
+      consumption24h: '近 24 小时消耗',
       accounts: '关联账号',
-      configuredGroups: '配置分组',
-      actualGroups: '近 7 天实际分组',
+      actualGroups: '当前分组',
       noAccounts: '尚未关联账号',
       noGroups: '暂无分组',
       disabled: '已停用',
 			attention: '资金告警',
 			syncFailed: '最近一次自动同步失败，已保留上次有效余额'
-    },
-    tier: {
-      primary: '主力',
-      hot_backup: '热备',
-      cold_backup: '冷备'
     },
     mode: {
       direct: '直充',
@@ -127,9 +125,6 @@ export default {
       rechargeMode: '充值模式',
 			cardSiteURL: '卡网地址',
 			cardSiteURLPlaceholder: 'https://cards.example.com',
-      tier: '运营层级',
-      alertDays: '余额告警天数',
-      targetDays: '目标储备天数',
       enabled: '启用资金监控',
       accounts: '共用这个钱包的上游账号',
       accountSearch: '搜索账号名称或平台',
@@ -161,13 +156,14 @@ export default {
 			redeemVerified: '兑换成功，余额增长已验证',
 			redeemManualReview: '上游已受理兑换，但余额增长未能确认，请人工复核',
 			redeemFailed: '兑换码提交失败',
-			channelsFailed: '获取上游支付渠道失败',
 			rechargeCreateFailed: '创建上游充值订单失败',
 			rechargePollFailed: '查询上游充值订单失败',
 			rechargeCompleted: '充值到账已验证',
 			rechargeManualReview: '支付结果或余额增长无法自动确认，请人工复核',
 			manualCompleteFailed: '人工确认充值完成失败',
 			panelAuthorized: '上游面板授权已保存，充值和兑换将自动复用该会话',
+			panelImported: '浏览器会话凭证已导入，上游面板授权已保存',
+			panelImportFailed: '浏览器会话凭证导入失败，请检查令牌和关联账号',
 			panelLoginFailed: '上游面板登录失败，请检查账号、密码和关联账号',
 			panelVerifyFailed: '上游双因素验证失败或验证已过期',
 			panelHealthy: '上游面板会话正常',
@@ -175,7 +171,6 @@ export default {
 			panelCheckFailed: '上游面板探活失败',
 			panelRemoved: '上游面板授权已删除',
 			panelRemoveFailed: '删除上游面板授权失败',
-      invalidReserve: '目标储备天数不能小于告警天数'
     }
   }
 }

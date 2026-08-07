@@ -11,19 +11,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpstreamFundsWalletCostsUseAccountCostFormula(t *testing.T) {
+func TestUpstreamFundsWalletConsumptionUsesAccountCostFormula(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	expr := regexp.QuoteMeta("COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)")
-	mock.ExpectQuery("(?s)" + expr + ".*" + expr + ".*" + expr + ".*" + expr).
+	mock.ExpectQuery("(?s)" + expr + ".*" + expr + ".*" + expr).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	repo := &upstreamFundsRepository{db: db}
-	wallets, err := repo.ListWallets(context.Background(), "")
+	wallets, err := repo.ListWallets(context.Background(), "", 0)
 	require.NoError(t, err)
 	require.Empty(t, wallets)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpstreamFundsWalletsFilterByConfiguredOrLatestActualGroup(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectQuery(`(?s)filter_ag\.group_id = \$1.*latest_usage\.group_id = \$1`).
+		WithArgs(int64(17)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	repo := &upstreamFundsRepository{db: db}
+	wallets, err := repo.ListWallets(context.Background(), "", 17)
+	require.NoError(t, err)
+	require.Empty(t, wallets)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSaveUpstreamPanelCredentialsDoesNotStorePlainPassword(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectExec(`(?s)UPDATE upstream_wallets.*panel_login_password_ciphertext`).
+		WithArgs(int64(9), int64(42), "owner@example.com", "encrypted-password").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	repo := &upstreamFundsRepository{db: db}
+	err = repo.SaveUpstreamPanelCredentials(context.Background(), 9, 42, "owner@example.com", "encrypted-password")
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestClearUpstreamPanelCredentialsRemovesOnlySavedLogin(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectExec(`(?s)UPDATE upstream_wallets.*panel_login_password_ciphertext = ''`).
+		WithArgs(int64(9)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	repo := &upstreamFundsRepository{db: db}
+	err = repo.ClearUpstreamPanelCredentials(context.Background(), 9)
+	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

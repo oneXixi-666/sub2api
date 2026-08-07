@@ -40,6 +40,50 @@ func (r *upstreamFundsRepository) SaveUpstreamPanelSession(
 	return nil
 }
 
+func (r *upstreamFundsRepository) SaveUpstreamPanelCredentials(
+	ctx context.Context,
+	walletID, accountID int64,
+	identity, passwordCiphertext string,
+) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE upstream_wallets
+		SET panel_account_id = $2, panel_login_identity = $3,
+			panel_login_password_ciphertext = $4, updated_at = NOW()
+		WHERE id = $1
+	`, walletID, accountID, identity, passwordCiphertext)
+	if err != nil {
+		return fmt.Errorf("save upstream panel credentials: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read upstream panel credentials save result: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrUpstreamWalletNotFound
+	}
+	return nil
+}
+
+func (r *upstreamFundsRepository) ClearUpstreamPanelCredentials(ctx context.Context, walletID int64) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE upstream_wallets
+		SET panel_account_id = NULL, panel_login_identity = '',
+			panel_login_password_ciphertext = '', updated_at = NOW()
+		WHERE id = $1
+	`, walletID)
+	if err != nil {
+		return fmt.Errorf("clear upstream panel credentials: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read upstream panel credentials clear result: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrUpstreamWalletNotFound
+	}
+	return nil
+}
+
 func (r *upstreamFundsRepository) CompareAndSwapUpstreamPanelSession(
 	ctx context.Context,
 	walletID int64,
@@ -102,7 +146,10 @@ func (r *upstreamFundsRepository) ListDueUpstreamPanelSessionWalletIDs(
 		SELECT id
 		FROM upstream_wallets
 		WHERE enabled = TRUE
-		  AND COALESCE(extra->>'panel_session_ciphertext', '') <> ''
+			  AND (
+				COALESCE(extra->>'panel_session_ciphertext', '') <> ''
+				OR COALESCE(panel_login_password_ciphertext, '') <> ''
+			  )
 		  AND (
 			NULLIF(extra->'panel_session_state'->>'next_check_at', '') IS NULL
 			OR NULLIF(extra->'panel_session_state'->>'next_check_at', '')::timestamptz <= $1

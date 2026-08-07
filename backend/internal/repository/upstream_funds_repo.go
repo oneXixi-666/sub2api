@@ -19,12 +19,12 @@ func NewUpstreamFundsRepository(db *sql.DB) service.UpstreamFundsRepository {
 	return &upstreamFundsRepository{db: db}
 }
 
-func (r *upstreamFundsRepository) ListWallets(ctx context.Context, search string) ([]service.UpstreamWallet, error) {
-	return r.queryWallets(ctx, nil, search)
+func (r *upstreamFundsRepository) ListWallets(ctx context.Context, search string, groupID int64) ([]service.UpstreamWallet, error) {
+	return r.queryWallets(ctx, nil, search, groupID)
 }
 
 func (r *upstreamFundsRepository) GetWallet(ctx context.Context, id int64) (*service.UpstreamWallet, error) {
-	wallets, err := r.queryWallets(ctx, &id, "")
+	wallets, err := r.queryWallets(ctx, &id, "", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -34,33 +34,32 @@ func (r *upstreamFundsRepository) GetWallet(ctx context.Context, id int64) (*ser
 	return &wallets[0], nil
 }
 
-func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, search string) ([]service.UpstreamWallet, error) {
+func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, search string, groupID int64) ([]service.UpstreamWallet, error) {
 	query := `
 		SELECT
 			w.id, w.name, w.provider, w.currency, w.recharge_mode,
-			COALESCE(w.extra->>'card_site_url', ''),
-			COALESCE(w.extra->>'panel_session_ciphertext', ''),
-			COALESCE(w.extra->'panel_session_state', '{}'::jsonb),
-			w.tier, w.enabled,
-			w.balance, w.balance_updated_at, w.balance_error, w.alert_days, w.target_days,
-			w.created_at, w.updated_at,
-			COALESCE(costs.cost_1h, 0), COALESCE(costs.cost_today, 0),
-			COALESCE(costs.cost_24h, 0), COALESCE(costs.cost_7d, 0),
+				COALESCE(w.extra->>'card_site_url', ''),
+				COALESCE(w.extra->>'panel_session_ciphertext', ''),
+				COALESCE(w.extra->'panel_session_state', '{}'::jsonb),
+				w.panel_account_id, w.panel_login_identity, w.panel_login_password_ciphertext,
+				w.enabled, w.balance, w.balance_updated_at, w.balance_error,
+				w.created_at, w.updated_at,
+				COALESCE(consumption.consumption_1h, 0), COALESCE(consumption.consumption_today, 0),
+				COALESCE(consumption.consumption_24h, 0),
 			COALESCE(accounts.items, '[]'::jsonb),
 			COALESCE(configured_groups.items, '[]'::jsonb),
 			COALESCE(actual_groups.items, '[]'::jsonb)
 		FROM upstream_wallets w
 		LEFT JOIN LATERAL (
 			SELECT
-				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '1 hour'), 0) AS cost_1h,
-				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= DATE_TRUNC('day', NOW())), 0) AS cost_today,
-				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '24 hours'), 0) AS cost_24h,
-				COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) AS cost_7d
-			FROM upstream_wallet_accounts uwa
-			JOIN usage_logs ul ON ul.account_id = uwa.account_id
-			WHERE uwa.wallet_id = w.id
-			  AND ul.created_at >= NOW() - INTERVAL '7 days'
-		) costs ON TRUE
+					COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= NOW() - INTERVAL '1 hour'), 0) AS consumption_1h,
+					COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= DATE_TRUNC('day', NOW())), 0) AS consumption_today,
+					COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) AS consumption_24h
+				FROM upstream_wallet_accounts uwa
+				JOIN usage_logs ul ON ul.account_id = uwa.account_id
+				WHERE uwa.wallet_id = w.id
+				  AND ul.created_at >= NOW() - INTERVAL '24 hours'
+			) consumption ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT jsonb_agg(jsonb_build_object(
 				'id', a.id, 'name', a.name, 'platform', a.platform, 'type', a.type
@@ -83,12 +82,17 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 			SELECT jsonb_agg(jsonb_build_object('id', grouped.id, 'name', grouped.name) ORDER BY grouped.name, grouped.id) AS items
 			FROM (
 				SELECT DISTINCT g.id, g.name
-				FROM upstream_wallet_accounts uwa
-				JOIN usage_logs ul ON ul.account_id = uwa.account_id
-				JOIN groups g ON g.id = ul.group_id AND g.deleted_at IS NULL
-				WHERE uwa.wallet_id = w.id
-				  AND ul.created_at >= NOW() - INTERVAL '7 days'
-			) grouped
+					FROM upstream_wallet_accounts uwa
+					JOIN LATERAL (
+						SELECT ul.group_id
+						FROM usage_logs ul
+						WHERE ul.account_id = uwa.account_id
+						ORDER BY ul.created_at DESC, ul.id DESC
+						LIMIT 1
+					) latest_usage ON TRUE
+					JOIN groups g ON g.id = latest_usage.group_id AND g.deleted_at IS NULL
+					WHERE uwa.wallet_id = w.id
+				) grouped
 		) actual_groups ON TRUE
 	`
 
@@ -101,6 +105,30 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 	if trimmed := strings.TrimSpace(search); trimmed != "" {
 		args = append(args, "%"+trimmed+"%")
 		conditions = append(conditions, fmt.Sprintf("(w.name ILIKE $%d OR w.provider ILIKE $%d)", len(args), len(args)))
+	}
+	if groupID > 0 {
+		args = append(args, groupID)
+		placeholder := fmt.Sprintf("$%d", len(args))
+		conditions = append(conditions, fmt.Sprintf(`(
+			EXISTS (
+				SELECT 1
+				FROM upstream_wallet_accounts filter_uwa
+				JOIN account_groups filter_ag ON filter_ag.account_id = filter_uwa.account_id
+				WHERE filter_uwa.wallet_id = w.id AND filter_ag.group_id = %s
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM upstream_wallet_accounts filter_uwa
+				JOIN LATERAL (
+					SELECT ul.group_id
+					FROM usage_logs ul
+					WHERE ul.account_id = filter_uwa.account_id
+					ORDER BY ul.created_at DESC, ul.id DESC
+					LIMIT 1
+				) latest_usage ON latest_usage.group_id = %s
+				WHERE filter_uwa.wallet_id = w.id
+			)
+		)`, placeholder, placeholder))
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
@@ -118,13 +146,15 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		var wallet service.UpstreamWallet
 		var balance sql.NullFloat64
 		var balanceUpdatedAt sql.NullTime
+		var panelAccountID sql.NullInt64
 		var panelSessionJSON, accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
 		if err := rows.Scan(
 			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode, &wallet.CardSiteURL,
 			&wallet.PanelSessionCiphertext, &panelSessionJSON,
-			&wallet.Tier, &wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
-			&wallet.AlertDays, &wallet.TargetDays, &wallet.CreatedAt, &wallet.UpdatedAt,
-			&wallet.Cost1H, &wallet.CostToday, &wallet.Cost24H, &wallet.Cost7D,
+			&panelAccountID, &wallet.PanelCredentialIdentity, &wallet.PanelCredentialCiphertext,
+			&wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
+			&wallet.CreatedAt, &wallet.UpdatedAt,
+			&wallet.Consumption1H, &wallet.ConsumptionToday, &wallet.Consumption24H,
 			&accountsJSON, &configuredGroupsJSON, &actualGroupsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan upstream wallet: %w", err)
@@ -136,6 +166,9 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		if balanceUpdatedAt.Valid {
 			value := balanceUpdatedAt.Time
 			wallet.BalanceUpdatedAt = &value
+		}
+		if panelAccountID.Valid {
+			wallet.PanelCredentialAccountID = panelAccountID.Int64
 		}
 		if err := json.Unmarshal(panelSessionJSON, &wallet.PanelSession); err != nil {
 			return nil, fmt.Errorf("decode upstream panel session state: %w", err)
@@ -173,11 +206,11 @@ func (r *upstreamFundsRepository) CreateWallet(ctx context.Context, input servic
 	}
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO upstream_wallets (
-			name, provider, currency, recharge_mode, tier, enabled, alert_days, target_days, extra
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, jsonb_build_object('card_site_url', $9::text))
-		RETURNING id
-	`, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays, input.CardSiteURL).Scan(&id)
+			INSERT INTO upstream_wallets (
+				name, provider, currency, recharge_mode, enabled, extra
+			) VALUES ($1, $2, $3, $4, $5, jsonb_build_object('card_site_url', $6::text))
+			RETURNING id
+		`, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Enabled, input.CardSiteURL).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("insert upstream wallet: %w", err)
 	}
@@ -202,11 +235,11 @@ func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, in
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE upstream_wallets
-		SET name = $2, provider = $3, currency = $4, recharge_mode = $5, tier = $6,
-			enabled = $7, alert_days = $8, target_days = $9,
-			extra = jsonb_set(extra, '{card_site_url}', to_jsonb($10::text), true), updated_at = NOW()
-		WHERE id = $1
-	`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Tier, input.Enabled, input.AlertDays, input.TargetDays, input.CardSiteURL)
+			SET name = $2, provider = $3, currency = $4, recharge_mode = $5,
+				enabled = $6,
+				extra = jsonb_set(extra, '{card_site_url}', to_jsonb($7::text), true), updated_at = NOW()
+			WHERE id = $1
+		`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Enabled, input.CardSiteURL)
 	if err != nil {
 		return nil, fmt.Errorf("update upstream wallet: %w", err)
 	}

@@ -12,12 +12,13 @@ vi.mock('../client', () => ({
 }))
 
 import {
-  create,
+	create,
 	createRechargeOrder,
 	checkPanelSession,
 	completePanelSessionTwoFactor,
 	deletePanelSession,
 	getPanelSession,
+	importPanelSession,
 	list,
 	listAll,
 	listAccounts,
@@ -36,13 +37,19 @@ describe('admin upstream funds API', () => {
     vi.clearAllMocks()
   })
 
-  it('loads the wallet overview with an optional search term', async () => {
+	it('loads the wallet overview with an optional search term', async () => {
     const overview = { summary: { wallet_count: 0 }, wallets: [] }
     get.mockResolvedValueOnce({ data: overview })
 
 		await expect(list('provider_a')).resolves.toBe(overview)
 		expect(get).toHaveBeenCalledWith('/admin/upstream-funds/wallets', {
 			params: { search: 'provider_a' }
+		})
+
+		get.mockResolvedValueOnce({ data: overview })
+		await expect(list(undefined, 17)).resolves.toBe(overview)
+		expect(get).toHaveBeenLastCalledWith('/admin/upstream-funds/wallets', {
+			params: { group_id: 17 }
 		})
 
 		get.mockResolvedValueOnce({ data: overview })
@@ -59,10 +66,7 @@ describe('admin upstream funds API', () => {
       currency: 'USD',
       recharge_mode: 'manual' as const,
 			card_site_url: '',
-      tier: 'primary' as const,
       enabled: true,
-      alert_days: 2,
-      target_days: 7,
       account_ids: [3, 9]
     }
     const wallet = { id: 12, ...input }
@@ -128,19 +132,42 @@ describe('admin upstream funds API', () => {
 		get.mockResolvedValueOnce({ data: session })
 		post.mockResolvedValueOnce({ data: loginResult })
 		post.mockResolvedValueOnce({ data: loginResult })
+		post.mockResolvedValueOnce({ data: loginResult })
 		post.mockResolvedValueOnce({ data: session })
 		del.mockResolvedValueOnce({ data: { configured: false, status: 'not_configured' } })
 
 		await expect(getPanelSession(9)).resolves.toBe(session)
 		await expect(loginPanelSession(9, { account_id: 42, email: 'owner@example.com', password: 'transient' })).resolves.toBe(loginResult)
+		await expect(loginPanelSession(9, {})).resolves.toBe(loginResult)
 		await expect(completePanelSessionTwoFactor(9, { challenge: 'opaque', code: '123456' })).resolves.toBe(loginResult)
 		await expect(checkPanelSession(9)).resolves.toBe(session)
 		await deletePanelSession(9)
 
 		expect(get).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session')
 		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/login', { account_id: 42, email: 'owner@example.com', password: 'transient' })
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/login', {})
 		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/login/2fa', { challenge: 'opaque', code: '123456' })
 		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/check')
 		expect(del).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session')
+	})
+
+	it('imports a browser-authorized panel session through the wallet endpoint', async () => {
+		const session = { configured: true, status: 'healthy' }
+		post.mockResolvedValueOnce({ data: session })
+
+		await expect(importPanelSession(9, {
+			account_id: 42,
+			access_token: 'opaque-token',
+			refresh_token: 'opaque-refresh',
+			identity: 'owner@example.com',
+			expires_in: 3600
+		})).resolves.toBe(session)
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/9/panel-session/import', {
+			account_id: 42,
+			access_token: 'opaque-token',
+			refresh_token: 'opaque-refresh',
+			identity: 'owner@example.com',
+			expires_in: 3600
+		})
 	})
 })

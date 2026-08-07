@@ -138,6 +138,7 @@ func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers, st
 		upstreamFunds.GET("/wallets/:id/panel-session", h.Admin.UpstreamFunds.GetPanelSession)
 		upstreamFunds.POST("/wallets/:id/panel-session/login", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.LoginPanelSession)
 		upstreamFunds.POST("/wallets/:id/panel-session/login/2fa", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.CompletePanelSessionTwoFactor)
+		upstreamFunds.POST("/wallets/:id/panel-session/import", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.ImportPanelSession)
 		upstreamFunds.POST("/wallets/:id/panel-session/check", h.Admin.UpstreamFunds.CheckPanelSession)
 		upstreamFunds.DELETE("/wallets/:id/panel-session", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.DeletePanelSession)
 		upstreamFunds.GET("/wallets/:id/recharge-products", h.Admin.UpstreamFunds.ListRechargeProducts)

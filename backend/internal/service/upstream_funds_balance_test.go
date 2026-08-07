@@ -3,11 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -176,4 +180,38 @@ func TestValidateSub2APIRedeemResponseRequiresBusinessSuccess(t *testing.T) {
 
 	err = validateSub2APIRedeemResponse([]byte(`not-json`))
 	require.Equal(t, "redeem_invalid_response", upstreamBalanceErrorSummary(err))
+}
+
+func TestParseNewAPIUsageBalanceSupportsCreditSummaryAndEnvelope(t *testing.T) {
+	balance, currency, err := parseNewAPIUsageBalance([]byte(`{"data":{"total_available":"123.45","currency":"CNY"}}`), "USD")
+	require.NoError(t, err)
+	require.InDelta(t, 123.45, balance, 0.000001)
+	require.Equal(t, "CNY", currency)
+
+	balance, currency, err = parseNewAPIUsageBalance([]byte(`{"total_granted":100,"total_used":35}`), "USD")
+	require.NoError(t, err)
+	require.InDelta(t, 65, balance, 0.000001)
+	require.Equal(t, "USD", currency)
+}
+
+func TestRefreshBalanceFallsBackFromSub2APIToNewAPI(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"remaining":"not-a-number"}`))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":{"total_available":42,"currency":"USD"}}`))},
+	}}
+	p := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "test-api-key",
+	}}
+	snapshot, err := p.RefreshBalance(context.Background(), &UpstreamWallet{Currency: "USD"}, []*Account{account})
+	require.NoError(t, err)
+	require.InDelta(t, 42, snapshot.Balance, 0.000001)
+	require.Equal(t, "USD", snapshot.Currency)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/usage", upstream.requests[0].URL.Path)
+	require.Equal(t, "/api/usage/token/", upstream.requests[1].URL.Path)
+	require.Equal(t, "Bearer test-api-key", upstream.requests[1].Header.Get("Authorization"))
 }

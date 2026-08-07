@@ -12,6 +12,14 @@
             @input="handleSearch"
           />
         </div>
+        <div class="w-full min-w-0 sm:w-56 sm:flex-none">
+          <Select
+            v-model="selectedGroupID"
+            :options="groupOptions"
+            :aria-label="t('admin.upstreamFunds.groupFilter.label')"
+            @change="handleGroupChange"
+          />
+        </div>
         <div class="flex w-full flex-wrap justify-end gap-2 sm:flex-1">
           <button type="button" class="btn btn-secondary btn-icon" :disabled="loading || syncCycleActive" :title="t('common.refresh')" @click="syncAllBalances(true)">
             <Icon name="refresh" size="md" :class="loading || syncCycleActive ? 'animate-spin' : ''" />
@@ -35,9 +43,9 @@
         <article class="summary-tile">
           <div class="summary-icon summary-icon-cyan"><Icon name="trendingUp" size="md" /></div>
           <div class="summary-content">
-            <p class="summary-label">{{ t('admin.upstreamFunds.summary.todayCost') }}</p>
-            <p class="summary-value data-number">{{ formatCurrency(summary.cost_today, 'USD') }}</p>
-            <p class="summary-note">{{ t('admin.upstreamFunds.summary.costCurrency') }}</p>
+            <p class="summary-label">{{ t('admin.upstreamFunds.summary.todayConsumption') }}</p>
+            <p class="summary-value data-number">{{ formatCurrency(summary.consumption_today, 'USD') }}</p>
+            <p class="summary-note">{{ t('admin.upstreamFunds.summary.consumptionCurrency') }}</p>
           </div>
         </article>
         <article class="summary-tile">
@@ -45,7 +53,7 @@
           <div class="summary-content">
             <p class="summary-label">{{ t('admin.upstreamFunds.summary.balance') }}</p>
             <p class="summary-value data-number">{{ formattedBalances }}</p>
-            <p class="summary-note">{{ formatCurrency(summary.cost_24h, 'USD') }} / {{ t('admin.upstreamFunds.summary.cost24h') }}</p>
+            <p class="summary-note">{{ formatCurrency(summary.consumption_24h, 'USD') }} / {{ t('admin.upstreamFunds.summary.consumption24h') }}</p>
           </div>
         </article>
         <article class="summary-tile" :class="summary.attention_count > 0 ? 'summary-tile-alert' : ''">
@@ -89,7 +97,6 @@
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <h2 class="wallet-name truncate">{{ wallet.name }}</h2>
-                <span class="badge badge-gray">{{ tierLabel(wallet.tier) }}</span>
                 <span class="badge" :class="balanceStatusBadgeClass(wallet)">{{ balanceStatusLabel(wallet) }}</span>
 				<span class="badge" :class="panelSessionBadgeClass(wallet.panel_session.status)">{{ panelSessionStatusLabel(wallet.panel_session.status) }}</span>
               </div>
@@ -112,29 +119,12 @@
               </p>
               <p v-if="wallet.balance_error" class="balance-error mt-2">{{ t('admin.upstreamFunds.wallet.syncFailed') }}</p>
             </div>
-            <div class="text-right">
-              <p class="metric-kicker">{{ t('admin.upstreamFunds.wallet.runway') }}</p>
-              <p class="runway-value data-number" :class="runwayClass(wallet)">
-                {{ wallet.runway_days === null ? t('admin.upstreamFunds.wallet.runwayUnknown') : t('admin.upstreamFunds.wallet.runwayDays', { days: wallet.runway_days.toFixed(1) }) }}
-              </p>
-            </div>
           </div>
 
-          <div class="runway-rail mt-4" :class="runwayClass(wallet)" :title="runwayTitle(wallet)">
-            <div class="runway-fill" :style="{ width: `${runwayPercent(wallet)}%` }"></div>
-            <span class="runway-marker runway-marker-alert" :style="{ left: `${markerPercent(wallet.alert_days, wallet.target_days)}%` }"></span>
-            <span class="runway-marker runway-marker-target" :style="{ left: '100%' }"></span>
-          </div>
-          <div class="mt-1 flex justify-between text-[11px] text-gray-500 dark:text-dark-300">
-            <span>{{ t('admin.upstreamFunds.wallet.alertLine', { days: wallet.alert_days }) }}</span>
-            <span>{{ wallet.currency }} / {{ t('admin.upstreamFunds.wallet.targetLine', { days: wallet.target_days }) }}</span>
-          </div>
-
-          <div class="cost-grid mt-5">
-            <div><span>{{ t('admin.upstreamFunds.wallet.cost1h') }}</span><strong>{{ formatCurrency(wallet.cost_1h, wallet.cost_currency) }}</strong></div>
-            <div><span>{{ t('admin.upstreamFunds.wallet.costToday') }}</span><strong>{{ formatCurrency(wallet.cost_today, wallet.cost_currency) }}</strong></div>
-            <div><span>{{ t('admin.upstreamFunds.wallet.cost24h') }}</span><strong>{{ formatCurrency(wallet.cost_24h, wallet.cost_currency) }}</strong></div>
-            <div><span>{{ t('admin.upstreamFunds.wallet.cost7d') }}</span><strong>{{ formatCurrency(wallet.cost_7d, wallet.cost_currency) }}</strong></div>
+          <div class="consumption-grid mt-5">
+            <div><span>{{ t('admin.upstreamFunds.wallet.consumption1h') }}</span><strong>{{ formatCurrency(wallet.consumption_1h, wallet.consumption_currency) }}</strong></div>
+            <div><span>{{ t('admin.upstreamFunds.wallet.consumptionToday') }}</span><strong>{{ formatCurrency(wallet.consumption_today, wallet.consumption_currency) }}</strong></div>
+            <div><span>{{ t('admin.upstreamFunds.wallet.consumption24h') }}</span><strong>{{ formatCurrency(wallet.consumption_24h, wallet.consumption_currency) }}</strong></div>
           </div>
 
           <div class="mt-5 grid grid-cols-1 gap-4 border-t border-[var(--promo-border-soft)] pt-4 sm:grid-cols-2">
@@ -157,13 +147,8 @@
           </div>
 
           <footer class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--promo-border-soft)] pt-4">
-            <div v-if="wallet.recommended_top_up !== null" class="text-xs font-bold text-[var(--promo-red-strong)] dark:text-[var(--promo-yellow)]">
-              {{ wallet.recommended_top_up > 0 ? t('admin.upstreamFunds.wallet.suggestedTopUp', { amount: formatCurrency(wallet.recommended_top_up, wallet.currency) }) : t('admin.upstreamFunds.wallet.healthyReserve') }}
-            </div>
-            <div v-else class="text-xs text-gray-500 dark:text-dark-300">{{ runwayUnavailableReason(wallet) }}</div>
             <div class="flex items-center gap-1">
 				<button type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.panelSession.manage')" @click="openPanelSessionDialog(wallet)"><Icon name="shield" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.panelSession.manage') }}</span></button>
-				<a v-if="wallet.recharge_mode === 'product' && wallet.card_site_url" class="btn btn-ghost btn-sm" :href="wallet.card_site_url" target="_blank" rel="noopener noreferrer" :title="t('admin.upstreamFunds.openCardSite')"><Icon name="externalLink" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.openCardSite') }}</span></a>
 				<button v-if="wallet.recharge_mode === 'product'" type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.redeemCode')" @click="openRedeemDialog(wallet)"><Icon name="key" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.redeemCode') }}</span></button>
               <button type="button" class="btn btn-ghost btn-sm btn-icon" :disabled="isWalletRefreshing(wallet.id) || !wallet.adapter_configured" :title="t('admin.upstreamFunds.refreshBalance')" @click="refreshOneWallet(wallet)"><Icon name="refresh" size="sm" :class="isWalletRefreshing(wallet.id) ? 'animate-spin' : ''" /></button>
               <button type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.recordBalance')" @click="openBalanceDialog(wallet)"><Icon name="dollar" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.recordBalance') }}</span></button>
@@ -196,11 +181,6 @@
           <div><label class="input-label">{{ t('admin.upstreamFunds.form.currency') }}</label><input v-model="walletForm.currency" class="input font-mono uppercase" maxlength="3" minlength="3" required /></div>
           <div><label class="input-label">{{ t('admin.upstreamFunds.form.rechargeMode') }}</label><Select v-model="walletForm.recharge_mode" :options="modeOptions" /></div>
 			<div v-if="walletForm.recharge_mode === 'product'" class="md:col-span-2"><label class="input-label">{{ t('admin.upstreamFunds.form.cardSiteURL') }}</label><input v-model.trim="walletForm.card_site_url" class="input" type="url" maxlength="2048" :placeholder="t('admin.upstreamFunds.form.cardSiteURLPlaceholder')" /></div>
-          <div><label class="input-label">{{ t('admin.upstreamFunds.form.tier') }}</label><Select v-model="walletForm.tier" :options="tierOptions" /></div>
-          <div class="grid grid-cols-2 gap-3">
-            <div><label class="input-label">{{ t('admin.upstreamFunds.form.alertDays') }}</label><input v-model.number="walletForm.alert_days" class="input" type="number" min="0" max="365" required /></div>
-            <div><label class="input-label">{{ t('admin.upstreamFunds.form.targetDays') }}</label><input v-model.number="walletForm.target_days" class="input" type="number" min="0" max="365" required /></div>
-          </div>
         </div>
         <label class="flex cursor-pointer items-center gap-2 text-sm font-bold text-[var(--promo-text)]"><input v-model="walletForm.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />{{ t('admin.upstreamFunds.form.enabled') }}</label>
         <div class="border-t border-[var(--promo-border-soft)] pt-4">
@@ -247,10 +227,18 @@
 				<p v-if="panelWallet && !panelWallet.panel_session.encryption_key_configured" class="redeem-warning">{{ t('admin.upstreamFunds.panelSession.ephemeralKeyWarning') }}</p>
 				<p v-if="panelWallet?.panel_session.last_error" class="redeem-warning">{{ t('admin.upstreamFunds.panelSession.lastError') }}</p>
 
-				<form v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" id="upstream-panel-login-form" class="space-y-4" @submit.prevent="submitPanelLogin">
+				<form v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor && !panelImportMode" id="upstream-panel-login-form" class="space-y-4" @submit.prevent="submitPanelLogin">
 					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.linkedAccount') }}</label><Select v-model="panelAccountID" :options="panelAccountOptions" :disabled="panelAuthorizing" /></div>
-					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.email') }}</label><input v-model.trim="panelEmail" class="input" type="email" maxlength="320" autocomplete="username" required /></div>
-					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.password') }}</label><input v-model="panelPassword" class="input" type="password" maxlength="4096" autocomplete="current-password" required /><p class="input-hint">{{ t('admin.upstreamFunds.panelSession.passwordHint') }}</p></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.email') }}</label><input v-model.trim="panelEmail" class="input" type="email" maxlength="320" autocomplete="username" :required="!panelWallet?.panel_session.credentials_saved" /></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.password') }}</label><input v-model="panelPassword" class="input" type="password" maxlength="4096" autocomplete="current-password" :required="!panelWallet?.panel_session.credentials_saved" /><p class="input-hint">{{ panelWallet?.panel_session.credentials_saved ? t('admin.upstreamFunds.panelSession.savedPasswordHint') : t('admin.upstreamFunds.panelSession.passwordHint') }}</p></div>
+				</form>
+
+				<form v-else-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" id="upstream-panel-import-form" class="space-y-4" @submit.prevent="submitPanelImport">
+					<p class="redeem-warning">{{ t('admin.upstreamFunds.panelSession.manualImportHint') }}</p>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.linkedAccount') }}</label><Select v-model="panelAccountID" :options="panelAccountOptions" :disabled="panelAuthorizing" /></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.accessToken') }}</label><textarea v-model.trim="panelImportAccessToken" class="input font-mono" rows="3" maxlength="65536" autocomplete="off" required /></div>
+					<div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.refreshToken') }}</label><textarea v-model.trim="panelImportRefreshToken" class="input font-mono" rows="2" maxlength="65536" autocomplete="off" /></div>
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.identityOptional') }}</label><input v-model.trim="panelImportIdentity" class="input" type="email" maxlength="320" autocomplete="off" /></div><div><label class="input-label">{{ t('admin.upstreamFunds.panelSession.expiresIn') }}</label><input v-model.number="panelImportExpiresIn" class="input data-number" type="number" min="0" max="31536000" /></div></div>
 				</form>
 
 				<form v-else-if="panelAwaitingTwoFactor" id="upstream-panel-2fa-form" class="space-y-4" @submit.prevent="submitPanelTwoFactor">
@@ -264,7 +252,9 @@
 					<button v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-secondary" :disabled="panelChecking" @click="checkPanelSessionNow"><Icon name="refresh" size="sm" class="mr-2" :class="panelChecking ? 'animate-spin' : ''" />{{ t('admin.upstreamFunds.panelSession.checkNow') }}</button>
 					<button v-if="panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-primary" @click="beginPanelRelogin">{{ t('admin.upstreamFunds.panelSession.relogin') }}</button>
 					<button type="button" class="btn btn-secondary" @click="closePanelSessionDialog">{{ t('common.cancel') }}</button>
-					<button v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="submit" form="upstream-panel-login-form" class="btn btn-primary" :disabled="panelAuthorizing || !panelAccountID || !panelEmail || !panelPassword">{{ panelAuthorizing ? t('common.processing') : t('admin.upstreamFunds.panelSession.login') }}</button>
+					<button v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor" type="button" class="btn btn-ghost" @click="panelImportMode = !panelImportMode">{{ panelImportMode ? t('admin.upstreamFunds.panelSession.usePasswordLogin') : t('admin.upstreamFunds.panelSession.useManualImport') }}</button>
+					<button v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor && !panelImportMode" type="submit" form="upstream-panel-login-form" class="btn btn-primary" :disabled="panelAuthorizing || !canSubmitPanelLogin">{{ panelAuthorizing ? t('common.processing') : t('admin.upstreamFunds.panelSession.login') }}</button>
+					<button v-if="!panelWallet?.panel_session.configured && !panelAwaitingTwoFactor && panelImportMode" type="submit" form="upstream-panel-import-form" class="btn btn-primary" :disabled="panelAuthorizing || !canSubmitPanelImport">{{ panelAuthorizing ? t('common.processing') : t('admin.upstreamFunds.panelSession.importSession') }}</button>
 					<button v-if="panelAwaitingTwoFactor" type="submit" form="upstream-panel-2fa-form" class="btn btn-primary" :disabled="panelAuthorizing || !isValidPanelTwoFactorCode">{{ panelAuthorizing ? t('common.verifying') : t('admin.upstreamFunds.panelSession.verify') }}</button>
 				</div>
 			</template>
@@ -292,10 +282,13 @@
 				<p v-if="rechargeWallet && !rechargeWallet.recharge_configured" class="redeem-warning">{{ t('admin.upstreamFunds.rechargeForm.unavailable') }}</p>
 				<template v-else>
 					<div><label class="input-label">{{ t('admin.upstreamFunds.rechargeForm.amount') }}</label><input v-model.number="rechargeAmount" class="input data-number" type="number" min="0.01" step="0.01" required /></div>
-					<div><label class="input-label">{{ t('admin.upstreamFunds.rechargeForm.channel') }}</label><Select v-model="selectedPaymentChannelID" :options="paymentChannelOptions" :disabled="loadingPaymentChannels" /></div>
+					<div>
+						<label class="input-label">{{ t('admin.upstreamFunds.rechargeForm.channel') }}</label>
+						<div class="fixed-payment-channel"><Icon name="creditCard" size="md" /><span>{{ t('admin.upstreamFunds.rechargeForm.alipay') }}</span></div>
+					</div>
 				</template>
 			</form>
-			<template #footer><div class="flex justify-end gap-3"><button type="button" class="btn btn-secondary" @click="closeRechargeDialog">{{ rechargeOrder ? t('common.close') : t('common.cancel') }}</button><button v-if="rechargeOrder?.status === 'manual_review'" type="button" class="btn btn-primary" :disabled="completingRechargeOrder || manualBalanceAfter < 0 || !manualCompleteReason" @click="manualCompleteRecharge">{{ t('admin.upstreamFunds.rechargeForm.manualComplete') }}</button><button v-if="!rechargeOrder" type="submit" form="upstream-recharge-form" class="btn btn-primary" :disabled="creatingRechargeOrder || !rechargeWallet?.recharge_configured || !selectedPaymentChannelID || rechargeAmount <= 0">{{ creatingRechargeOrder ? t('common.processing') : t('admin.upstreamFunds.rechargeForm.createOrder') }}</button></div></template>
+			<template #footer><div class="flex justify-end gap-3"><button type="button" class="btn btn-secondary" @click="closeRechargeDialog">{{ rechargeOrder ? t('common.close') : t('common.cancel') }}</button><button v-if="rechargeOrder?.status === 'manual_review'" type="button" class="btn btn-primary" :disabled="completingRechargeOrder || manualBalanceAfter < 0 || !manualCompleteReason" @click="manualCompleteRecharge">{{ t('admin.upstreamFunds.rechargeForm.manualComplete') }}</button><button v-if="!rechargeOrder" type="submit" form="upstream-recharge-form" class="btn btn-primary" :disabled="creatingRechargeOrder || !rechargeWallet?.recharge_configured || rechargeAmount <= 0">{{ creatingRechargeOrder ? t('common.processing') : t('admin.upstreamFunds.rechargeForm.createOrder') }}</button></div></template>
 		</BaseDialog>
 		<TotpStepUpDialog :controller="panelSessionStepUp" />
   </AppLayout>
@@ -304,11 +297,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type UpstreamFundsAccount, type UpstreamFundsSummary, type UpstreamPanelSessionStatus, type UpstreamPaymentChannel, type UpstreamRechargeOrder, type UpstreamWallet, type UpstreamWalletInput } from '@/api/admin'
+import { adminAPI, type UpstreamFundsAccount, type UpstreamFundsSummary, type UpstreamPanelSessionStatus, type UpstreamRechargeOrder, type UpstreamWallet, type UpstreamWalletInput } from '@/api/admin'
+import { UPSTREAM_ALIPAY_CHANNEL_ID, type UpstreamFundsGroup } from '@/api/admin/upstreamFunds'
 import { useAppStore } from '@/stores/app'
 import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from '@/composables/useStepUp'
 import { formatCurrency, formatRelativeTime } from '@/utils/format'
 import {
+	classifyUpstreamBalance,
 	isUpstreamRechargePollingTerminal,
 	nextUpstreamRechargePollDelay,
 	selectUpstreamBalanceSyncTargets,
@@ -326,11 +321,13 @@ import QRCode from 'qrcode'
 const { t } = useI18n()
 const appStore = useAppStore()
 type BalanceTab = 'all' | 'healthy' | 'normal' | 'alert'
-type BalanceStatus = Exclude<BalanceTab, 'all'> | 'unknown'
+type BalanceStatus = 'healthy' | 'normal' | 'alert' | 'unknown'
 const wallets = ref<UpstreamWallet[]>([])
 const syncWallets = ref<UpstreamWallet[]>([])
 const accountOptions = ref<UpstreamFundsAccount[]>([])
+const availableGroups = ref<UpstreamFundsGroup[]>([])
 const searchQuery = ref('')
+const selectedGroupID = ref<number | null>(null)
 const accountSearch = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -351,9 +348,6 @@ const panelWallet = ref<UpstreamWallet | null>(null)
 const balanceValue = ref<number | null>(null)
 const redeemCodeValue = ref('')
 const rechargeAmount = ref(100)
-const paymentChannels = ref<UpstreamPaymentChannel[]>([])
-const selectedPaymentChannelID = ref('')
-const loadingPaymentChannels = ref(false)
 const creatingRechargeOrder = ref(false)
 const completingRechargeOrder = ref(false)
 const rechargeOrder = ref<UpstreamRechargeOrder | null>(null)
@@ -363,6 +357,11 @@ const rechargeQRCanvas = ref<HTMLCanvasElement | null>(null)
 const panelAccountID = ref<number | null>(null)
 const panelEmail = ref('')
 const panelPassword = ref('')
+const panelImportMode = ref(false)
+const panelImportAccessToken = ref('')
+const panelImportRefreshToken = ref('')
+const panelImportIdentity = ref('')
+const panelImportExpiresIn = ref(86400)
 const panelChallenge = ref('')
 const panelTwoFactorCode = ref('')
 const panelAuthorizing = ref(false)
@@ -371,11 +370,14 @@ const panelRemoving = ref(false)
 const panelAwaitingTwoFactor = ref(false)
 const panelSessionStepUp = useStepUp()
 const activeBalanceTab = ref<BalanceTab>('all')
-const summary = reactive<UpstreamFundsSummary>({ wallet_count: 0, enabled_count: 0, attention_count: 0, cost_today: 0, cost_24h: 0, balance_by_currency: {} })
-const walletForm = reactive<UpstreamWalletInput>({ name: '', provider: '', currency: 'USD', recharge_mode: 'manual', card_site_url: '', tier: 'primary', enabled: true, alert_days: 2, target_days: 7, account_ids: [] })
+const summary = reactive<UpstreamFundsSummary>({ wallet_count: 0, enabled_count: 0, attention_count: 0, consumption_today: 0, consumption_24h: 0, balance_by_currency: {} })
+const walletForm = reactive<UpstreamWalletInput>({ name: '', provider: '', currency: 'USD', recharge_mode: 'manual', card_site_url: '', enabled: true, account_ids: [] })
 
 const modeOptions = computed(() => (['direct', 'product', 'manual'] as const).map(value => ({ value, label: t(`admin.upstreamFunds.mode.${value}`) })))
-const tierOptions = computed(() => (['primary', 'hot_backup', 'cold_backup'] as const).map(value => ({ value, label: t(`admin.upstreamFunds.tier.${value}`) })))
+const groupOptions = computed(() => [
+	{ value: null, label: t('admin.upstreamFunds.groupFilter.all') },
+	...availableGroups.value.map(group => ({ value: group.id, label: group.name }))
+])
 const filteredAccountOptions = computed(() => {
   const needle = accountSearch.value.trim().toLowerCase()
   if (!needle) return accountOptions.value
@@ -401,38 +403,44 @@ const filteredWallets = computed(() => {
 	if (activeBalanceTab.value === 'all') return wallets.value
 	return wallets.value.filter(wallet => walletBalanceStatus(wallet) === activeBalanceTab.value)
 })
-const paymentChannelOptions = computed(() => paymentChannels.value.map(channel => ({
-	value: channel.id,
-	label: `${channel.name} · ${channel.currency}`
-})))
 const panelAccountOptions = computed(() => (panelWallet.value?.accounts || []).map(account => ({
 	value: account.id,
 	label: `${account.name} · #${account.id}`
 })))
 const isValidPanelTwoFactorCode = computed(() => /^[0-9]{6}$/.test(panelTwoFactorCode.value))
+const canSubmitPanelImport = computed(() => Boolean(panelAccountID.value && panelImportAccessToken.value.trim()))
+const canSubmitPanelLogin = computed(() => {
+	if (panelWallet.value?.panel_session.credentials_saved) return true
+	return Boolean(panelAccountID.value && panelEmail.value && panelPassword.value)
+})
 
 let searchTimer: number | null = null
 let syncTimer: number | null = null
 let rechargePollTimer: number | null = null
 let rechargePollFailures = 0
 let rechargePollGeneration = 0
+let overviewRequestGeneration = 0
 let componentActive = false
 const inflightWalletRefreshes = new Map<number, Promise<UpstreamWallet>>()
 
 async function loadOverview(options: { silent?: boolean } = {}) {
-	const silent = options.silent === true
-	const search = searchQuery.value.trim()
-	if (!silent) loading.value = true
-  try {
-    const overview = await adminAPI.upstreamFunds.list(search || undefined)
-    wallets.value = overview.wallets || []
-		syncWallets.value = updateUpstreamSyncCatalog(syncWallets.value, overview.wallets || [], search)
-    Object.assign(summary, overview.summary)
+		const silent = options.silent === true
+		const search = searchQuery.value.trim()
+		const groupID = selectedGroupID.value
+		const requestGeneration = ++overviewRequestGeneration
+		if (!silent) loading.value = true
+	  try {
+	    const overview = await adminAPI.upstreamFunds.list(search || undefined, groupID)
+			if (requestGeneration !== overviewRequestGeneration) return
+	    wallets.value = overview.wallets || []
+			syncWallets.value = updateUpstreamSyncCatalog(syncWallets.value, overview.wallets || [], search, groupID)
+			if (overview.groups?.length) availableGroups.value = overview.groups
+	    Object.assign(summary, overview.summary)
   } catch (error: any) {
 		if (!silent) appStore.showError(error?.message || t('admin.upstreamFunds.messages.loadFailed'))
   } finally {
-		if (!silent) loading.value = false
-  }
+			if (!silent && requestGeneration === overviewRequestGeneration) loading.value = false
+	  }
 }
 
 async function loadSyncWalletCatalog(): Promise<UpstreamWallet[]> {
@@ -536,13 +544,27 @@ async function loadAccounts() {
   }
 }
 
+async function loadGroupOptions() {
+	try {
+		const groups = await adminAPI.groups.getAll()
+		availableGroups.value = groups.map(group => ({ id: group.id, name: group.name }))
+	} catch (error) {
+		console.error('Failed to load upstream group options', error)
+	}
+}
+
 function handleSearch() {
-  if (searchTimer) window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(loadOverview, 280)
+	  if (searchTimer) window.clearTimeout(searchTimer)
+	  searchTimer = window.setTimeout(loadOverview, 280)
+}
+
+function handleGroupChange() {
+	if (searchTimer !== null) window.clearTimeout(searchTimer)
+	void loadOverview()
 }
 
 function resetWalletForm() {
-  Object.assign(walletForm, { name: '', provider: '', currency: 'USD', recharge_mode: 'manual', card_site_url: '', tier: 'primary', enabled: true, alert_days: 2, target_days: 7, account_ids: [] })
+	  Object.assign(walletForm, { name: '', provider: '', currency: 'USD', recharge_mode: 'manual', card_site_url: '', enabled: true, account_ids: [] })
   accountSearch.value = ''
 }
 
@@ -554,8 +576,8 @@ function openCreateDialog() {
 }
 
 function openEditDialog(wallet: UpstreamWallet) {
-  editingWallet.value = wallet
-  Object.assign(walletForm, { name: wallet.name, provider: wallet.provider, currency: wallet.currency, recharge_mode: wallet.recharge_mode, card_site_url: wallet.card_site_url || '', tier: wallet.tier, enabled: wallet.enabled, alert_days: wallet.alert_days, target_days: wallet.target_days, account_ids: [...wallet.account_ids] })
+	  editingWallet.value = wallet
+	  Object.assign(walletForm, { name: wallet.name, provider: wallet.provider, currency: wallet.currency, recharge_mode: wallet.recharge_mode, card_site_url: wallet.card_site_url || '', enabled: wallet.enabled, account_ids: [...wallet.account_ids] })
   accountSearch.value = ''
   showWalletDialog.value = true
   void loadAccounts()
@@ -574,11 +596,7 @@ function toggleAccount(id: number) {
 }
 
 async function saveWallet() {
-  if (walletForm.target_days < walletForm.alert_days) {
-    appStore.showError(t('admin.upstreamFunds.messages.invalidReserve'))
-    return
-  }
-  saving.value = true
+	  saving.value = true
   try {
     if (editingWallet.value) {
       await adminAPI.upstreamFunds.update(editingWallet.value.id, walletForm)
@@ -605,9 +623,14 @@ function openBalanceDialog(wallet: UpstreamWallet) {
 function closeBalanceDialog() { showBalanceDialog.value = false; balanceWallet.value = null; balanceValue.value = null }
 
 function resetPanelLoginForm() {
-	panelAccountID.value = panelWallet.value?.panel_session.account_id || panelWallet.value?.accounts[0]?.id || null
-	panelEmail.value = ''
+	panelAccountID.value = panelWallet.value?.panel_session.saved_account_id || panelWallet.value?.panel_session.account_id || panelWallet.value?.accounts[0]?.id || null
+	panelEmail.value = panelWallet.value?.panel_session.saved_identity || panelWallet.value?.panel_session.identity || ''
 	panelPassword.value = ''
+	panelImportMode.value = false
+	panelImportAccessToken.value = ''
+	panelImportRefreshToken.value = ''
+	panelImportIdentity.value = ''
+	panelImportExpiresIn.value = 86400
 	panelChallenge.value = ''
 	panelTwoFactorCode.value = ''
 	panelAwaitingTwoFactor.value = false
@@ -625,6 +648,11 @@ function closePanelSessionDialog() {
 	panelWallet.value = null
 	panelEmail.value = ''
 	panelPassword.value = ''
+	panelImportAccessToken.value = ''
+	panelImportRefreshToken.value = ''
+	panelImportIdentity.value = ''
+	panelImportExpiresIn.value = 86400
+	panelImportMode.value = false
 	panelChallenge.value = ''
 	panelTwoFactorCode.value = ''
 	panelAwaitingTwoFactor.value = false
@@ -649,12 +677,14 @@ function handlePanelSensitiveError(error: any, fallbackKey: string) {
 }
 
 async function submitPanelLogin() {
-	if (!panelWallet.value || !panelAccountID.value || !panelEmail.value || !panelPassword.value) return
+	if (!panelWallet.value || !canSubmitPanelLogin.value) return
 	panelAuthorizing.value = true
 	try {
-		const result = await panelSessionStepUp.run(() => adminAPI.upstreamFunds.loginPanelSession(panelWallet.value!.id, {
-			account_id: panelAccountID.value!, email: panelEmail.value, password: panelPassword.value
-		}))
+			const result = await panelSessionStepUp.run(() => adminAPI.upstreamFunds.loginPanelSession(panelWallet.value!.id, {
+				...(panelAccountID.value ? { account_id: panelAccountID.value } : {}),
+				...(panelEmail.value ? { email: panelEmail.value } : {}),
+				...(panelPassword.value ? { password: panelPassword.value } : {})
+			}))
 		panelPassword.value = ''
 		if (result.requires_2fa && result.challenge) {
 			panelChallenge.value = result.challenge
@@ -686,6 +716,26 @@ async function submitPanelTwoFactor() {
 	} catch (error: any) {
 		panelTwoFactorCode.value = ''
 		handlePanelSensitiveError(error, 'admin.upstreamFunds.messages.panelVerifyFailed')
+	} finally {
+		panelAuthorizing.value = false
+	}
+}
+
+async function submitPanelImport() {
+	if (!panelWallet.value || !canSubmitPanelImport.value) return
+	panelAuthorizing.value = true
+	try {
+		await panelSessionStepUp.run(() => adminAPI.upstreamFunds.importPanelSession(panelWallet.value!.id, {
+			account_id: panelAccountID.value!,
+			access_token: panelImportAccessToken.value.trim(),
+			...(panelImportRefreshToken.value.trim() ? { refresh_token: panelImportRefreshToken.value.trim() } : {}),
+			...(panelImportIdentity.value.trim() ? { identity: panelImportIdentity.value.trim() } : {}),
+			expires_in: panelImportExpiresIn.value || 0
+		}))
+		appStore.showSuccess(t('admin.upstreamFunds.messages.panelImported'))
+		await refreshPanelWallet()
+	} catch (error: any) {
+		handlePanelSensitiveError(error, 'admin.upstreamFunds.messages.panelImportFailed')
 	} finally {
 		panelAuthorizing.value = false
 	}
@@ -778,26 +828,8 @@ async function openRechargeDialog(wallet: UpstreamWallet) {
 	rechargeOrder.value = null
 	manualBalanceAfter.value = wallet.balance ?? 0
 	manualCompleteReason.value = ''
-	paymentChannels.value = []
-	selectedPaymentChannelID.value = ''
-	rechargeAmount.value = wallet.recommended_top_up && wallet.recommended_top_up > 0
-		? Math.ceil(wallet.recommended_top_up * 100) / 100
-		: 100
+	rechargeAmount.value = 100
 	showRechargeDialog.value = true
-	if (!wallet.recharge_configured) return
-	loadingPaymentChannels.value = true
-	try {
-		paymentChannels.value = await adminAPI.upstreamFunds.listPaymentChannels(wallet.id)
-		const first = paymentChannels.value[0]
-		if (first) {
-			selectedPaymentChannelID.value = first.id
-			if (first.single_min > 0 && rechargeAmount.value < first.single_min) rechargeAmount.value = first.single_min
-		}
-	} catch (error: any) {
-		appStore.showError(error?.message || t('admin.upstreamFunds.messages.channelsFailed'))
-	} finally {
-		loadingPaymentChannels.value = false
-	}
 }
 
 function closeRechargeDialog() {
@@ -805,8 +837,6 @@ function closeRechargeDialog() {
 	showRechargeDialog.value = false
 	rechargeWallet.value = null
 	rechargeOrder.value = null
-	paymentChannels.value = []
-	selectedPaymentChannelID.value = ''
 }
 
 function stopRechargePolling() {
@@ -828,12 +858,12 @@ function scheduleRechargePoll(delay = UPSTREAM_RECHARGE_POLL_BASE_MS) {
 }
 
 async function createDirectRechargeOrder() {
-	if (!rechargeWallet.value || !selectedPaymentChannelID.value || rechargeAmount.value <= 0) return
+	if (!rechargeWallet.value || rechargeAmount.value <= 0) return
 	creatingRechargeOrder.value = true
 	try {
 		rechargeOrder.value = await adminAPI.upstreamFunds.createRechargeOrder(rechargeWallet.value.id, {
 			amount: rechargeAmount.value,
-			payment_channel_id: selectedPaymentChannelID.value,
+			payment_channel_id: UPSTREAM_ALIPAY_CHANNEL_ID,
 			idempotency_key: createIdempotencyKey()
 		})
 		await renderRechargeQR()
@@ -918,14 +948,10 @@ function rechargeStatusClass(status: UpstreamRechargeOrder['status']) {
 	return 'badge-primary'
 }
 
-function tierLabel(value: UpstreamWallet['tier']) { return t(`admin.upstreamFunds.tier.${value}`) }
 function modeLabel(value: UpstreamWallet['recharge_mode']) { return t(`admin.upstreamFunds.mode.${value}`) }
 function formatWalletBalance(wallet: UpstreamWallet) { return wallet.balance === null ? '—' : formatCurrency(wallet.balance, wallet.currency) }
 function walletBalanceStatus(wallet: UpstreamWallet): BalanceStatus {
-	if (wallet.balance === null) return 'unknown'
-	if (wallet.balance > 100) return 'healthy'
-	if (wallet.balance >= 50) return 'normal'
-	return 'alert'
+	return classifyUpstreamBalance(wallet.balance)
 }
 function balanceStatusLabel(wallet: UpstreamWallet) { return t(`admin.upstreamFunds.tabs.${walletBalanceStatus(wallet)}`) }
 function balanceStatusBadgeClass(wallet: UpstreamWallet) {
@@ -939,18 +965,11 @@ function panelSessionBadgeClass(status: UpstreamPanelSessionStatus) {
 	if (status === 'expired') return 'badge-danger'
 	return 'badge-gray'
 }
-function runwayClass(wallet: UpstreamWallet) { return wallet.runway_days !== null && wallet.runway_days < wallet.alert_days ? 'runway-low' : wallet.runway_days !== null ? 'runway-healthy' : 'runway-unknown' }
-function runwayPercent(wallet: UpstreamWallet) { return wallet.runway_days === null || wallet.target_days <= 0 ? 0 : Math.min(100, Math.max(0, wallet.runway_days / wallet.target_days * 100)) }
-function markerPercent(days: number, target: number) { return target <= 0 ? 0 : Math.min(100, Math.max(0, days / target * 100)) }
-function runwayTitle(wallet: UpstreamWallet) { return wallet.runway_days === null ? runwayUnavailableReason(wallet) : `${t('admin.upstreamFunds.wallet.alertLine', { days: wallet.alert_days })} / ${t('admin.upstreamFunds.wallet.targetLine', { days: wallet.target_days })}` }
-function runwayUnavailableReason(wallet: UpstreamWallet) { return wallet.currency !== wallet.cost_currency ? t('admin.upstreamFunds.wallet.runwayCurrencyMismatch') : t('admin.upstreamFunds.wallet.runwayNoCost') }
-
 onMounted(() => {
 	componentActive = true
 	void (async () => {
-		await Promise.all([loadOverview(), loadAccounts()])
+		await Promise.all([loadOverview(), loadAccounts(), loadGroupOptions(), syncAllBalances(false)])
 		if (!componentActive) return
-		await syncAllBalances(false)
 		scheduleBalanceSync()
 	})()
 })
@@ -999,22 +1018,11 @@ onBeforeUnmount(() => {
 .balance-value { margin-top: 0.2rem; font-size: 1.8rem; font-weight: 900; line-height: 1; }
 .balance-error { color: var(--promo-red-strong); font-size: 0.72rem; font-weight: 800; }
 @media (min-width: 640px) { .balance-value { font-size: 2.45rem; } }
-.runway-value { margin-top: 0.2rem; font-size: 1.15rem; font-weight: 900; }
-.runway-low { color: var(--promo-red-strong); }
-.runway-healthy { color: var(--promo-green); }
-.runway-unknown { color: var(--promo-text-muted); }
-.runway-rail { position: relative; height: 0.72rem; overflow: visible; border: 2px solid var(--promo-border); border-radius: 99px; background: var(--promo-surface-muted); }
-.runway-fill { height: 100%; min-width: 0; border-radius: 99px; background: var(--promo-green); transition: width 240ms ease; }
-.runway-low .runway-fill { background: var(--promo-red); }
-.runway-unknown .runway-fill { background: var(--promo-border-soft); }
-.runway-marker { position: absolute; top: -0.3rem; height: 1.25rem; width: 2px; background: var(--promo-black); }
-.runway-marker-alert { background: var(--promo-red); }
-.runway-marker-target { background: var(--promo-black); }
-.cost-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
-@media (min-width: 640px) { .cost-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.cost-grid > div { min-width: 0; border-left: 3px solid var(--promo-yellow); padding-left: 0.6rem; }
-.cost-grid span { display: block; color: var(--promo-text-muted); font-size: 0.72rem; line-height: 1.4; }
-.cost-grid strong { display: block; margin-top: 0.25rem; overflow: hidden; font-family: var(--promo-font-body); font-size: 0.88rem; font-variant-numeric: tabular-nums; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.consumption-grid { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 0.55rem; }
+@media (min-width: 480px) { .consumption-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.consumption-grid > div { min-width: 0; border-left: 3px solid var(--promo-yellow); padding-left: 0.6rem; }
+.consumption-grid span { display: block; color: var(--promo-text-muted); font-size: 0.72rem; line-height: 1.4; }
+.consumption-grid strong { display: block; margin-top: 0.25rem; overflow: hidden; font-family: var(--promo-font-body); font-size: 0.88rem; font-variant-numeric: tabular-nums; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .tag { max-width: 100%; overflow: hidden; border: 1px solid var(--promo-border-soft); border-radius: 999px; background: var(--promo-surface-raised); padding: 0.18rem 0.48rem; color: var(--promo-text); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 .tag-cyan { border-color: var(--promo-cyan-strong); background: color-mix(in srgb, var(--promo-cyan) 24%, transparent); }
@@ -1026,6 +1034,7 @@ onBeforeUnmount(() => {
 .redeem-warning { border-left: 3px solid var(--promo-yellow); background: var(--promo-surface-muted); padding: 0.65rem 0.75rem; color: var(--promo-text-muted); font-size: 0.78rem; line-height: 1.45; }
 .recharge-qr { display: flex; min-height: 248px; align-items: center; justify-content: center; border: 2px solid var(--promo-border); background: #fff; padding: 0.75rem; }
 .recharge-qr canvas { display: block; height: 224px; width: 224px; max-width: 100%; }
+.fixed-payment-channel { display: flex; min-height: 2.75rem; align-items: center; gap: 0.6rem; border: 2px solid var(--promo-border-soft); border-radius: var(--promo-radius-sm); background: var(--promo-surface-muted); padding: 0.65rem 0.75rem; color: var(--promo-text); font-size: 0.86rem; font-weight: 800; }
 .account-picker { max-height: 14rem; overflow-y: auto; border: 2px solid var(--promo-border-soft); border-radius: var(--promo-radius-sm); background: var(--promo-surface); }
 .account-option { display: flex; align-items: center; gap: 0.65rem; border-bottom: 1px solid var(--promo-border-soft); padding: 0.65rem 0.75rem; cursor: pointer; }
 .account-option:last-child { border-bottom: 0; }

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -23,10 +24,7 @@ type upstreamWalletRequest struct {
 	Currency     string  `json:"currency" binding:"required,max=8"`
 	RechargeMode string  `json:"recharge_mode" binding:"required"`
 	CardSiteURL  string  `json:"card_site_url" binding:"max=2048"`
-	Tier         string  `json:"tier" binding:"required"`
 	Enabled      bool    `json:"enabled"`
-	AlertDays    int     `json:"alert_days" binding:"min=0,max=365"`
-	TargetDays   int     `json:"target_days" binding:"min=0,max=365"`
 	AccountIDs   []int64 `json:"account_ids"`
 }
 
@@ -50,9 +48,9 @@ type upstreamManualCompleteRequest struct {
 }
 
 type upstreamPanelLoginRequest struct {
-	AccountID int64  `json:"account_id" binding:"required,gt=0"`
-	Email     string `json:"email" binding:"required,email,max=320"`
-	Password  string `json:"password" binding:"required,max=4096"`
+	AccountID int64  `json:"account_id" binding:"omitempty,gt=0"`
+	Email     string `json:"email" binding:"omitempty,email,max=320"`
+	Password  string `json:"password" binding:"omitempty,max=4096"`
 }
 
 type upstreamPanelTwoFactorRequest struct {
@@ -60,8 +58,26 @@ type upstreamPanelTwoFactorRequest struct {
 	Code      string `json:"code" binding:"required,len=6"`
 }
 
+type upstreamPanelImportRequest struct {
+	AccountID    int64      `json:"account_id" binding:"required,gt=0"`
+	AccessToken  string     `json:"access_token" binding:"required,max=65536"`
+	RefreshToken string     `json:"refresh_token" binding:"max=65536"`
+	Identity     string     `json:"identity" binding:"omitempty,max=320"`
+	ExpiresIn    int        `json:"expires_in" binding:"min=0,max=31536000"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+}
+
 func (h *UpstreamFundsHandler) ListWallets(c *gin.Context) {
-	overview, err := h.service.ListWallets(c.Request.Context(), c.Query("search"))
+	groupID := int64(0)
+	if raw := c.Query("group_id"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(c, "invalid upstream group id")
+			return
+		}
+		groupID = parsed
+	}
+	overview, err := h.service.ListWallets(c.Request.Context(), c.Query("search"), groupID)
 	if response.ErrorFrom(c, err) {
 		return
 	}
@@ -183,7 +199,7 @@ func (h *UpstreamFundsHandler) LoginPanelSession(c *gin.Context) {
 	}
 	var req upstreamPanelLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "valid upstream account, email and password are required")
+		response.BadRequest(c, "invalid upstream panel login request")
 		return
 	}
 	result, err := h.service.LoginPanelSession(c.Request.Context(), id, service.UpstreamPanelLoginInput{
@@ -212,6 +228,26 @@ func (h *UpstreamFundsHandler) CompletePanelSessionTwoFactor(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func (h *UpstreamFundsHandler) ImportPanelSession(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	var req upstreamPanelImportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "valid upstream panel session import is required")
+		return
+	}
+	state, err := h.service.ImportPanelSession(c.Request.Context(), id, service.UpstreamPanelImportInput{
+		AccountID: req.AccountID, AccessToken: req.AccessToken, RefreshToken: req.RefreshToken,
+		Identity: req.Identity, ExpiresIn: req.ExpiresIn, ExpiresAt: req.ExpiresAt,
+	})
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, state)
 }
 
 func (h *UpstreamFundsHandler) CheckPanelSession(c *gin.Context) {
@@ -363,10 +399,7 @@ func requestToWalletInput(req upstreamWalletRequest) service.UpstreamWalletInput
 		Currency:     req.Currency,
 		RechargeMode: req.RechargeMode,
 		CardSiteURL:  req.CardSiteURL,
-		Tier:         req.Tier,
 		Enabled:      req.Enabled,
-		AlertDays:    req.AlertDays,
-		TargetDays:   req.TargetDays,
 		AccountIDs:   req.AccountIDs,
 	}
 }

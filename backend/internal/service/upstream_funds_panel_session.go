@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 )
@@ -33,6 +34,7 @@ const (
 	upstreamPanelSessionSecretVersion       = 1
 	upstreamPanelRequestTimeout             = 10 * time.Second
 	upstreamPanelAccessFallbackTTL          = 15 * time.Minute
+	upstreamPanelImportedFallbackTTL        = 24 * time.Hour
 	upstreamPanelRefreshWindow              = 2 * time.Minute
 	upstreamPanelHealthyCheckInterval       = 2 * time.Minute
 	upstreamPanelRetryCheckInterval         = 30 * time.Second
@@ -65,11 +67,19 @@ var (
 		"UPSTREAM_PANEL_ACCOUNT_INVALID",
 		"select a linked account with a valid upstream base URL",
 	)
+	ErrUpstreamPanelManualImportRequired = infraerrors.ServiceUnavailable(
+		"UPSTREAM_PANEL_MANUAL_IMPORT_REQUIRED",
+		"upstream login requires browser verification; import the authenticated panel session instead",
+	)
 )
 
 type UpstreamPanelSessionState struct {
 	Configured              bool       `json:"configured"`
 	EncryptionKeyConfigured bool       `json:"encryption_key_configured"`
+	CredentialsSaved        bool       `json:"credentials_saved"`
+	SavedIdentity           string     `json:"saved_identity,omitempty"`
+	SavedAccountID          int64      `json:"saved_account_id,omitempty"`
+	SavedAccountName        string     `json:"saved_account_name,omitempty"`
 	Status                  string     `json:"status"`
 	Identity                string     `json:"identity,omitempty"`
 	AccountID               int64      `json:"account_id,omitempty"`
@@ -91,6 +101,15 @@ type UpstreamPanelTwoFactorInput struct {
 	Code      string
 }
 
+type UpstreamPanelImportInput struct {
+	AccountID    int64
+	AccessToken  string
+	RefreshToken string
+	Identity     string
+	ExpiresIn    int
+	ExpiresAt    *time.Time
+}
+
 type UpstreamPanelLoginResult struct {
 	Requires2FA bool                      `json:"requires_2fa"`
 	Challenge   string                    `json:"challenge,omitempty"`
@@ -99,6 +118,8 @@ type UpstreamPanelLoginResult struct {
 
 type UpstreamPanelSessionRepository interface {
 	SaveUpstreamPanelSession(ctx context.Context, walletID int64, ciphertext string, state UpstreamPanelSessionState) error
+	SaveUpstreamPanelCredentials(ctx context.Context, walletID, accountID int64, identity, passwordCiphertext string) error
+	ClearUpstreamPanelCredentials(ctx context.Context, walletID int64) error
 	CompareAndSwapUpstreamPanelSession(ctx context.Context, walletID int64, expectedCiphertext, ciphertext string, state UpstreamPanelSessionState) (bool, error)
 	ClearUpstreamPanelSession(ctx context.Context, walletID int64) error
 	ListDueUpstreamPanelSessionWalletIDs(ctx context.Context, now time.Time, limit int) ([]int64, error)
@@ -112,6 +133,15 @@ type upstreamPanelSessionSecret struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	AccessExpiry time.Time `json:"access_expiry"`
+}
+
+const upstreamPanelCredentialsVersion = 1
+
+type upstreamPanelLoginCredentials struct {
+	Version   int    `json:"version"`
+	AccountID int64  `json:"account_id"`
+	Identity  string `json:"identity"`
+	Password  string `json:"password"`
 }
 
 type upstreamPanelChallenge struct {
@@ -195,6 +225,16 @@ func (s *UpstreamFundsService) normalizePanelSessionState(wallet *UpstreamWallet
 	state := wallet.PanelSession
 	state.Configured = strings.TrimSpace(wallet.PanelSessionCiphertext) != ""
 	state.EncryptionKeyConfigured = s != nil && s.panelSessions != nil && s.panelSessions.keyConfigured
+	state.CredentialsSaved = strings.TrimSpace(wallet.PanelCredentialCiphertext) != ""
+	state.SavedIdentity = strings.TrimSpace(wallet.PanelCredentialIdentity)
+	state.SavedAccountID = wallet.PanelCredentialAccountID
+	state.SavedAccountName = ""
+	for _, account := range wallet.Accounts {
+		if account.ID == state.SavedAccountID {
+			state.SavedAccountName = account.Name
+			break
+		}
+	}
 	if !state.Configured {
 		state.Status = UpstreamPanelSessionStatusNotConfigured
 		state.Identity = ""
@@ -225,21 +265,62 @@ func (s *UpstreamFundsService) LoginPanelSession(ctx context.Context, walletID i
 	if err != nil {
 		return nil, err
 	}
+	wallet, err := s.repo.GetWallet(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
 	email := strings.TrimSpace(input.Email)
-	if email == "" || len(email) > 320 || input.Password == "" || len(input.Password) > 4096 {
+	password := input.Password
+	accountID := input.AccountID
+	if email == "" {
+		email = strings.TrimSpace(wallet.PanelCredentialIdentity)
+	}
+	if accountID <= 0 {
+		accountID = wallet.PanelCredentialAccountID
+	}
+	if saved, savedErr := runtime.decryptCredentials(wallet.PanelCredentialCiphertext); savedErr == nil {
+		if password == "" && ((accountID > 0 && accountID != saved.AccountID) || (email != "" && !strings.EqualFold(email, saved.Identity))) {
+			return nil, ErrUpstreamPanelLoginRejected
+		}
+		if email == "" {
+			email = saved.Identity
+		}
+		if password == "" {
+			password = saved.Password
+		}
+		if accountID <= 0 {
+			accountID = saved.AccountID
+		}
+	}
+	if email == "" || len(email) > 320 || password == "" || len(password) > 4096 {
 		return nil, ErrUpstreamPanelLoginRejected
 	}
-	wallet, account, origin, err := s.panelLoginTarget(ctx, walletID, input.AccountID)
+	wallet, account, origin, err := s.panelLoginTarget(ctx, walletID, accountID)
 	if err != nil {
 		return nil, err
 	}
 	var auth upstreamPanelAuthResponse
 	err = runtime.doJSON(ctx, account, http.MethodPost, origin, "/api/v1/auth/login", map[string]string{
-		"email": email, "password": input.Password,
+		"email": email, "password": password,
 	}, "", &auth)
 	if err != nil {
+		if panelLoginRequiresManualImport(err) {
+			return nil, ErrUpstreamPanelManualImportRequired
+		}
 		return nil, ErrUpstreamPanelLoginRejected
 	}
+	encrypted, encryptErr := runtime.encryptCredentials(upstreamPanelLoginCredentials{
+		Version: upstreamPanelCredentialsVersion, AccountID: account.ID, Identity: email, Password: password,
+	})
+	if encryptErr != nil {
+		return nil, ErrUpstreamPanelSessionUnavailable
+	}
+	if saveErr := runtime.repo.SaveUpstreamPanelCredentials(ctx, wallet.ID, account.ID, email, encrypted); saveErr != nil {
+		return nil, ErrUpstreamPanelSessionUnavailable
+	}
+	wallet.PanelCredentialAccountID = account.ID
+	wallet.PanelCredentialIdentity = email
+	wallet.PanelCredentialCiphertext = encrypted
 	if auth.Requires2FA {
 		if strings.TrimSpace(auth.TempToken) == "" {
 			return nil, ErrUpstreamPanelLoginRejected
@@ -293,6 +374,45 @@ func (s *UpstreamFundsService) CompletePanelSessionTwoFactor(ctx context.Context
 	return &UpstreamPanelLoginResult{Session: *state}, nil
 }
 
+func (s *UpstreamFundsService) ImportPanelSession(ctx context.Context, walletID int64, input UpstreamPanelImportInput) (*UpstreamPanelSessionState, error) {
+	runtime, err := s.requirePanelSessionRuntime()
+	if err != nil {
+		return nil, err
+	}
+	accessToken := strings.TrimSpace(input.AccessToken)
+	refreshToken := strings.TrimSpace(input.RefreshToken)
+	identity := strings.TrimSpace(input.Identity)
+	if input.AccountID <= 0 || accessToken == "" || len(accessToken) > 65536 || len(refreshToken) > 65536 || len(identity) > 320 || input.ExpiresIn < 0 || input.ExpiresIn > 31536000 {
+		return nil, ErrUpstreamPanelLoginRejected
+	}
+	wallet, account, origin, err := s.panelLoginTarget(ctx, walletID, input.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if wallet.PanelCredentialAccountID != 0 && wallet.PanelCredentialAccountID != account.ID {
+		if err := runtime.repo.ClearUpstreamPanelCredentials(ctx, wallet.ID); err != nil {
+			return nil, ErrUpstreamPanelSessionUnavailable
+		}
+		wallet.PanelCredentialAccountID = 0
+		wallet.PanelCredentialIdentity = ""
+		wallet.PanelCredentialCiphertext = ""
+	}
+	expiresIn := input.ExpiresIn
+	if input.ExpiresAt != nil {
+		remaining := time.Until(input.ExpiresAt.UTC())
+		if remaining <= 0 || remaining > 365*24*time.Hour {
+			return nil, ErrUpstreamPanelLoginRejected
+		}
+		expiresIn = int(remaining.Round(time.Second) / time.Second)
+	}
+	if expiresIn == 0 {
+		expiresIn = int(upstreamPanelImportedFallbackTTL / time.Second)
+	}
+	return runtime.saveAuthResponse(ctx, wallet, account, origin, identity, upstreamPanelAuthResponse{
+		AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn,
+	})
+}
+
 func (s *UpstreamFundsService) CheckPanelSession(ctx context.Context, walletID int64) (*UpstreamPanelSessionState, error) {
 	runtime, err := s.requirePanelSessionRuntime()
 	if err != nil {
@@ -312,9 +432,7 @@ func (s *UpstreamFundsService) DeletePanelSession(ctx context.Context, walletID 
 	if err := runtime.repo.ClearUpstreamPanelSession(ctx, walletID); err != nil {
 		return nil, err
 	}
-	return &UpstreamPanelSessionState{
-		Status: UpstreamPanelSessionStatusNotConfigured, EncryptionKeyConfigured: runtime.keyConfigured,
-	}, nil
+	return s.PanelSession(ctx, walletID)
 }
 
 func (s *UpstreamFundsService) requirePanelSessionRuntime() (*upstreamPanelSessionRuntime, error) {
@@ -432,6 +550,9 @@ func (r *upstreamPanelSessionRuntime) saveAuthResponse(ctx context.Context, wall
 	next := nextUpstreamPanelCheck(now, expiresAt)
 	state := UpstreamPanelSessionState{
 		Configured: true, EncryptionKeyConfigured: r.keyConfigured, Status: UpstreamPanelSessionStatusHealthy,
+		CredentialsSaved: strings.TrimSpace(wallet.PanelCredentialCiphertext) != "",
+		SavedIdentity:    strings.TrimSpace(wallet.PanelCredentialIdentity),
+		SavedAccountID:   wallet.PanelCredentialAccountID, SavedAccountName: account.Name,
 		Identity: MaskEmail(identity), AccountID: account.ID, AccountName: account.Name,
 		ExpiresAt: &expiresAt, LastCheckedAt: &now, NextCheckAt: &next,
 	}
@@ -447,6 +568,29 @@ func (r *upstreamPanelSessionRuntime) encryptSecret(secret upstreamPanelSessionS
 		return "", err
 	}
 	return r.encryptor.Encrypt(string(payload))
+}
+
+func (r *upstreamPanelSessionRuntime) encryptCredentials(credentials upstreamPanelLoginCredentials) (string, error) {
+	payload, err := json.Marshal(credentials)
+	if err != nil {
+		return "", err
+	}
+	return r.encryptor.Encrypt(string(payload))
+}
+
+func (r *upstreamPanelSessionRuntime) decryptCredentials(ciphertext string) (*upstreamPanelLoginCredentials, error) {
+	plaintext, err := r.encryptor.Decrypt(strings.TrimSpace(ciphertext))
+	if err != nil {
+		return nil, err
+	}
+	var credentials upstreamPanelLoginCredentials
+	if err := json.Unmarshal([]byte(plaintext), &credentials); err != nil {
+		return nil, err
+	}
+	if credentials.Version != upstreamPanelCredentialsVersion || credentials.AccountID <= 0 || strings.TrimSpace(credentials.Identity) == "" || credentials.Password == "" {
+		return nil, errors.New("invalid upstream panel login credentials")
+	}
+	return &credentials, nil
 }
 
 func (r *upstreamPanelSessionRuntime) decryptSecret(ciphertext string) (*upstreamPanelSessionSecret, error) {
@@ -574,6 +718,39 @@ func (r *upstreamPanelSessionRuntime) refresh(ctx context.Context, walletID int6
 	return r.decryptSecret(latest.PanelSessionCiphertext)
 }
 
+// relogin uses the encrypted credentials saved by the last successful login.
+// It is intentionally server-owned so probing continues after the admin page closes.
+func (r *upstreamPanelSessionRuntime) relogin(ctx context.Context, wallet *UpstreamWallet) error {
+	if wallet == nil || strings.TrimSpace(wallet.PanelCredentialCiphertext) == "" {
+		return ErrUpstreamPanelLoginRejected
+	}
+	credentials, err := r.decryptCredentials(wallet.PanelCredentialCiphertext)
+	if err != nil {
+		return ErrUpstreamPanelSessionUnavailable
+	}
+	wallet, account, origin, err := r.service.panelLoginTarget(ctx, wallet.ID, credentials.AccountID)
+	if err != nil {
+		return err
+	}
+	var auth upstreamPanelAuthResponse
+	if err := r.doJSON(ctx, account, http.MethodPost, origin, "/api/v1/auth/login", map[string]string{
+		"email": credentials.Identity, "password": credentials.Password,
+	}, "", &auth); err != nil {
+		if strings.TrimSpace(wallet.PanelSessionCiphertext) != "" {
+			r.markState(ctx, wallet, UpstreamPanelSessionStatusExpired, "relogin_rejected", nil)
+		}
+		return ErrUpstreamPanelLoginRejected
+	}
+	if auth.Requires2FA || strings.TrimSpace(auth.AccessToken) == "" {
+		if strings.TrimSpace(wallet.PanelSessionCiphertext) != "" {
+			r.markState(ctx, wallet, UpstreamPanelSessionStatusDegraded, "relogin_requires_2fa", nil)
+		}
+		return ErrUpstreamPanelLoginRejected
+	}
+	_, err = r.saveAuthResponse(ctx, wallet, account, origin, credentials.Identity, auth)
+	return err
+}
+
 func (r *upstreamPanelSessionRuntime) check(ctx context.Context, walletID int64) (*UpstreamPanelSessionState, error) {
 	wallet, err := r.service.repo.GetWallet(ctx, walletID)
 	if err != nil {
@@ -581,14 +758,38 @@ func (r *upstreamPanelSessionRuntime) check(ctx context.Context, walletID int64)
 	}
 	r.service.normalizePanelSessionState(wallet)
 	if !wallet.PanelSession.Configured {
-		state := wallet.PanelSession
-		return &state, nil
+		if wallet.PanelSession.CredentialsSaved {
+			if reloginErr := r.relogin(ctx, wallet); reloginErr == nil {
+				wallet, err = r.service.repo.GetWallet(ctx, walletID)
+				if err != nil {
+					return nil, err
+				}
+				r.service.normalizePanelSessionState(wallet)
+			}
+		}
+		if !wallet.PanelSession.Configured {
+			state := wallet.PanelSession
+			return &state, nil
+		}
 	}
 	accounts, err := r.service.loadWalletAccounts(ctx, wallet)
 	if err != nil {
 		return nil, err
 	}
 	account, token, resolveErr := r.service.resolvePanelCredential(ctx, wallet, accounts)
+	if resolveErr != nil && wallet.PanelSession.CredentialsSaved {
+		if reloginErr := r.relogin(ctx, wallet); reloginErr == nil {
+			wallet, err = r.service.repo.GetWallet(ctx, walletID)
+			if err != nil {
+				return nil, err
+			}
+			accounts, err = r.service.loadWalletAccounts(ctx, wallet)
+			if err != nil {
+				return nil, err
+			}
+			account, token, resolveErr = r.service.resolvePanelCredential(ctx, wallet, accounts)
+		}
+	}
 	if resolveErr != nil {
 		latest, _ := r.service.repo.GetWallet(ctx, walletID)
 		if latest != nil {
@@ -736,11 +937,17 @@ func (r *upstreamPanelSessionRuntime) doJSON(ctx context.Context, account *Accou
 	if err != nil || int64(len(bodyBytes)) > upstreamPanelMaxResponseBody {
 		return &upstreamPanelRequestError{code: "response_read_failed", statusCode: resp.StatusCode}
 	}
+	if httputil.IsCloudflareChallengeResponse(resp.StatusCode, resp.Header, bodyBytes) {
+		return &upstreamPanelRequestError{code: "cloudflare_challenge", statusCode: resp.StatusCode}
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return &upstreamPanelRequestError{code: fmt.Sprintf("http_%d", resp.StatusCode), statusCode: resp.StatusCode}
 	}
 	var envelope sub2APIEnvelope
-	if err := json.Unmarshal(bodyBytes, &envelope); err != nil || envelope.Code != 0 {
+	if err := json.Unmarshal(bodyBytes, &envelope); err != nil {
+		return &upstreamPanelRequestError{code: "non_json_response", statusCode: resp.StatusCode}
+	}
+	if envelope.Code != 0 {
 		return &upstreamPanelRequestError{code: "response_rejected", statusCode: resp.StatusCode}
 	}
 	if destination == nil {
@@ -761,6 +968,14 @@ func panelRequestStatus(err error) int {
 		return requestErr.statusCode
 	}
 	return 0
+}
+
+func panelLoginRequiresManualImport(err error) bool {
+	var requestErr *upstreamPanelRequestError
+	if !errors.As(err, &requestErr) {
+		return false
+	}
+	return requestErr.statusCode == http.StatusForbidden || requestErr.code == "cloudflare_challenge" || requestErr.code == "non_json_response" || requestErr.code == "invalid_response" || requestErr.code == "response_rejected"
 }
 
 func normalizeUpstreamPanelOrigin(baseURL string) string {

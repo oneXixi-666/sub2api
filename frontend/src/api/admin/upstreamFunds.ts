@@ -1,8 +1,8 @@
 import { apiClient } from '../client'
 
 export type UpstreamRechargeMode = 'direct' | 'product' | 'manual'
-export type UpstreamWalletTier = 'primary' | 'hot_backup' | 'cold_backup'
 export type UpstreamPanelSessionStatus = 'not_configured' | 'unchecked' | 'healthy' | 'degraded' | 'expired'
+export const UPSTREAM_ALIPAY_CHANNEL_ID = 'alipay'
 
 export interface UpstreamFundsAccount {
   id: number
@@ -21,6 +21,10 @@ export interface UpstreamFundsGroup {
 export interface UpstreamPanelSessionState {
 	configured: boolean
 	encryption_key_configured: boolean
+	credentials_saved: boolean
+	saved_identity?: string
+	saved_account_id?: number
+	saved_account_name?: string
 	status: UpstreamPanelSessionStatus
 	identity?: string
 	account_id?: number
@@ -37,32 +41,33 @@ export interface UpstreamPanelLoginResult {
 	session: UpstreamPanelSessionState
 }
 
+export interface UpstreamPanelImportInput {
+	account_id: number
+	access_token: string
+	refresh_token?: string
+	identity?: string
+	expires_in?: number
+}
+
 export interface UpstreamWallet {
   id: number
   name: string
   provider: string
   currency: string
-  cost_currency: string
+	consumption_currency: string
   recharge_mode: UpstreamRechargeMode
 	card_site_url: string
-  tier: UpstreamWalletTier
   enabled: boolean
   balance: number | null
   balance_updated_at: string | null
   balance_error: string
-  alert_days: number
-  target_days: number
   account_ids: number[]
   accounts: UpstreamFundsAccount[]
   configured_groups: UpstreamFundsGroup[]
   actual_groups: UpstreamFundsGroup[]
-  cost_1h: number
-  cost_today: number
-  cost_24h: number
-  cost_7d: number
-  daily_cost_7d: number
-  runway_days: number | null
-  recommended_top_up: number | null
+  consumption_1h: number
+  consumption_today: number
+  consumption_24h: number
   needs_attention: boolean
   adapter_configured: boolean
 	redeem_configured: boolean
@@ -76,14 +81,15 @@ export interface UpstreamFundsSummary {
   wallet_count: number
   enabled_count: number
   attention_count: number
-  cost_today: number
-  cost_24h: number
+	consumption_today: number
+	consumption_24h: number
   balance_by_currency: Record<string, number>
 }
 
 export interface UpstreamFundsOverview {
   summary: UpstreamFundsSummary
   wallets: UpstreamWallet[]
+	groups?: UpstreamFundsGroup[]
 }
 
 export interface UpstreamWalletInput {
@@ -92,10 +98,7 @@ export interface UpstreamWalletInput {
   currency: string
   recharge_mode: UpstreamRechargeMode
 	card_site_url: string
-  tier: UpstreamWalletTier
   enabled: boolean
-  alert_days: number
-  target_days: number
   account_ids: number[]
 }
 
@@ -136,9 +139,12 @@ export interface UpstreamRechargeOrder {
 	completed_at: string | null
 }
 
-export async function list(search?: string): Promise<UpstreamFundsOverview> {
+export async function list(search?: string, groupID?: number | null): Promise<UpstreamFundsOverview> {
+	const params: Record<string, string | number> = {}
+	if (search?.trim()) params.search = search.trim()
+	if (groupID && groupID > 0) params.group_id = groupID
   const { data } = await apiClient.get<UpstreamFundsOverview>('/admin/upstream-funds/wallets', {
-    params: search ? { search } : undefined
+	    params: Object.keys(params).length ? params : undefined
   })
   return data
 }
@@ -193,8 +199,13 @@ export async function getPanelSession(id: number): Promise<UpstreamPanelSessionS
 	return data
 }
 
-export async function loginPanelSession(id: number, input: { account_id: number; email: string; password: string }): Promise<UpstreamPanelLoginResult> {
+export async function loginPanelSession(id: number, input: { account_id?: number; email?: string; password?: string }): Promise<UpstreamPanelLoginResult> {
 	const { data } = await apiClient.post<UpstreamPanelLoginResult>(`/admin/upstream-funds/wallets/${id}/panel-session/login`, input)
+	return data
+}
+
+export async function importPanelSession(id: number, input: UpstreamPanelImportInput): Promise<UpstreamPanelSessionState> {
+	const { data } = await apiClient.post<UpstreamPanelSessionState>(`/admin/upstream-funds/wallets/${id}/panel-session/import`, input)
 	return data
 }
 
@@ -245,7 +256,7 @@ export async function listAccounts(): Promise<UpstreamFundsAccount[]> {
 
 const upstreamFundsAPI = {
 	list, listAll, getById, create, update, refreshBalance, recordBalance, redeemCode,
-	getPanelSession, loginPanelSession, completePanelSessionTwoFactor, checkPanelSession, deletePanelSession,
+	getPanelSession, loginPanelSession, importPanelSession, completePanelSessionTwoFactor, checkPanelSession, deletePanelSession,
 	listPaymentChannels, createRechargeOrder, getRechargeOrder, pollRechargeOrder, manualCompleteRechargeOrder, listAccounts
 }
 export default upstreamFundsAPI

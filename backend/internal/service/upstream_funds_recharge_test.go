@@ -2,11 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -271,4 +276,40 @@ func TestManualCompleteRechargeOrderDelegatesAtomicCompletion(t *testing.T) {
 	require.Equal(t, UpstreamRechargeStatusManualReview, repo.completeFromStatus)
 	require.Equal(t, "verified in provider panel", repo.completeReason)
 	require.InDelta(t, 125.5, repo.completeBalanceAfter, 0.000001)
+}
+
+func TestUpstreamRechargeAdapterExposesOnlyFixedAlipayChannel(t *testing.T) {
+	upstream := &httpUpstreamRecorder{}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{httpUpstream: upstream}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	channels, err := provider.ListPaymentChannels(context.Background(), wallet, []*Account{account})
+	require.NoError(t, err)
+	require.Equal(t, []UpstreamPaymentChannel{{ID: "alipay", Name: "支付宝", Currency: "USD"}}, channels)
+	require.Empty(t, upstream.requests, "fixed channel discovery must not depend on checkout-info")
+}
+
+func TestUpstreamRechargeAdapterAlwaysCreatesAlipayOrder(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+		`{"code":0,"data":{"order_id":9,"pay_amount":100,"status":"pending","payment_type":"alipay","pay_url":"https://pay.example.com/9","currency":"USD"}}`,
+	))}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	order, err := provider.CreateRechargeOrder(context.Background(), wallet, []*Account{account}, 100, "wxpay")
+	require.NoError(t, err)
+	require.Equal(t, "9", order.ProviderOrderID)
+	require.Len(t, upstream.bodies, 1)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(upstream.bodies[0], &payload))
+	require.Equal(t, "alipay", payload["payment_type"])
 }

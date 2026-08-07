@@ -120,9 +120,11 @@ export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest 
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
 export type {
   UpstreamFundsAccount,
+  UpstreamFundsGroup,
   UpstreamFundsOverview,
   UpstreamFundsSummary,
 	UpstreamPanelLoginResult,
+	UpstreamPanelImportInput,
 	UpstreamPanelSessionStatus,
 	UpstreamPanelSessionState,
 	UpstreamPaymentChannel,

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -17,10 +18,11 @@ import (
 
 type upstreamPanelSessionRepoStub struct {
 	*upstreamFundsRepositoryStub
-	mu         sync.Mutex
-	wallet     UpstreamWallet
-	ciphertext string
-	state      UpstreamPanelSessionState
+	mu                   sync.Mutex
+	wallet               UpstreamWallet
+	ciphertext           string
+	state                UpstreamPanelSessionState
+	credentialCiphertext string
 }
 
 func newUpstreamPanelSessionRepoStub() *upstreamPanelSessionRepoStub {
@@ -42,7 +44,34 @@ func (r *upstreamPanelSessionRepoStub) GetWallet(_ context.Context, id int64) (*
 	wallet := r.wallet
 	wallet.PanelSessionCiphertext = r.ciphertext
 	wallet.PanelSession = r.state
+	wallet.PanelCredentialAccountID = r.wallet.PanelCredentialAccountID
+	wallet.PanelCredentialIdentity = r.wallet.PanelCredentialIdentity
+	wallet.PanelCredentialCiphertext = r.credentialCiphertext
 	return &wallet, nil
+}
+
+func (r *upstreamPanelSessionRepoStub) SaveUpstreamPanelCredentials(_ context.Context, walletID, accountID int64, identity, passwordCiphertext string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if walletID != r.wallet.ID {
+		return ErrUpstreamWalletNotFound
+	}
+	r.wallet.PanelCredentialAccountID = accountID
+	r.wallet.PanelCredentialIdentity = identity
+	r.credentialCiphertext = passwordCiphertext
+	return nil
+}
+
+func (r *upstreamPanelSessionRepoStub) ClearUpstreamPanelCredentials(_ context.Context, walletID int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if walletID != r.wallet.ID {
+		return ErrUpstreamWalletNotFound
+	}
+	r.wallet.PanelCredentialAccountID = 0
+	r.wallet.PanelCredentialIdentity = ""
+	r.credentialCiphertext = ""
+	return nil
 }
 
 func (r *upstreamPanelSessionRepoStub) SaveUpstreamPanelSession(_ context.Context, walletID int64, ciphertext string, state UpstreamPanelSessionState) error {
@@ -177,6 +206,9 @@ func TestUpstreamPanelLoginStoresOnlyEncryptedSessionTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.Requires2FA)
 	require.True(t, result.Session.Configured)
+	require.True(t, result.Session.CredentialsSaved)
+	require.Equal(t, "owner@example.com", result.Session.SavedIdentity)
+	require.Equal(t, int64(42), result.Session.SavedAccountID)
 	require.Equal(t, UpstreamPanelSessionStatusHealthy, result.Session.Status)
 	require.Equal(t, "o***r@example.com", result.Session.Identity)
 	require.NotEmpty(t, repo.ciphertext)
@@ -188,6 +220,7 @@ func TestUpstreamPanelLoginStoresOnlyEncryptedSessionTokens(t *testing.T) {
 	require.Contains(t, plaintext, "refresh-one")
 	require.NotContains(t, plaintext, "secret-password")
 	require.Contains(t, upstream.bodies[0], `"password":"secret-password"`)
+	require.NotContains(t, result.Session.Identity, "secret-password")
 }
 
 func TestUpstreamPanelLoginCompletesOpaqueTwoFactorChallenge(t *testing.T) {
@@ -206,6 +239,7 @@ func TestUpstreamPanelLoginCompletesOpaqueTwoFactorChallenge(t *testing.T) {
 	require.NotEmpty(t, challenge.Challenge)
 	require.NotContains(t, challenge.Challenge, "upstream-temp-secret")
 	require.Empty(t, repo.ciphertext)
+	require.NotEmpty(t, repo.credentialCiphertext)
 
 	result, err := svc.CompletePanelSessionTwoFactor(context.Background(), repo.wallet.ID, UpstreamPanelTwoFactorInput{
 		Challenge: challenge.Challenge, Code: "123456",
@@ -244,6 +278,82 @@ func TestUpstreamPanelCheckRefreshesExpiringTokenBeforeProbe(t *testing.T) {
 	require.NotContains(t, plaintext, "access-old")
 }
 
+func TestUpstreamPanelLoginReusesSavedCredentialsWhenFieldsAreOmitted(t *testing.T) {
+	repo := newUpstreamPanelSessionRepoStub()
+	upstream := &upstreamPanelHTTPStub{responses: []*http.Response{
+		upstreamPanelJSONResponse(`{"code":0,"data":{"access_token":"access-one","expires_in":3600}}`),
+		upstreamPanelJSONResponse(`{"code":0,"data":{"access_token":"access-two","expires_in":3600}}`),
+	}}
+	svc, _ := newUpstreamPanelTestService(repo, upstream)
+	_, err := svc.LoginPanelSession(context.Background(), repo.wallet.ID, UpstreamPanelLoginInput{
+		AccountID: 42, Email: "owner@example.com", Password: "secret-password",
+	})
+	require.NoError(t, err)
+	_, err = svc.LoginPanelSession(context.Background(), repo.wallet.ID, UpstreamPanelLoginInput{})
+	require.NoError(t, err)
+	require.Contains(t, upstream.bodies[1], `"email":"owner@example.com"`)
+	require.Contains(t, upstream.bodies[1], `"password":"secret-password"`)
+}
+
+func TestUpstreamPanelProbeReloginsAfterSessionWasCleared(t *testing.T) {
+	repo := newUpstreamPanelSessionRepoStub()
+	upstream := &upstreamPanelHTTPStub{responses: []*http.Response{
+		upstreamPanelJSONResponse(`{"code":0,"data":{"access_token":"access-one","expires_in":3600}}`),
+		upstreamPanelJSONResponse(`{"code":0,"data":{"access_token":"access-two","expires_in":3600}}`),
+		upstreamPanelJSONResponse(`{"code":0,"data":{"email":"owner@example.com"}}`),
+	}}
+	svc, _ := newUpstreamPanelTestService(repo, upstream)
+	_, err := svc.LoginPanelSession(context.Background(), repo.wallet.ID, UpstreamPanelLoginInput{
+		AccountID: 42, Email: "owner@example.com", Password: "secret-password",
+	})
+	require.NoError(t, err)
+	state, err := svc.DeletePanelSession(context.Background(), repo.wallet.ID)
+	require.NoError(t, err)
+	require.False(t, state.Configured)
+	require.True(t, state.CredentialsSaved)
+	state, err = svc.CheckPanelSession(context.Background(), repo.wallet.ID)
+	require.NoError(t, err)
+	require.True(t, state.Configured)
+	require.Equal(t, UpstreamPanelSessionStatusHealthy, state.Status)
+	require.Equal(t, "/api/v1/auth/login", upstream.requests[1].URL.Path)
+	require.Equal(t, "/api/v1/user/profile", upstream.requests[2].URL.Path)
+}
+
+func TestUpstreamPanelSessionImportsEncryptedAccessToken(t *testing.T) {
+	repo := newUpstreamPanelSessionRepoStub()
+	upstream := &upstreamPanelHTTPStub{}
+	svc, encryptor := newUpstreamPanelTestService(repo, upstream)
+	state, err := svc.ImportPanelSession(context.Background(), repo.wallet.ID, UpstreamPanelImportInput{
+		AccountID: 42, AccessToken: "browser-access", RefreshToken: "browser-refresh", Identity: "owner@example.com", ExpiresAt: timePointer(time.Now().Add(2 * time.Hour)),
+	})
+	require.NoError(t, err)
+	require.True(t, state.Configured)
+	require.Equal(t, "o***r@example.com", state.Identity)
+	require.NotEmpty(t, repo.ciphertext)
+	plaintext, err := encryptor.Decrypt(repo.ciphertext)
+	require.NoError(t, err)
+	require.Contains(t, plaintext, "browser-access")
+	require.Contains(t, plaintext, "browser-refresh")
+	require.NotContains(t, string(mustMarshalPanelState(*state)), "browser-access")
+}
+
+func TestUpstreamPanelLoginReturnsManualImportForForbiddenChallenge(t *testing.T) {
+	repo := newUpstreamPanelSessionRepoStub()
+	upstream := &upstreamPanelHTTPStub{responses: []*http.Response{{
+		StatusCode: http.StatusForbidden, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("<html>cloudflare challenge</html>")),
+	}}}
+	svc, _ := newUpstreamPanelTestService(repo, upstream)
+	_, err := svc.LoginPanelSession(context.Background(), repo.wallet.ID, UpstreamPanelLoginInput{
+		AccountID: 42, Email: "owner@example.com", Password: "secret-password",
+	})
+	require.ErrorIs(t, err, ErrUpstreamPanelManualImportRequired)
+}
+
+func mustMarshalPanelState(state UpstreamPanelSessionState) []byte {
+	encoded, _ := json.Marshal(state)
+	return encoded
+}
+
 func TestUpstreamPanelSessionEnablesRechargeWithoutLegacyCredential(t *testing.T) {
 	repo := newUpstreamPanelSessionRepoStub()
 	upstream := &upstreamPanelHTTPStub{responses: []*http.Response{
@@ -260,7 +370,7 @@ func TestUpstreamPanelSessionEnablesRechargeWithoutLegacyCredential(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, channels, 1)
 	require.Equal(t, "alipay", channels[0].ID)
-	require.Equal(t, "Bearer access-one", upstream.requests[1].Header.Get("Authorization"))
+	require.Len(t, upstream.requests, 1, "fixed Alipay discovery must not request checkout-info")
 }
 
 func TestUpstreamPanelSessionDeleteImmediatelyDisablesAuthorization(t *testing.T) {

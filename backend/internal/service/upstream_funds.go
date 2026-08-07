@@ -48,39 +48,35 @@ type UpstreamFundsGroup struct {
 }
 
 type UpstreamWallet struct {
-	ID                     int64                     `json:"id"`
-	Name                   string                    `json:"name"`
-	Provider               string                    `json:"provider"`
-	Currency               string                    `json:"currency"`
-	CostCurrency           string                    `json:"cost_currency"`
-	RechargeMode           string                    `json:"recharge_mode"`
-	CardSiteURL            string                    `json:"card_site_url"`
-	Tier                   string                    `json:"tier"`
-	Enabled                bool                      `json:"enabled"`
-	Balance                *float64                  `json:"balance"`
-	BalanceUpdatedAt       *time.Time                `json:"balance_updated_at"`
-	BalanceError           string                    `json:"balance_error"`
-	AlertDays              int                       `json:"alert_days"`
-	TargetDays             int                       `json:"target_days"`
-	AccountIDs             []int64                   `json:"account_ids"`
-	Accounts               []UpstreamFundsAccount    `json:"accounts"`
-	ConfiguredGroups       []UpstreamFundsGroup      `json:"configured_groups"`
-	ActualGroups           []UpstreamFundsGroup      `json:"actual_groups"`
-	Cost1H                 float64                   `json:"cost_1h"`
-	CostToday              float64                   `json:"cost_today"`
-	Cost24H                float64                   `json:"cost_24h"`
-	Cost7D                 float64                   `json:"cost_7d"`
-	DailyCost7D            float64                   `json:"daily_cost_7d"`
-	RunwayDays             *float64                  `json:"runway_days"`
-	RecommendedTopUp       *float64                  `json:"recommended_top_up"`
-	NeedsAttention         bool                      `json:"needs_attention"`
-	AdapterConfigured      bool                      `json:"adapter_configured"`
-	RedeemConfigured       bool                      `json:"redeem_configured"`
-	RechargeConfigured     bool                      `json:"recharge_configured"`
-	PanelSession           UpstreamPanelSessionState `json:"panel_session"`
-	PanelSessionCiphertext string                    `json:"-"`
-	CreatedAt              time.Time                 `json:"created_at"`
-	UpdatedAt              time.Time                 `json:"updated_at"`
+	ID                        int64                     `json:"id"`
+	Name                      string                    `json:"name"`
+	Provider                  string                    `json:"provider"`
+	Currency                  string                    `json:"currency"`
+	ConsumptionCurrency       string                    `json:"consumption_currency"`
+	RechargeMode              string                    `json:"recharge_mode"`
+	CardSiteURL               string                    `json:"card_site_url"`
+	Enabled                   bool                      `json:"enabled"`
+	Balance                   *float64                  `json:"balance"`
+	BalanceUpdatedAt          *time.Time                `json:"balance_updated_at"`
+	BalanceError              string                    `json:"balance_error"`
+	AccountIDs                []int64                   `json:"account_ids"`
+	Accounts                  []UpstreamFundsAccount    `json:"accounts"`
+	ConfiguredGroups          []UpstreamFundsGroup      `json:"configured_groups"`
+	ActualGroups              []UpstreamFundsGroup      `json:"actual_groups"`
+	Consumption1H             float64                   `json:"consumption_1h"`
+	ConsumptionToday          float64                   `json:"consumption_today"`
+	Consumption24H            float64                   `json:"consumption_24h"`
+	NeedsAttention            bool                      `json:"needs_attention"`
+	AdapterConfigured         bool                      `json:"adapter_configured"`
+	RedeemConfigured          bool                      `json:"redeem_configured"`
+	RechargeConfigured        bool                      `json:"recharge_configured"`
+	PanelSession              UpstreamPanelSessionState `json:"panel_session"`
+	PanelSessionCiphertext    string                    `json:"-"`
+	PanelCredentialAccountID  int64                     `json:"-"`
+	PanelCredentialIdentity   string                    `json:"-"`
+	PanelCredentialCiphertext string                    `json:"-"`
+	CreatedAt                 time.Time                 `json:"created_at"`
+	UpdatedAt                 time.Time                 `json:"updated_at"`
 }
 
 type UpstreamWalletInput struct {
@@ -89,10 +85,7 @@ type UpstreamWalletInput struct {
 	Currency     string
 	RechargeMode string
 	CardSiteURL  string
-	Tier         string
 	Enabled      bool
-	AlertDays    int
-	TargetDays   int
 	AccountIDs   []int64
 }
 
@@ -100,8 +93,8 @@ type UpstreamFundsSummary struct {
 	WalletCount       int                `json:"wallet_count"`
 	EnabledCount      int                `json:"enabled_count"`
 	AttentionCount    int                `json:"attention_count"`
-	CostToday         float64            `json:"cost_today"`
-	Cost24H           float64            `json:"cost_24h"`
+	ConsumptionToday  float64            `json:"consumption_today"`
+	Consumption24H    float64            `json:"consumption_24h"`
 	BalanceByCurrency map[string]float64 `json:"balance_by_currency"`
 }
 
@@ -116,7 +109,7 @@ type UpstreamRedeemResult struct {
 }
 
 type UpstreamFundsRepository interface {
-	ListWallets(ctx context.Context, search string) ([]UpstreamWallet, error)
+	ListWallets(ctx context.Context, search string, groupID int64) ([]UpstreamWallet, error)
 	GetWallet(ctx context.Context, id int64) (*UpstreamWallet, error)
 	CreateWallet(ctx context.Context, input UpstreamWalletInput) (*UpstreamWallet, error)
 	UpdateWallet(ctx context.Context, id int64, input UpstreamWalletInput) (*UpstreamWallet, error)
@@ -160,8 +153,11 @@ func NewUpstreamFundsService(
 	return svc
 }
 
-func (s *UpstreamFundsService) ListWallets(ctx context.Context, search string) (*UpstreamFundsOverview, error) {
-	wallets, err := s.repo.ListWallets(ctx, strings.TrimSpace(search))
+func (s *UpstreamFundsService) ListWallets(ctx context.Context, search string, groupID int64) (*UpstreamFundsOverview, error) {
+	if groupID < 0 {
+		return nil, infraerrors.BadRequest("UPSTREAM_GROUP_INVALID", "group ID must be positive")
+	}
+	wallets, err := s.repo.ListWallets(ctx, strings.TrimSpace(search), groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,8 +176,8 @@ func (s *UpstreamFundsService) ListWallets(ctx context.Context, search string) (
 		if wallet.NeedsAttention {
 			summary.AttentionCount++
 		}
-		summary.CostToday += wallet.CostToday
-		summary.Cost24H += wallet.Cost24H
+		summary.ConsumptionToday += wallet.ConsumptionToday
+		summary.Consumption24H += wallet.Consumption24H
 		if wallet.Balance != nil {
 			summary.BalanceByCurrency[wallet.Currency] += *wallet.Balance
 		}
@@ -426,7 +422,6 @@ func normalizeUpstreamWalletInput(input *UpstreamWalletInput) error {
 	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
 	input.RechargeMode = strings.ToLower(strings.TrimSpace(input.RechargeMode))
 	input.CardSiteURL = strings.TrimSpace(input.CardSiteURL)
-	input.Tier = strings.ToLower(strings.TrimSpace(input.Tier))
 
 	if input.Name == "" || input.Provider == "" || input.Currency == "" {
 		return infraerrors.BadRequest("UPSTREAM_WALLET_INVALID", "name, provider and currency are required")
@@ -447,15 +442,6 @@ func normalizeUpstreamWalletInput(input *UpstreamWalletInput) error {
 		if len(input.CardSiteURL) > 2048 {
 			return infraerrors.BadRequest("UPSTREAM_CARD_SITE_URL_INVALID", "card site URL exceeds the maximum length")
 		}
-	}
-	if !oneOf(input.Tier, "primary", "hot_backup", "cold_backup") {
-		return infraerrors.BadRequest("UPSTREAM_TIER_INVALID", "invalid wallet tier")
-	}
-	if input.AlertDays < 0 || input.AlertDays > 365 || input.TargetDays < 0 || input.TargetDays > 365 {
-		return infraerrors.BadRequest("UPSTREAM_RESERVE_DAYS_INVALID", "reserve days must be between 0 and 365")
-	}
-	if input.TargetDays < input.AlertDays {
-		return infraerrors.BadRequest("UPSTREAM_RESERVE_DAYS_INVALID", "target days must be greater than or equal to alert days")
 	}
 
 	seen := make(map[int64]struct{}, len(input.AccountIDs))
@@ -479,25 +465,9 @@ func calculateUpstreamWalletMetrics(wallet *UpstreamWallet) {
 	if wallet == nil {
 		return
 	}
-	wallet.CostCurrency = "USD"
-	wallet.DailyCost7D = wallet.Cost7D / 7
-	wallet.RunwayDays = nil
-	wallet.RecommendedTopUp = nil
-
-	if wallet.Balance != nil && wallet.Currency == wallet.CostCurrency && wallet.DailyCost7D > 0 {
-		runway := *wallet.Balance / wallet.DailyCost7D
-		topUp := float64(wallet.TargetDays)*wallet.DailyCost7D - *wallet.Balance
-		if topUp < 0 {
-			topUp = 0
-		}
-		wallet.RunwayDays = &runway
-		wallet.RecommendedTopUp = &topUp
-	}
+	wallet.ConsumptionCurrency = "USD"
 
 	wallet.NeedsAttention = wallet.Enabled && (wallet.Balance == nil || wallet.BalanceError != "")
-	if wallet.Enabled && wallet.RunwayDays != nil && *wallet.RunwayDays < float64(wallet.AlertDays) {
-		wallet.NeedsAttention = true
-	}
 }
 
 func oneOf(value string, allowed ...string) bool {

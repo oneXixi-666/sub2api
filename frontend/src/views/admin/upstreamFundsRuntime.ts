@@ -4,12 +4,22 @@ export const UPSTREAM_BALANCE_SYNC_INTERVAL_MS = 10_000
 export const UPSTREAM_RECHARGE_POLL_BASE_MS = 2_500
 export const UPSTREAM_RECHARGE_POLL_MAX_MS = 20_000
 
+export type UpstreamBalanceStatus = 'healthy' | 'normal' | 'alert' | 'unknown'
+
+export function classifyUpstreamBalance(balance: number | null | undefined): UpstreamBalanceStatus {
+  if (balance === null || balance === undefined || !Number.isFinite(balance)) return 'unknown'
+  if (balance >= 100) return 'healthy'
+  if (balance >= 50) return 'normal'
+  return 'alert'
+}
+
 export function updateUpstreamSyncCatalog(
   current: UpstreamWallet[],
   loaded: UpstreamWallet[],
-  search: string
+  search: string,
+  groupID?: number | null
 ): UpstreamWallet[] {
-  return search.trim() === '' ? loaded : current
+  return search.trim() === '' && !groupID ? loaded : current
 }
 
 export function selectUpstreamBalanceSyncTargets(wallets: UpstreamWallet[]): UpstreamWallet[] {

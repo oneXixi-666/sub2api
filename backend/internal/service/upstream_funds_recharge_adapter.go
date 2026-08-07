@@ -23,6 +23,8 @@ type UpstreamPaymentChannel struct {
 	DailyRemaining float64 `json:"daily_remaining"`
 }
 
+const upstreamFundsAlipayChannelID = "alipay"
+
 type UpstreamProviderOrderUpdate struct {
 	ProviderOrderID string
 	Status          string
@@ -44,21 +46,6 @@ type sub2APIEnvelope struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
-}
-
-type sub2APICheckoutInfo struct {
-	Methods         map[string]sub2APIMethodLimit `json:"methods"`
-	BalanceDisabled bool                          `json:"balance_disabled"`
-}
-
-type sub2APIMethodLimit struct {
-	Currency       string  `json:"currency"`
-	DisplayName    string  `json:"display_name"`
-	DailyRemaining float64 `json:"daily_remaining"`
-	SingleMin      float64 `json:"single_min"`
-	SingleMax      float64 `json:"single_max"`
-	FeeRate        float64 `json:"fee_rate"`
-	Available      bool    `json:"available"`
 }
 
 type sub2APICreateOrderResponse struct {
@@ -96,39 +83,23 @@ func (p *sub2APIUsageBalanceProvider) RechargeConfigured(wallet *UpstreamWallet,
 }
 
 func (p *sub2APIUsageBalanceProvider) ListPaymentChannels(
-	ctx context.Context,
+	_ context.Context,
 	wallet *UpstreamWallet,
 	accounts []*Account,
 ) ([]UpstreamPaymentChannel, error) {
 	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
-	var checkout sub2APICheckoutInfo
-	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodGet, "/api/v1/payment/checkout-info", nil, &checkout); err != nil {
-		return nil, err
+	// The funds center deliberately exposes one stable method. Provider-side
+	// checkout configuration can change independently and must not make the
+	// admin flow disappear or select a different payment rail.
+	currency := strings.ToUpper(strings.TrimSpace(wallet.Currency))
+	if !isCurrencyCode(currency) {
+		currency = "CNY"
 	}
-	if checkout.BalanceDisabled {
-		return []UpstreamPaymentChannel{}, nil
-	}
-	channels := make([]UpstreamPaymentChannel, 0, len(checkout.Methods))
-	for id, method := range checkout.Methods {
-		if !method.Available {
-			continue
-		}
-		name := strings.TrimSpace(method.DisplayName)
-		if name == "" {
-			name = id
-		}
-		currency := strings.ToUpper(strings.TrimSpace(method.Currency))
-		if currency == "" {
-			currency = wallet.Currency
-		}
-		channels = append(channels, UpstreamPaymentChannel{
-			ID: strings.TrimSpace(id), Name: name, Currency: currency, SingleMin: method.SingleMin,
-			SingleMax: method.SingleMax, FeeRate: method.FeeRate, DailyRemaining: method.DailyRemaining,
-		})
-	}
-	return channels, nil
+	return []UpstreamPaymentChannel{{
+		ID: upstreamFundsAlipayChannelID, Name: "支付宝", Currency: currency,
+	}}, nil
 }
 
 func (p *sub2APIUsageBalanceProvider) CreateRechargeOrder(
@@ -136,13 +107,13 @@ func (p *sub2APIUsageBalanceProvider) CreateRechargeOrder(
 	wallet *UpstreamWallet,
 	accounts []*Account,
 	amount float64,
-	channelID string,
+	_ string,
 ) (*UpstreamProviderOrderUpdate, error) {
 	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
 	payload := map[string]any{
-		"amount": amount, "payment_type": channelID, "order_type": "balance",
+		"amount": amount, "payment_type": upstreamFundsAlipayChannelID, "order_type": "balance",
 		"is_mobile": false, "payment_source": "upstream_funds",
 	}
 	var result sub2APICreateOrderResponse

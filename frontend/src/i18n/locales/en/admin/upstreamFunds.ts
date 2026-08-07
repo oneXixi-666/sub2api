@@ -1,7 +1,7 @@
 export default {
   upstreamFunds: {
     title: 'Upstream funds',
-    description: 'Group accounts by real upstream wallet and track procurement balance, cost, and runway.',
+    description: 'Group accounts by real upstream wallet and track balance, consumption, and current groups.',
     createWallet: 'Add upstream wallet',
     editWallet: 'Edit upstream wallet',
     recordBalance: 'Record balance',
@@ -16,7 +16,16 @@ export default {
 			linkedAccount: 'Linked upstream account',
 			email: 'Upstream panel email',
 			password: 'Upstream panel password',
-			passwordHint: 'The password is used only for this login request and is never stored. Only AES-256-GCM encrypted session tokens are saved after login.',
+			passwordHint: 'The password is encrypted and saved for scheduled panel probes after login.',
+			savedPasswordHint: 'Credentials are already saved. Leave the password blank to reuse them, or enter a new password to replace them.',
+			useManualImport: 'Import browser session instead',
+			usePasswordLogin: 'Use password login instead',
+			manualImportHint: 'If Cloudflare blocks the automated login, sign in in your browser first, then paste the access token from the login response. It is encrypted at rest and never returned.',
+			accessToken: 'Access token',
+			refreshToken: 'Refresh token (optional)',
+			identityOptional: 'Login email (optional)',
+			expiresIn: 'Lifetime (seconds, optional)',
+			importSession: 'Import and authorize',
 			login: 'Sign in and authorize',
 			verify: 'Complete verification',
 			twoFactorHint: 'The upstream panel requires two-factor authentication. Enter its six-digit code.',
@@ -42,6 +51,10 @@ export default {
     phaseOne: 'Phase 1',
     adapterPendingHint: 'Funds monitoring and manual balance snapshots are available. Automatic top-up requires a verified upstream adapter.',
     searchPlaceholder: 'Search wallet or provider',
+		groupFilter: {
+			label: 'Filter upstream wallets by group',
+			all: 'All groups'
+		},
 		tabs: {
 			label: 'Filter by balance status',
 			all: 'All',
@@ -50,9 +63,10 @@ export default {
 			alert: 'Alert',
 			unknown: 'Not synced'
 		},
-		rechargeForm: {
+			rechargeForm: {
 			amount: 'Recharge amount',
 			channel: 'Payment channel',
+			alipay: 'Alipay (fixed channel)',
 			createOrder: 'Create payment order',
 			openPayment: 'Open payment page',
 			faceValue: 'Expected credit',
@@ -76,39 +90,27 @@ export default {
     summary: {
       wallets: 'Upstream wallets',
       enabled: '{count} enabled',
-      todayCost: 'Upstream cost today',
+      todayConsumption: 'Upstream consumption today',
       balance: 'Known balance',
       attention: 'Needs attention',
-      costCurrency: 'Costs are tracked in USD',
-      cost24h: '24-hour cost'
+      consumptionCurrency: 'Consumption is tracked in USD',
+      consumption24h: '24-hour consumption'
     },
     wallet: {
       balance: 'Current balance',
       updated: 'Updated {time}',
       neverUpdated: 'Not recorded',
-      runway: 'Estimated runway',
-      runwayDays: '{days} days',
-      runwayUnknown: 'Pending',
-      runwayCurrencyMismatch: 'Balance and cost currencies differ, so runway is unavailable',
-      runwayNoCost: 'No upstream cost was recorded in the last 7 days, so runway is unavailable',
-      alertLine: 'Alert at {days} days',
-      targetLine: 'Target {days} days',
-      cost1h: 'Last hour',
-      costToday: 'Today',
-      cost24h: 'Last 24 hours',
-      cost7d: 'Last 7 days',
-      suggestedTopUp: 'Suggested top-up {amount}',
-      healthyReserve: 'Reserve is on target',
+      consumption1h: 'Consumption, last hour',
+      consumptionToday: 'Consumption today',
+      consumption24h: 'Consumption, last 24 hours',
       accounts: 'Linked accounts',
-      configuredGroups: 'Configured groups',
-      actualGroups: 'Active groups in 7 days',
+      actualGroups: 'Current groups',
       noAccounts: 'No linked accounts',
       noGroups: 'No groups',
       disabled: 'Disabled',
 			attention: 'Funds alert',
 			syncFailed: 'The latest sync failed; the last valid balance was preserved'
     },
-    tier: { primary: 'Primary', hot_backup: 'Hot backup', cold_backup: 'Cold backup' },
     mode: { direct: 'Direct', product: 'Product / voucher', manual: 'Manual' },
     form: {
       name: 'Wallet name',
@@ -119,9 +121,6 @@ export default {
       rechargeMode: 'Top-up mode',
 			cardSiteURL: 'Card site URL',
 			cardSiteURLPlaceholder: 'https://cards.example.com',
-      tier: 'Operating tier',
-      alertDays: 'Runway alert days',
-      targetDays: 'Target reserve days',
       enabled: 'Enable funds monitoring',
       accounts: 'Accounts sharing this wallet',
       accountSearch: 'Search account or platform',
@@ -153,13 +152,14 @@ export default {
 			redeemVerified: 'Redeemed and verified by a balance increase',
 			redeemManualReview: 'The upstream accepted the code, but the balance increase needs manual review',
 			redeemFailed: 'Failed to submit the redeem code',
-			channelsFailed: 'Failed to load upstream payment channels',
 			rechargeCreateFailed: 'Failed to create the upstream recharge order',
 			rechargePollFailed: 'Failed to query the upstream recharge order',
 			rechargeCompleted: 'Recharge credit verified',
 			rechargeManualReview: 'The payment result or balance increase could not be verified automatically',
 			manualCompleteFailed: 'Failed to complete the recharge manually',
 			panelAuthorized: 'Upstream panel access saved; recharge and redemption will reuse this session',
+			panelImported: 'Browser session credential imported and saved',
+			panelImportFailed: 'Failed to import the browser session credential; check the token and linked account',
 			panelLoginFailed: 'Upstream panel login failed; check the credentials and linked account',
 			panelVerifyFailed: 'Upstream two-factor verification failed or expired',
 			panelHealthy: 'Upstream panel session is healthy',
@@ -167,7 +167,6 @@ export default {
 			panelCheckFailed: 'Upstream panel health check failed',
 			panelRemoved: 'Upstream panel authorization removed',
 			panelRemoveFailed: 'Failed to remove upstream panel authorization',
-      invalidReserve: 'Target reserve days cannot be lower than alert days'
     }
   }
 }

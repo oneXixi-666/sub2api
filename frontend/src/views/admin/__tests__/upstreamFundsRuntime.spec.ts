@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { UpstreamRechargeOrder, UpstreamWallet } from '@/api/admin'
 import {
+	classifyUpstreamBalance,
   isUpstreamRechargePollingTerminal,
   nextUpstreamRechargePollDelay,
   selectUpstreamBalanceSyncTargets,
   updateUpstreamSyncCatalog,
-  UPSTREAM_BALANCE_SYNC_INTERVAL_MS
+	UPSTREAM_BALANCE_SYNC_INTERVAL_MS
 } from '../upstreamFundsRuntime'
 
 function wallet(id: number, enabled = true, adapterConfigured = true): UpstreamWallet {
@@ -17,12 +18,13 @@ describe('upstream funds runtime controls', () => {
     const complete = [wallet(1), wallet(2)]
     const searched = [wallet(2)]
 
-    expect(updateUpstreamSyncCatalog(complete, searched, 'provider-b')).toBe(complete)
+		expect(updateUpstreamSyncCatalog(complete, searched, 'provider-b')).toBe(complete)
+		expect(updateUpstreamSyncCatalog(complete, searched, '', 42)).toBe(complete)
     expect(updateUpstreamSyncCatalog(complete, searched, '')).toBe(searched)
     expect(selectUpstreamBalanceSyncTargets(complete).map(item => item.id)).toEqual([1, 2])
   })
 
-  it('syncs only enabled wallets with a configured adapter', () => {
+	it('syncs only enabled wallets with a configured adapter', () => {
 		expect(UPSTREAM_BALANCE_SYNC_INTERVAL_MS).toBe(10_000)
     const targets = selectUpstreamBalanceSyncTargets([
       wallet(1),
@@ -30,7 +32,15 @@ describe('upstream funds runtime controls', () => {
       wallet(3, true, false)
     ])
     expect(targets.map(item => item.id)).toEqual([1])
-  })
+	})
+
+	it('uses the three published balance bands without overlap', () => {
+		expect(classifyUpstreamBalance(null)).toBe('unknown')
+		expect(classifyUpstreamBalance(49.99)).toBe('alert')
+		expect(classifyUpstreamBalance(50)).toBe('normal')
+		expect(classifyUpstreamBalance(99.99)).toBe('normal')
+		expect(classifyUpstreamBalance(100)).toBe('healthy')
+	})
 
   it('uses capped exponential backoff after transient poll failures', () => {
     expect(nextUpstreamRechargePollDelay(1)).toBe(2_500)
