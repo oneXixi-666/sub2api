@@ -23,7 +23,10 @@ type UpstreamPaymentChannel struct {
 	DailyRemaining float64 `json:"daily_remaining"`
 }
 
-const upstreamFundsAlipayChannelID = "alipay"
+const (
+	upstreamFundsAlipayChannelID       = "alipay"
+	upstreamFundsAlipayChannelCurrency = "CNY"
+)
 
 type UpstreamProviderOrderUpdate struct {
 	ProviderOrderID string
@@ -92,13 +95,10 @@ func (p *sub2APIUsageBalanceProvider) ListPaymentChannels(
 	}
 	// The funds center deliberately exposes one stable method. Provider-side
 	// checkout configuration can change independently and must not make the
-	// admin flow disappear or select a different payment rail.
-	currency := strings.ToUpper(strings.TrimSpace(wallet.Currency))
-	if !isCurrencyCode(currency) {
-		currency = "CNY"
-	}
+	// admin flow disappear or select a different payment rail. Alipay settles
+	// in CNY independently of the wallet balance currency.
 	return []UpstreamPaymentChannel{{
-		ID: upstreamFundsAlipayChannelID, Name: "支付宝", Currency: currency,
+		ID: upstreamFundsAlipayChannelID, Name: "支付宝", Currency: upstreamFundsAlipayChannelCurrency,
 	}}, nil
 }
 

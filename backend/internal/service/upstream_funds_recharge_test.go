@@ -288,13 +288,13 @@ func TestUpstreamRechargeAdapterExposesOnlyFixedAlipayChannel(t *testing.T) {
 
 	channels, err := provider.ListPaymentChannels(context.Background(), wallet, []*Account{account})
 	require.NoError(t, err)
-	require.Equal(t, []UpstreamPaymentChannel{{ID: "alipay", Name: "支付宝", Currency: "USD"}}, channels)
+	require.Equal(t, []UpstreamPaymentChannel{{ID: "alipay", Name: "支付宝", Currency: "CNY"}}, channels)
 	require.Empty(t, upstream.requests, "fixed channel discovery must not depend on checkout-info")
 }
 
 func TestUpstreamRechargeAdapterAlwaysCreatesAlipayOrder(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
-		`{"code":0,"data":{"order_id":9,"pay_amount":100,"status":"pending","payment_type":"alipay","pay_url":"https://pay.example.com/9","currency":"USD"}}`,
+		`{"code":0,"data":{"order_id":9,"pay_amount":100,"status":"pending","payment_type":"alipay","pay_url":"https://pay.example.com/9","currency":"CNY"}}`,
 	))}}
 	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
 		httpUpstream: upstream,
@@ -308,6 +308,8 @@ func TestUpstreamRechargeAdapterAlwaysCreatesAlipayOrder(t *testing.T) {
 	order, err := provider.CreateRechargeOrder(context.Background(), wallet, []*Account{account}, 100, "wxpay")
 	require.NoError(t, err)
 	require.Equal(t, "9", order.ProviderOrderID)
+	require.Equal(t, "CNY", order.Currency)
+	require.Equal(t, "https://pay.example.com/9", order.PaymentURL)
 	require.Len(t, upstream.bodies, 1)
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(upstream.bodies[0], &payload))
