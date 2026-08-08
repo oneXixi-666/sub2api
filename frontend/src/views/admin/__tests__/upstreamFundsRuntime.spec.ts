@@ -4,6 +4,7 @@ import {
 	classifyUpstreamBalance,
   isUpstreamRechargePollingTerminal,
   nextUpstreamRechargePollDelay,
+  nextUpstreamRechargeStatePollDelay,
   selectUpstreamBalanceSyncTargets,
   updateUpstreamSyncCatalog,
 	UPSTREAM_BALANCE_SYNC_INTERVAL_MS
@@ -49,6 +50,12 @@ describe('upstream funds runtime controls', () => {
     expect(nextUpstreamRechargePollDelay(4)).toBe(20_000)
     expect(nextUpstreamRechargePollDelay(20)).toBe(20_000)
   })
+
+	it('slows balance verification polling to the balance sync cadence', () => {
+		expect(nextUpstreamRechargeStatePollDelay('pending_payment')).toBe(2_500)
+		expect(nextUpstreamRechargeStatePollDelay('paid')).toBe(2_500)
+		expect(nextUpstreamRechargeStatePollDelay('verifying')).toBe(10_000)
+	})
 
   it('stops polling for every terminal or manual-review state', () => {
     const terminal: UpstreamRechargeOrder['status'][] = ['completed', 'manual_review', 'failed', 'expired', 'cancelled']

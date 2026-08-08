@@ -41,6 +41,16 @@ func (r *upstreamRechargeRepoStub) GetWallet(_ context.Context, id int64) (*Upst
 	return &wallet, nil
 }
 
+func (r *upstreamRechargeRepoStub) RecordBalanceSuccess(_ context.Context, _ int64, balance float64, _, _ string) (*UpstreamWallet, error) {
+	r.wallet.Balance = &balance
+	wallet := r.wallet
+	return &wallet, nil
+}
+
+func (r *upstreamRechargeRepoStub) RecordBalanceFailure(context.Context, int64, string, string) error {
+	return nil
+}
+
 func (r *upstreamRechargeRepoStub) GetRechargeOrder(_ context.Context, id int64) (*UpstreamRechargeOrder, error) {
 	if r.order == nil || r.order.ID != id {
 		return nil, ErrUpstreamRechargeOrderNotFound
@@ -106,6 +116,19 @@ type upstreamRechargeProviderStub struct {
 	queryCalls int
 }
 
+type upstreamRechargeBalanceProviderStub struct {
+	snapshot *BalanceSnapshot
+	err      error
+}
+
+func (p *upstreamRechargeBalanceProviderStub) BalanceConfigured(*UpstreamWallet, []*Account) bool {
+	return true
+}
+
+func (p *upstreamRechargeBalanceProviderStub) RefreshBalance(context.Context, *UpstreamWallet, []*Account) (*BalanceSnapshot, error) {
+	return p.snapshot, p.err
+}
+
 func (p *upstreamRechargeProviderStub) RechargeConfigured(*UpstreamWallet, []*Account) bool {
 	return true
 }
@@ -162,6 +185,17 @@ func TestCreateRechargeOrderFailsClosedForUnsafeProviderFields(t *testing.T) {
 		{
 			name:   "currency differs from channel",
 			update: UpstreamProviderOrderUpdate{ProviderOrderID: "provider-1", Status: "pending", PayAmount: 98, Currency: "USD", PaymentQR: "qr"},
+		},
+		{
+			name:   "missing payment amount",
+			update: UpstreamProviderOrderUpdate{ProviderOrderID: "provider-1", Status: "pending", Currency: "CNY", PaymentQR: "qr"},
+		},
+		{
+			name: "oversized QR payload",
+			update: UpstreamProviderOrderUpdate{
+				ProviderOrderID: "provider-1", Status: "pending", PayAmount: 98, Currency: "CNY",
+				PaymentQR: strings.Repeat("q", upstreamRechargePaymentQRMaxBytes+1),
+			},
 		},
 	}
 	for _, test := range tests {
@@ -230,6 +264,61 @@ func TestPollRechargeOrderRetriesTransientProviderFailureWithoutChangingState(t 
 	require.Equal(t, UpstreamRechargeStatusPendingPayment, repo.order.Status)
 }
 
+func TestPollRechargeOrderKeepsVerifyingDuringBalanceGracePeriod(t *testing.T) {
+	repo := newUpstreamRechargeRepoStub()
+	before := 25.0
+	repo.order = &UpstreamRechargeOrder{
+		ID: 71, WalletID: repo.wallet.ID, ProviderOrderID: "provider-1", PaymentChannelID: "alipay",
+		Currency: "CNY", PayAmount: 98, Status: UpstreamRechargeStatusVerifying, BalanceBefore: &before,
+		UpdatedAt: time.Now(),
+	}
+	svc := NewUpstreamFundsService(repo, nil, nil)
+	svc.rechargeProvider = &upstreamRechargeProviderStub{}
+	svc.balanceProvider = &upstreamRechargeBalanceProviderStub{err: errors.New("balance propagation delayed")}
+
+	order, err := svc.PollRechargeOrder(context.Background(), repo.order.ID, 3)
+	require.NoError(t, err)
+	require.Equal(t, UpstreamRechargeStatusVerifying, order.Status)
+	require.Empty(t, order.ErrorCode)
+}
+
+func TestPollRechargeOrderCompletesAfterBalanceVerification(t *testing.T) {
+	repo := newUpstreamRechargeRepoStub()
+	before := 25.0
+	repo.order = &UpstreamRechargeOrder{
+		ID: 71, WalletID: repo.wallet.ID, ProviderOrderID: "provider-1", PaymentChannelID: "alipay",
+		Currency: "CNY", PayAmount: 98, Status: UpstreamRechargeStatusVerifying, BalanceBefore: &before,
+		UpdatedAt: time.Now(),
+	}
+	svc := NewUpstreamFundsService(repo, nil, nil)
+	svc.rechargeProvider = &upstreamRechargeProviderStub{}
+	svc.balanceProvider = &upstreamRechargeBalanceProviderStub{snapshot: &BalanceSnapshot{Balance: 30, Currency: "USD"}}
+
+	order, err := svc.PollRechargeOrder(context.Background(), repo.order.ID, 3)
+	require.NoError(t, err)
+	require.Equal(t, UpstreamRechargeStatusCompleted, order.Status)
+	require.NotNil(t, order.BalanceAfter)
+	require.InDelta(t, 30, *order.BalanceAfter, 0.000001)
+}
+
+func TestPollRechargeOrderMovesUnverifiedBalanceToManualReviewAfterGracePeriod(t *testing.T) {
+	repo := newUpstreamRechargeRepoStub()
+	before := 25.0
+	repo.order = &UpstreamRechargeOrder{
+		ID: 71, WalletID: repo.wallet.ID, ProviderOrderID: "provider-1", PaymentChannelID: "alipay",
+		Currency: "CNY", PayAmount: 98, Status: UpstreamRechargeStatusVerifying, BalanceBefore: &before,
+		UpdatedAt: time.Now().Add(-upstreamRechargeBalanceVerificationGrace - time.Second),
+	}
+	svc := NewUpstreamFundsService(repo, nil, nil)
+	svc.rechargeProvider = &upstreamRechargeProviderStub{}
+	svc.balanceProvider = &upstreamRechargeBalanceProviderStub{err: errors.New("balance propagation delayed")}
+
+	order, err := svc.PollRechargeOrder(context.Background(), repo.order.ID, 3)
+	require.NoError(t, err)
+	require.Equal(t, UpstreamRechargeStatusManualReview, order.Status)
+	require.Equal(t, "balance_not_verified", order.ErrorCode)
+}
+
 func TestPollRechargeOrderRejectsProviderStateRegression(t *testing.T) {
 	repo := newUpstreamRechargeRepoStub()
 	repo.order = &UpstreamRechargeOrder{
@@ -294,7 +383,7 @@ func TestUpstreamRechargeAdapterExposesOnlyFixedAlipayChannel(t *testing.T) {
 
 func TestUpstreamRechargeAdapterAlwaysCreatesAlipayOrder(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
-		`{"code":0,"data":{"order_id":9,"pay_amount":100,"status":"pending","payment_type":"alipay","pay_url":"https://pay.example.com/9","currency":"CNY"}}`,
+		`{"code":0,"data":{"order_id":9,"pay_amount":100,"status":"pending","payment_type":"alipay","pay_url":"https://pay.example.com/9"}}`,
 	))}}
 	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
 		httpUpstream: upstream,
@@ -314,4 +403,158 @@ func TestUpstreamRechargeAdapterAlwaysCreatesAlipayOrder(t *testing.T) {
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(upstream.bodies[0], &payload))
 	require.Equal(t, "alipay", payload["payment_type"])
+}
+
+func TestUpstreamRechargeAdapterCreatesAlipayOrderWithQRCode(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+		`{"code":0,"data":{"order_id":10,"pay_amount":100,"status":"PENDING","payment_type":"alipay","qr_code":"https://qr.alipay.com/order/10"}}`,
+	))}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	order, err := provider.CreateRechargeOrder(context.Background(), wallet, []*Account{account}, 100, "alipay")
+	require.NoError(t, err)
+	require.Equal(t, "10", order.ProviderOrderID)
+	require.Equal(t, "https://qr.alipay.com/order/10", order.PaymentQR)
+	require.Empty(t, order.PaymentURL)
+}
+
+func TestUpstreamRechargeAdapterActivelyVerifiesPendingAlipayOrder(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":100,"status":"PENDING","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-9"}}`,
+		))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":100,"status":"COMPLETED","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-9"}}`,
+		))},
+	}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	order, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "9")
+	require.NoError(t, err)
+	require.Equal(t, "9", order.ProviderOrderID)
+	require.Equal(t, "completed", strings.ToLower(order.Status))
+	require.Equal(t, "CNY", order.Currency)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, http.MethodGet, upstream.requests[0].Method)
+	require.Equal(t, http.MethodPost, upstream.requests[1].Method)
+	require.Equal(t, "/api/v1/payment/orders/verify", upstream.requests[1].URL.Path)
+	var verifyPayload map[string]any
+	require.NoError(t, json.Unmarshal(upstream.bodies[0], &verifyPayload))
+	require.Equal(t, "OUT-9", verifyPayload["out_trade_no"])
+}
+
+func TestUpstreamRechargeAdapterKeepsPassiveStateWhenVerifyEndpointUnavailable(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":100,"status":"PENDING","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-9"}}`,
+		))},
+		{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{"code":404,"message":"not found"}`))},
+	}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	order, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "9")
+	require.NoError(t, err)
+	require.Equal(t, "pending", strings.ToLower(order.Status))
+	require.Equal(t, "CNY", order.Currency)
+	require.Len(t, upstream.requests, 2)
+}
+
+func TestUpstreamRechargeAdapterPropagatesVerifyFailure(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":100,"status":"PENDING","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-9"}}`,
+		))},
+		{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader(`{"code":500,"message":"temporary failure"}`))},
+	}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	_, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "9")
+	require.EqualError(t, err, "http_500")
+}
+
+func TestUpstreamRechargeAdapterRejectsMismatchedVerifiedOrder(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":100,"status":"PENDING","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-9"}}`,
+		))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"code":0,"data":{"id":9,"pay_amount":1,"status":"COMPLETED","payment_type":"alipay","currency":"CNY","out_trade_no":"OUT-10"}}`,
+		))},
+	}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	_, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "9")
+	require.EqualError(t, err, "invalid_verify_response")
+}
+
+func TestUpstreamRechargeAdapterRejectsInvalidProviderOrderIDWithoutRequest(t *testing.T) {
+	upstream := &httpUpstreamRecorder{}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	_, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "../9")
+	require.EqualError(t, err, "invalid_provider_order_id")
+	require.Empty(t, upstream.requests)
+}
+
+func TestUpstreamRechargeAdapterDefaultsMissingQueriedCurrencyToCNY(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+		`{"code":0,"data":{"id":9,"pay_amount":100,"status":"pending","payment_type":"alipay"}}`,
+	))}}
+	provider := &sub2APIUsageBalanceProvider{accountTestService: &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}}
+	wallet := &UpstreamWallet{Currency: "USD"}
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{
+		"base_url": "https://panel.example.com/v1", "api_key": "api-key", "upstream_funds_panel_token": "panel-token",
+	}}
+
+	order, err := provider.QueryRechargeOrder(context.Background(), wallet, []*Account{account}, "9")
+	require.NoError(t, err)
+	require.Equal(t, "9", order.ProviderOrderID)
+	require.Equal(t, "CNY", order.Currency)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "/api/v1/payment/orders/9", upstream.requests[0].URL.Path)
 }

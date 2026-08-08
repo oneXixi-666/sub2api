@@ -22,7 +22,9 @@ const (
 	UpstreamRechargeStatusExpired        = "expired"
 	UpstreamRechargeStatusCancelled      = "cancelled"
 
-	upstreamRechargeCreatingStaleAfter = 30 * time.Second
+	upstreamRechargeCreatingStaleAfter       = 30 * time.Second
+	upstreamRechargeBalanceVerificationGrace = 2 * time.Minute
+	upstreamRechargePaymentQRMaxBytes        = 2048
 )
 
 var (
@@ -245,6 +247,9 @@ func (s *UpstreamFundsService) PollRechargeOrder(ctx context.Context, id int64, 
 		if order.Status == UpstreamRechargeStatusVerifying {
 			updatedWallet, refreshErr := s.RefreshBalance(ctx, wallet.ID)
 			if refreshErr != nil || updatedWallet.Balance == nil || order.BalanceBefore == nil || *updatedWallet.Balance <= *order.BalanceBefore {
+				if !order.UpdatedAt.IsZero() && time.Since(order.UpdatedAt) < upstreamRechargeBalanceVerificationGrace {
+					return order, nil
+				}
 				order.Status = UpstreamRechargeStatusManualReview
 				order.ErrorCode = "balance_not_verified"
 				order.ErrorMessage = "payment completed but balance increase was not verified"
@@ -321,10 +326,14 @@ func applyProviderOrderUpdate(order *UpstreamRechargeOrder, update *UpstreamProv
 	update.ProviderOrderID = strings.TrimSpace(update.ProviderOrderID)
 	update.Status = strings.TrimSpace(update.Status)
 	update.Currency = strings.ToUpper(strings.TrimSpace(update.Currency))
+	update.PaymentQR = strings.TrimSpace(update.PaymentQR)
 	update.PaymentURL = strings.TrimSpace(update.PaymentURL)
 	if update.ProviderOrderID == "" || len(update.ProviderOrderID) > 128 || len(update.Status) > 64 ||
-		!isFiniteNonnegative(update.PayAmount) || !isCurrencyCode(update.Currency) || !strings.EqualFold(update.Currency, order.Currency) {
+		!isFinitePositive(update.PayAmount) || !isCurrencyCode(update.Currency) || !strings.EqualFold(update.Currency, order.Currency) {
 		return errors.New("invalid provider order fields")
+	}
+	if len(update.PaymentQR) > upstreamRechargePaymentQRMaxBytes || strings.ContainsRune(update.PaymentQR, 0) {
+		return errors.New("invalid provider payment QR payload")
 	}
 	if order.ProviderOrderID != "" && update.ProviderOrderID != order.ProviderOrderID {
 		return errors.New("provider order reference changed")

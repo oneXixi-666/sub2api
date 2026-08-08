@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,11 +66,13 @@ type sub2APICreateOrderResponse struct {
 }
 
 type sub2APIPaymentOrder struct {
-	ID        int64     `json:"id"`
-	Status    string    `json:"status"`
-	PayAmount float64   `json:"pay_amount"`
-	Currency  string    `json:"currency"`
-	ExpiresAt time.Time `json:"expires_at"`
+	ID          int64     `json:"id"`
+	Status      string    `json:"status"`
+	PayAmount   float64   `json:"pay_amount"`
+	Currency    string    `json:"currency"`
+	PaymentType string    `json:"payment_type"`
+	OutTradeNo  string    `json:"out_trade_no"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 func (p *sub2APIUsageBalanceProvider) RechargeConfigured(wallet *UpstreamWallet, accounts []*Account) bool {
@@ -120,12 +125,13 @@ func (p *sub2APIUsageBalanceProvider) CreateRechargeOrder(
 	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodPost, "/api/v1/payment/orders", payload, &result); err != nil {
 		return nil, err
 	}
-	if result.OrderID <= 0 || (strings.TrimSpace(result.QRCode) == "" && strings.TrimSpace(result.PayURL) == "") {
+	if result.OrderID <= 0 || !isFinitePositive(result.PayAmount) || !isUpstreamAlipayPaymentType(result.PaymentType) ||
+		(strings.TrimSpace(result.QRCode) == "" && strings.TrimSpace(result.PayURL) == "") {
 		return nil, &upstreamBalanceAdapterError{code: "invalid_order_response"}
 	}
 	return &UpstreamProviderOrderUpdate{
 		ProviderOrderID: fmt.Sprintf("%d", result.OrderID), Status: result.Status,
-		PayAmount: result.PayAmount, Currency: strings.ToUpper(result.Currency),
+		PayAmount: result.PayAmount, Currency: normalizeUpstreamAlipayCurrency(result.Currency),
 		PaymentQR: result.QRCode, PaymentURL: result.PayURL, ExpiresAt: timePointer(result.ExpiresAt),
 	}, nil
 }
@@ -139,18 +145,93 @@ func (p *sub2APIUsageBalanceProvider) QueryRechargeOrder(
 	if !p.RechargeConfigured(wallet, accounts) {
 		return nil, &upstreamBalanceAdapterError{code: "recharge_not_configured"}
 	}
+	providerOrderID = strings.TrimSpace(providerOrderID)
+	expectedID, err := strconv.ParseInt(providerOrderID, 10, 64)
+	if err != nil || expectedID <= 0 || strconv.FormatInt(expectedID, 10) != providerOrderID {
+		return nil, &upstreamBalanceAdapterError{code: "invalid_provider_order_id"}
+	}
 	var result sub2APIPaymentOrder
-	path := "/api/v1/payment/orders/" + strings.TrimSpace(providerOrderID)
+	path := "/api/v1/payment/orders/" + providerOrderID
 	if err := p.doPanelJSON(ctx, wallet, accounts, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
-	if result.ID <= 0 {
+	if !validSub2APIPaymentOrder(result, expectedID) {
 		return nil, &upstreamBalanceAdapterError{code: "invalid_order_response"}
+	}
+	if shouldVerifySub2APIPaymentOrder(result) {
+		var verified sub2APIPaymentOrder
+		verifyErr := p.doPanelJSON(ctx, wallet, accounts, http.MethodPost, "/api/v1/payment/orders/verify", map[string]any{
+			"out_trade_no": strings.TrimSpace(result.OutTradeNo),
+		}, &verified)
+		// A third-party Sub2API may be an older build without the verify route.
+		// Only explicit route absence is compatible with passive polling; auth,
+		// transport, and malformed-response failures must remain visible.
+		if verifyErr != nil {
+			if !isMissingUpstreamVerifyEndpointError(verifyErr) {
+				return nil, verifyErr
+			}
+		} else {
+			if !validSub2APIPaymentOrder(verified, result.ID) ||
+				!strings.EqualFold(strings.TrimSpace(verified.OutTradeNo), strings.TrimSpace(result.OutTradeNo)) ||
+				!strings.EqualFold(strings.TrimSpace(verified.PaymentType), strings.TrimSpace(result.PaymentType)) ||
+				!strings.EqualFold(normalizeUpstreamAlipayCurrency(verified.Currency), normalizeUpstreamAlipayCurrency(result.Currency)) ||
+				math.Abs(verified.PayAmount-result.PayAmount) > 0.01 {
+				return nil, &upstreamBalanceAdapterError{code: "invalid_verify_response"}
+			}
+			// The verify response is authoritative for payment status, while the
+			// initial GET anchors immutable order identity and amount.
+			result.Status = verified.Status
+			if !verified.ExpiresAt.IsZero() {
+				result.ExpiresAt = verified.ExpiresAt
+			}
+		}
 	}
 	return &UpstreamProviderOrderUpdate{
 		ProviderOrderID: fmt.Sprintf("%d", result.ID), Status: result.Status,
-		PayAmount: result.PayAmount, Currency: strings.ToUpper(result.Currency), ExpiresAt: timePointer(result.ExpiresAt),
+		PayAmount: result.PayAmount, Currency: normalizeUpstreamAlipayCurrency(result.Currency), ExpiresAt: timePointer(result.ExpiresAt),
 	}, nil
+}
+
+func validSub2APIPaymentOrder(order sub2APIPaymentOrder, expectedID int64) bool {
+	return order.ID > 0 &&
+		(expectedID == 0 || order.ID == expectedID) &&
+		isFinitePositive(order.PayAmount) &&
+		isUpstreamAlipayPaymentType(order.PaymentType) &&
+		strings.TrimSpace(order.Status) != ""
+}
+
+func isMissingUpstreamVerifyEndpointError(err error) bool {
+	var adapterErr *upstreamBalanceAdapterError
+	if !errors.As(err, &adapterErr) {
+		return false
+	}
+	return adapterErr.code == "http_404" || adapterErr.code == "http_405"
+}
+
+func shouldVerifySub2APIPaymentOrder(order sub2APIPaymentOrder) bool {
+	outTradeNo := strings.TrimSpace(order.OutTradeNo)
+	if outTradeNo == "" || len(outTradeNo) > 64 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(order.Status)) {
+	case "pending", "pending_payment", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func isUpstreamAlipayPaymentType(paymentType string) bool {
+	paymentType = strings.ToLower(strings.TrimSpace(paymentType))
+	return paymentType == upstreamFundsAlipayChannelID || strings.HasPrefix(paymentType, upstreamFundsAlipayChannelID+"_")
+}
+
+func normalizeUpstreamAlipayCurrency(currency string) string {
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "" {
+		return upstreamFundsAlipayChannelCurrency
+	}
+	return currency
 }
 
 func (p *sub2APIUsageBalanceProvider) doPanelJSON(

@@ -31,6 +31,10 @@ export function nextUpstreamRechargePollDelay(consecutiveFailures: number): numb
   return Math.min(UPSTREAM_RECHARGE_POLL_MAX_MS, UPSTREAM_RECHARGE_POLL_BASE_MS * (2 ** exponent))
 }
 
+export function nextUpstreamRechargeStatePollDelay(status: UpstreamRechargeOrder['status']): number {
+  return status === 'verifying' ? UPSTREAM_BALANCE_SYNC_INTERVAL_MS : UPSTREAM_RECHARGE_POLL_BASE_MS
+}
+
 export function isUpstreamRechargePollingTerminal(status: UpstreamRechargeOrder['status']): boolean {
   return status === 'completed' || status === 'manual_review' || status === 'failed' || status === 'expired' || status === 'cancelled'
 }

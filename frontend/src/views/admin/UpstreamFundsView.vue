@@ -306,6 +306,7 @@ import {
 	classifyUpstreamBalance,
 	isUpstreamRechargePollingTerminal,
 	nextUpstreamRechargePollDelay,
+	nextUpstreamRechargeStatePollDelay,
 	selectUpstreamBalanceSyncTargets,
 	updateUpstreamSyncCatalog,
 	UPSTREAM_BALANCE_SYNC_INTERVAL_MS,
@@ -901,7 +902,7 @@ function handleRechargeOrderState() {
 		return
 	}
 	if (status === 'failed' || status === 'expired' || status === 'cancelled') return
-	scheduleRechargePoll()
+	scheduleRechargePoll(nextUpstreamRechargeStatePollDelay(status))
 }
 
 async function pollRechargeOrder() {
