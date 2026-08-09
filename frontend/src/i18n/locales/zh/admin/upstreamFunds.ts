@@ -4,6 +4,10 @@ export default {
     description: '按真实上游钱包归并账号，跟踪余额、消耗和当前分组。',
     createWallet: '新增上游钱包',
     editWallet: '编辑上游钱包',
+		syncWallets: '一键同步渠道',
+		syncWalletsHint: '按账号的上游域名自动创建钱包并归类旧渠道',
+		deleteWallet: '删除上游钱包',
+		deleteConfirm: '确定删除“{name}”吗？关联账号会被释放，历史充值记录仍会保留。',
     recordBalance: '录入余额',
 		refreshBalance: '同步余额',
     recharge: '充值',
@@ -61,6 +65,7 @@ export default {
 			healthy: '资金充足',
 			normal: '一般',
 			alert: '告警',
+			attention: '需要关注',
 			unknown: '未同步'
 		},
 		rechargeForm: {
@@ -139,7 +144,9 @@ export default {
       title: '还没有上游钱包',
 			description: '先把共用同一份真实余额的上游账号归到一个钱包。',
 			filterTitle: '这个余额区间没有钱包',
-			filterDescription: '切换其他余额栏目查看钱包。'
+			filterDescription: '切换其他余额栏目查看钱包。',
+			attentionTitle: '当前没有需要关注的钱包',
+			attentionDescription: '余额同步异常或尚未取得余额的钱包会显示在这里。'
     },
     messages: {
       loadFailed: '加载上游资金数据失败',
@@ -147,6 +154,10 @@ export default {
       balanceFailed: '录入余额失败',
       created: '上游钱包已创建',
       updated: '上游钱包已更新',
+			deleted: '上游钱包已删除',
+			deleteFailed: '删除上游钱包失败',
+			walletsSynced: '已同步 {domains} 个域名：新增 {created} 个钱包，归类 {classified} 个旧钱包，关联 {linked} 个账号',
+			walletSyncFailed: '一键同步上游渠道失败',
       balanceRecorded: '余额快照已记录',
 			balanceSynced: '上游余额已同步',
 			allBalancesSynced: '所有可同步钱包已更新',

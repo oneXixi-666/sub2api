@@ -21,6 +21,10 @@
           />
         </div>
         <div class="flex w-full flex-wrap justify-end gap-2 sm:flex-1">
+			<button type="button" class="btn btn-secondary whitespace-nowrap" :disabled="loading || syncingWallets" :title="t('admin.upstreamFunds.syncWalletsHint')" @click="syncWalletCatalog">
+				<Icon name="sync" size="md" class="mr-2" :class="syncingWallets ? 'animate-spin' : ''" />
+				{{ t('admin.upstreamFunds.syncWallets') }}
+			</button>
           <button type="button" class="btn btn-secondary btn-icon" :disabled="loading || syncCycleActive" :title="t('common.refresh')" @click="syncAllBalances(true)">
             <Icon name="refresh" size="md" :class="loading || syncCycleActive ? 'animate-spin' : ''" />
           </button>
@@ -56,16 +60,17 @@
             <p class="summary-note">{{ formatCurrency(summary.consumption_24h, 'USD') }} / {{ t('admin.upstreamFunds.summary.consumption24h') }}</p>
           </div>
         </article>
-        <article class="summary-tile" :class="summary.attention_count > 0 ? 'summary-tile-alert' : ''">
+			<button type="button" class="summary-tile summary-tile-action" :class="summary.attention_count > 0 ? 'summary-tile-alert' : ''" :aria-pressed="activeBalanceTab === 'attention'" @click="showAttentionWallets">
           <div class="summary-icon" :class="summary.attention_count > 0 ? 'summary-icon-red' : 'summary-icon-green'"><Icon name="exclamationTriangle" size="md" /></div>
           <div class="summary-content">
             <p class="summary-label">{{ t('admin.upstreamFunds.summary.attention') }}</p>
             <p class="summary-value">{{ summary.attention_count }}</p>
             <p class="summary-note">{{ t('admin.upstreamFunds.summary.enabled', { count: summary.enabled_count }) }}</p>
           </div>
-        </article>
+			</button>
       </section>
 
+		<div ref="walletResultsRegion" class="wallet-results-region space-y-6" tabindex="-1">
       <nav class="balance-tabs" role="tablist" :aria-label="t('admin.upstreamFunds.tabs.label')">
         <button
           v-for="tab in balanceTabs"
@@ -147,22 +152,23 @@
           </div>
 
           <footer class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--promo-border-soft)] pt-4">
-            <div class="flex items-center gap-1">
+            <div class="wallet-actions">
 				<button type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.panelSession.manage')" @click="openPanelSessionDialog(wallet)"><Icon name="shield" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.panelSession.manage') }}</span></button>
 				<button v-if="wallet.recharge_mode === 'product'" type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.redeemCode')" @click="openRedeemDialog(wallet)"><Icon name="key" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.redeemCode') }}</span></button>
               <button type="button" class="btn btn-ghost btn-sm btn-icon" :disabled="isWalletRefreshing(wallet.id) || !wallet.adapter_configured" :title="t('admin.upstreamFunds.refreshBalance')" @click="refreshOneWallet(wallet)"><Icon name="refresh" size="sm" :class="isWalletRefreshing(wallet.id) ? 'animate-spin' : ''" /></button>
               <button type="button" class="btn btn-ghost btn-sm" :title="t('admin.upstreamFunds.recordBalance')" @click="openBalanceDialog(wallet)"><Icon name="dollar" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.recordBalance') }}</span></button>
               <button type="button" class="btn btn-ghost btn-sm" :title="t('common.edit')" @click="openEditDialog(wallet)"><Icon name="edit" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('common.edit') }}</span></button>
+				<button type="button" class="btn btn-ghost btn-sm btn-icon text-red-600" :title="t('admin.upstreamFunds.deleteWallet')" @click="openDeleteWalletDialog(wallet)"><Icon name="trash" size="sm" /></button>
 				<button v-if="wallet.recharge_mode === 'direct'" type="button" class="btn btn-secondary btn-sm" :title="t('admin.upstreamFunds.recharge')" @click="openRechargeDialog(wallet)"><Icon name="creditCard" size="sm" /><span class="ml-1 hidden sm:inline">{{ t('admin.upstreamFunds.recharge') }}</span></button>
             </div>
           </footer>
         </article>
       </section>
 
-		<div v-else-if="wallets.length" class="wallet-empty">
+		<div v-else-if="wallets.length || activeBalanceTab === 'attention'" class="wallet-empty">
 			<div class="empty-mark"><Icon name="filter" size="xl" /></div>
-			<h2>{{ t('admin.upstreamFunds.empty.filterTitle') }}</h2>
-			<p>{{ t('admin.upstreamFunds.empty.filterDescription') }}</p>
+			<h2>{{ t(activeBalanceTab === 'attention' ? 'admin.upstreamFunds.empty.attentionTitle' : 'admin.upstreamFunds.empty.filterTitle') }}</h2>
+			<p>{{ t(activeBalanceTab === 'attention' ? 'admin.upstreamFunds.empty.attentionDescription' : 'admin.upstreamFunds.empty.filterDescription') }}</p>
 		</div>
 
       <div v-else class="wallet-empty">
@@ -171,6 +177,7 @@
         <p>{{ t('admin.upstreamFunds.empty.description') }}</p>
         <button type="button" class="btn btn-primary mt-4" @click="openCreateDialog"><Icon name="plus" size="md" class="mr-2" />{{ t('admin.upstreamFunds.createWallet') }}</button>
       </div>
+		</div>
     </div>
 
     <BaseDialog :show="showWalletDialog" :title="editingWallet ? t('admin.upstreamFunds.editWallet') : t('admin.upstreamFunds.createWallet')" width="wide" @close="closeWalletDialog">
@@ -290,6 +297,16 @@
 			</form>
 			<template #footer><div class="flex justify-end gap-3"><button type="button" class="btn btn-secondary" @click="closeRechargeDialog">{{ rechargeOrder ? t('common.close') : t('common.cancel') }}</button><button v-if="rechargeOrder?.status === 'manual_review'" type="button" class="btn btn-primary" :disabled="completingRechargeOrder || manualBalanceAfter < 0 || !manualCompleteReason" @click="manualCompleteRecharge">{{ t('admin.upstreamFunds.rechargeForm.manualComplete') }}</button><button v-if="!rechargeOrder" type="submit" form="upstream-recharge-form" class="btn btn-primary" :disabled="creatingRechargeOrder || !rechargeWallet?.recharge_configured || rechargeAmount <= 0">{{ creatingRechargeOrder ? t('common.processing') : t('admin.upstreamFunds.rechargeForm.createOrder') }}</button></div></template>
 		</BaseDialog>
+		<ConfirmDialog
+			:show="Boolean(deletingWallet)"
+			:title="t('admin.upstreamFunds.deleteWallet')"
+			:message="t('admin.upstreamFunds.deleteConfirm', { name: deletingWallet?.name || '' })"
+			:confirm-text="t('common.delete')"
+			:cancel-text="t('common.cancel')"
+			danger
+			@confirm="confirmDeleteWallet"
+			@cancel="deletingWallet = null"
+		/>
 		<TotpStepUpDialog :controller="panelSessionStepUp" />
   </AppLayout>
 </template>
@@ -304,6 +321,7 @@ import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from
 import { formatCurrency, formatRelativeTime } from '@/utils/format'
 import {
 	classifyUpstreamBalance,
+	filterUpstreamWallets,
 	isUpstreamRechargePollingTerminal,
 	nextUpstreamRechargePollDelay,
 	nextUpstreamRechargeStatePollDelay,
@@ -312,8 +330,10 @@ import {
 	UPSTREAM_BALANCE_SYNC_INTERVAL_MS,
 	UPSTREAM_RECHARGE_POLL_BASE_MS
 } from './upstreamFundsRuntime'
+import type { UpstreamWalletFilter } from './upstreamFundsRuntime'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
@@ -321,9 +341,10 @@ import QRCode from 'qrcode'
 
 const { t } = useI18n()
 const appStore = useAppStore()
-type BalanceTab = 'all' | 'healthy' | 'normal' | 'alert'
+type BalanceTab = UpstreamWalletFilter
 type BalanceStatus = 'healthy' | 'normal' | 'alert' | 'unknown'
 const wallets = ref<UpstreamWallet[]>([])
+const walletResultsRegion = ref<HTMLElement | null>(null)
 const syncWallets = ref<UpstreamWallet[]>([])
 const accountOptions = ref<UpstreamFundsAccount[]>([])
 const availableGroups = ref<UpstreamFundsGroup[]>([])
@@ -332,6 +353,7 @@ const selectedGroupID = ref<number | null>(null)
 const accountSearch = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const syncingWallets = ref(false)
 const savingBalance = ref(false)
 const redeeming = ref(false)
 const syncCycleActive = ref(false)
@@ -342,6 +364,7 @@ const showRedeemDialog = ref(false)
 const showRechargeDialog = ref(false)
 const showPanelSessionDialog = ref(false)
 const editingWallet = ref<UpstreamWallet | null>(null)
+const deletingWallet = ref<UpstreamWallet | null>(null)
 const balanceWallet = ref<UpstreamWallet | null>(null)
 const redeemWallet = ref<UpstreamWallet | null>(null)
 const rechargeWallet = ref<UpstreamWallet | null>(null)
@@ -389,20 +412,20 @@ const formattedBalances = computed(() => {
   return entries.length ? entries.map(([currency, amount]) => formatCurrency(amount, currency)).join(' / ') : '—'
 })
 const balanceTabs = computed(() => {
-	const counts: Record<BalanceTab, number> = { all: wallets.value.length, healthy: 0, normal: 0, alert: 0 }
+	const counts: Record<BalanceTab, number> = { all: wallets.value.length, healthy: 0, normal: 0, alert: 0, attention: 0 }
 	for (const wallet of wallets.value) {
 		const status = walletBalanceStatus(wallet)
 		if (status !== 'unknown') counts[status]++
+		if (wallet.needs_attention) counts.attention++
 	}
-	return (['all', 'healthy', 'normal', 'alert'] as const).map(value => ({
+	return (['all', 'healthy', 'normal', 'alert', 'attention'] as const).map(value => ({
 		value,
 		label: t(`admin.upstreamFunds.tabs.${value}`),
 		count: counts[value]
 	}))
 })
 const filteredWallets = computed(() => {
-	if (activeBalanceTab.value === 'all') return wallets.value
-	return wallets.value.filter(wallet => walletBalanceStatus(wallet) === activeBalanceTab.value)
+	return filterUpstreamWallets(wallets.value, activeBalanceTab.value)
 })
 const panelAccountOptions = computed(() => (panelWallet.value?.accounts || []).map(account => ({
 	value: account.id,
@@ -437,11 +460,11 @@ async function loadOverview(options: { silent?: boolean } = {}) {
 			syncWallets.value = updateUpstreamSyncCatalog(syncWallets.value, overview.wallets || [], search, groupID)
 			if (overview.groups?.length) availableGroups.value = overview.groups
 	    Object.assign(summary, overview.summary)
-  } catch (error: any) {
+	} catch (error: any) {
 		if (!silent) appStore.showError(error?.message || t('admin.upstreamFunds.messages.loadFailed'))
-  } finally {
-			if (!silent && requestGeneration === overviewRequestGeneration) loading.value = false
-	  }
+	} finally {
+			if (requestGeneration === overviewRequestGeneration) loading.value = false
+	}
 }
 
 async function loadSyncWalletCatalog(): Promise<UpstreamWallet[]> {
@@ -545,6 +568,25 @@ async function loadAccounts() {
   }
 }
 
+async function syncWalletCatalog() {
+	if (syncingWallets.value) return
+	syncingWallets.value = true
+	try {
+		const result = await adminAPI.upstreamFunds.syncWallets()
+		appStore.showSuccess(t('admin.upstreamFunds.messages.walletsSynced', {
+			domains: result.domains,
+			created: result.created_wallets,
+			classified: result.classified_wallets,
+			linked: result.linked_accounts
+		}))
+		await Promise.all([loadOverview(), loadAccounts()])
+	} catch (error: any) {
+		appStore.showError(error?.message || t('admin.upstreamFunds.messages.walletSyncFailed'))
+	} finally {
+		syncingWallets.value = false
+	}
+}
+
 async function loadGroupOptions() {
 	try {
 		const groups = await adminAPI.groups.getAll()
@@ -562,6 +604,13 @@ function handleSearch() {
 function handleGroupChange() {
 	if (searchTimer !== null) window.clearTimeout(searchTimer)
 	void loadOverview()
+}
+
+async function showAttentionWallets() {
+	activeBalanceTab.value = 'attention'
+	await nextTick()
+	walletResultsRegion.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+	walletResultsRegion.value?.focus({ preventScroll: true })
 }
 
 function resetWalletForm() {
@@ -585,6 +634,29 @@ function openEditDialog(wallet: UpstreamWallet) {
 }
 
 function closeWalletDialog() { showWalletDialog.value = false; editingWallet.value = null }
+
+function openDeleteWalletDialog(wallet: UpstreamWallet) {
+	deletingWallet.value = wallet
+}
+
+async function confirmDeleteWallet() {
+	const wallet = deletingWallet.value
+	if (!wallet) return
+	deletingWallet.value = null
+	try {
+		await panelSessionStepUp.run(() => adminAPI.upstreamFunds.remove(wallet.id))
+		appStore.showSuccess(t('admin.upstreamFunds.messages.deleted'))
+		activeBalanceTab.value = 'all'
+		await Promise.all([loadOverview(), loadAccounts()])
+	} catch (error: any) {
+		if (isStepUpCancelled(error)) return
+		if (isStepUpBlocked(error)) {
+			appStore.showError(stepUpBlockReason(error) || t('admin.upstreamFunds.messages.deleteFailed'))
+			return
+		}
+		appStore.showError(error?.message || t('admin.upstreamFunds.messages.deleteFailed'))
+	}
+}
 
 function isAccountUnavailable(account: UpstreamFundsAccount) {
   return Boolean(account.wallet_id && account.wallet_id !== editingWallet.value?.id)
@@ -985,7 +1057,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .upstream-funds-page { color: var(--promo-text); }
+.wallet-results-region { scroll-margin-top: calc(var(--promo-header-height) + 1rem); }
+.wallet-results-region:focus { outline: none; }
+.wallet-results-region:focus-visible { outline: 3px solid var(--promo-cyan-strong); outline-offset: 4px; }
 .summary-tile { display: flex; align-items: center; gap: 0.85rem; min-height: 104px; padding: 1rem; border: var(--promo-border-width) solid var(--promo-border); border-radius: var(--promo-radius-sm); background: var(--promo-surface-raised); box-shadow: var(--promo-shadow-sm); }
+.summary-tile-action { width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.summary-tile-action:hover { transform: translateY(-1px); box-shadow: var(--promo-shadow-md); }
+.summary-tile-action:focus-visible { outline: 3px solid var(--promo-cyan-strong); outline-offset: 2px; }
 .summary-content { min-width: 0; flex: 1; }
 .summary-tile-alert { border-color: var(--promo-red); }
 .summary-icon { display: flex; height: 2.55rem; width: 2.55rem; flex-shrink: 0; align-items: center; justify-content: center; border: 2px solid var(--promo-black); border-radius: 50%; }
@@ -998,16 +1076,18 @@ onBeforeUnmount(() => {
 .summary-note { margin: 0.3rem 0 0; color: var(--promo-text-muted); font-size: 0.75rem; line-height: 1.4; }
 .data-number { font-family: var(--promo-font-body); font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0; }
 .balance-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: var(--promo-border-width) solid var(--promo-border); border-radius: var(--promo-radius-sm); background: var(--promo-surface-muted); }
-@media (min-width: 640px) { .balance-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 640px) { .balance-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .balance-tab { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: 0.75rem; border-right: 1px solid var(--promo-border-soft); border-bottom: 1px solid var(--promo-border-soft); padding: 0.65rem 0.85rem; color: var(--promo-text-muted); font-size: 0.78rem; font-weight: 900; }
 .balance-tab:nth-child(2n) { border-right: 0; }
-.balance-tab:nth-child(n+3) { border-bottom: 0; }
-@media (min-width: 640px) { .balance-tab { border-bottom: 0; } .balance-tab:nth-child(2n) { border-right: 1px solid var(--promo-border-soft); } .balance-tab:last-child { border-right: 0; } }
+.balance-tab:nth-child(n+5) { border-bottom: 0; }
+.balance-tab:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; }
+@media (min-width: 640px) { .balance-tab { border-bottom: 0; } .balance-tab:nth-child(2n) { border-right: 1px solid var(--promo-border-soft); } .balance-tab:last-child, .balance-tab:last-child:nth-child(odd) { grid-column: auto; border-right: 0; } }
 .balance-tab strong { min-width: 1.7rem; font-family: var(--promo-font-body); font-size: 0.9rem; font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; }
 .balance-tab[aria-selected="true"] { background: var(--promo-black); color: var(--promo-white); }
 .balance-tab-healthy[aria-selected="true"] { background: var(--promo-green); }
 .balance-tab-normal[aria-selected="true"] { background: var(--promo-yellow); color: var(--promo-black); }
 .balance-tab-alert[aria-selected="true"] { background: var(--promo-red); }
+.balance-tab-attention[aria-selected="true"] { background: var(--promo-red); }
 .wallet-grid { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 1.25rem; }
 @media (min-width: 1280px) { .wallet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wallet-card { min-width: 0; border: var(--promo-border-width) solid var(--promo-border); border-radius: var(--promo-radius-sm); background: var(--promo-card-surface); padding: 1.25rem; box-shadow: var(--promo-shadow-md); }
@@ -1028,6 +1108,9 @@ onBeforeUnmount(() => {
 .tag { max-width: 100%; overflow: hidden; border: 1px solid var(--promo-border-soft); border-radius: 999px; background: var(--promo-surface-raised); padding: 0.18rem 0.48rem; color: var(--promo-text); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 .tag-cyan { border-color: var(--promo-cyan-strong); background: color-mix(in srgb, var(--promo-cyan) 24%, transparent); }
 .tag-muted { color: var(--promo-text-muted); }
+.wallet-actions { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.25rem; }
+.wallet-actions > .btn { width: 100%; min-width: 0; }
+@media (min-width: 480px) { .wallet-actions { display: flex; width: auto; flex-wrap: wrap; align-items: center; } .wallet-actions > .btn { width: auto; } }
 .wallet-empty { display: flex; min-height: 310px; flex-direction: column; align-items: center; justify-content: center; border: 2px dashed var(--promo-border); border-radius: var(--promo-radius-sm); background: var(--promo-surface-muted); padding: 2rem; text-align: center; }
 .empty-mark { display: flex; height: 3.7rem; width: 3.7rem; align-items: center; justify-content: center; border: 2px solid var(--promo-black); border-radius: 50%; background: var(--promo-yellow); color: var(--promo-black); }
 .wallet-empty h2 { margin: 1rem 0 0; font-family: var(--promo-font-display); font-size: 1.25rem; }

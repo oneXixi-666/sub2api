@@ -16,6 +16,7 @@ import {
 	createRechargeOrder,
 	checkPanelSession,
 	completePanelSessionTwoFactor,
+	remove,
 	deletePanelSession,
 	getPanelSession,
 	importPanelSession,
@@ -28,7 +29,8 @@ import {
   pollRechargeOrder,
   recordBalance,
   redeemCode,
-  refreshBalance,
+	refreshBalance,
+	syncWallets,
   update
 } from '../admin/upstreamFunds'
 
@@ -78,6 +80,17 @@ describe('admin upstream funds API', () => {
     expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets', input)
     expect(put).toHaveBeenCalledWith('/admin/upstream-funds/wallets/12', input)
   })
+
+	it('deletes and synchronizes wallets through dedicated commands', async () => {
+		const syncResult = { domains: 2, created_wallets: 1, classified_wallets: 1, linked_accounts: 3, skipped_accounts: 4 }
+		del.mockResolvedValueOnce({ data: { deleted: true } })
+		post.mockResolvedValueOnce({ data: syncResult })
+
+		await expect(remove(12)).resolves.toBeUndefined()
+		await expect(syncWallets()).resolves.toBe(syncResult)
+		expect(del).toHaveBeenCalledWith('/admin/upstream-funds/wallets/12')
+		expect(post).toHaveBeenCalledWith('/admin/upstream-funds/wallets/sync')
+	})
 
   it('refreshes and records balances through separate commands', async () => {
     const wallet = { id: 12, balance: 88.5 }

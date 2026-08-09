@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { UpstreamRechargeOrder, UpstreamWallet } from '@/api/admin'
 import {
 	classifyUpstreamBalance,
+	filterUpstreamWallets,
   isUpstreamRechargePollingTerminal,
   nextUpstreamRechargePollDelay,
   nextUpstreamRechargeStatePollDelay,
@@ -41,6 +42,16 @@ describe('upstream funds runtime controls', () => {
 		expect(classifyUpstreamBalance(50)).toBe('normal')
 		expect(classifyUpstreamBalance(99.99)).toBe('normal')
 		expect(classifyUpstreamBalance(100)).toBe('healthy')
+	})
+
+	it('filters the attention view by the backend attention flag', () => {
+		const items = [
+			{ ...wallet(1), balance: null, needs_attention: true },
+			{ ...wallet(2), balance: 20, needs_attention: false },
+			{ ...wallet(3), balance: 70, needs_attention: true }
+		] as UpstreamWallet[]
+		expect(filterUpstreamWallets(items, 'attention').map(item => item.id)).toEqual([1, 3])
+		expect(filterUpstreamWallets(items, 'alert').map(item => item.id)).toEqual([2])
 	})
 
   it('uses capped exponential backoff after transient poll failures', () => {

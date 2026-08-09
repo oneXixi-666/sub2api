@@ -5,12 +5,19 @@ export const UPSTREAM_RECHARGE_POLL_BASE_MS = 2_500
 export const UPSTREAM_RECHARGE_POLL_MAX_MS = 20_000
 
 export type UpstreamBalanceStatus = 'healthy' | 'normal' | 'alert' | 'unknown'
+export type UpstreamWalletFilter = 'all' | 'healthy' | 'normal' | 'alert' | 'attention'
 
 export function classifyUpstreamBalance(balance: number | null | undefined): UpstreamBalanceStatus {
   if (balance === null || balance === undefined || !Number.isFinite(balance)) return 'unknown'
   if (balance >= 100) return 'healthy'
   if (balance >= 50) return 'normal'
   return 'alert'
+}
+
+export function filterUpstreamWallets(wallets: UpstreamWallet[], filter: UpstreamWalletFilter): UpstreamWallet[] {
+	if (filter === 'all') return wallets
+	if (filter === 'attention') return wallets.filter(wallet => wallet.needs_attention)
+	return wallets.filter(wallet => classifyUpstreamBalance(wallet.balance) === filter)
 }
 
 export function updateUpstreamSyncCatalog(

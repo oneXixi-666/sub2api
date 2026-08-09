@@ -96,6 +96,18 @@ func (r *upstreamFundsRepository) CreateRechargeOrder(ctx context.Context, order
 		return nil, fmt.Errorf("begin create upstream recharge order: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	var lockedWalletID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM upstream_wallets
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR SHARE
+	`, order.WalletID).Scan(&lockedWalletID)
+	if err == sql.ErrNoRows {
+		return nil, service.ErrUpstreamWalletNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock upstream wallet for recharge order: %w", err)
+	}
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO upstream_recharge_orders (
 			order_no, idempotency_key, wallet_id, product_id, provider_order_id,
@@ -201,7 +213,7 @@ func (r *upstreamFundsRepository) CompleteRechargeOrder(
 	err = tx.QueryRowContext(ctx, `
 		UPDATE upstream_wallets
 		SET balance=$2, balance_updated_at=NOW(), balance_error='', updated_at=NOW()
-		WHERE id=$1
+			WHERE id=$1 AND deleted_at IS NULL
 		RETURNING currency
 	`, walletID, order.BalanceAfter).Scan(&currency)
 	if err == sql.ErrNoRows {

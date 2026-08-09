@@ -23,6 +23,10 @@ var (
 		"UPSTREAM_ACCOUNT_NOT_FOUND",
 		"one or more selected accounts do not exist",
 	)
+	ErrUpstreamWalletHasActiveRecharge = infraerrors.Conflict(
+		"UPSTREAM_WALLET_HAS_ACTIVE_RECHARGE",
+		"upstream wallet has an active recharge order and cannot be deleted",
+	)
 	ErrUpstreamBalanceRefreshUnavailable = infraerrors.ServiceUnavailable(
 		"UPSTREAM_BALANCE_REFRESH_UNAVAILABLE",
 		"upstream balance refresh is unavailable",
@@ -30,6 +34,10 @@ var (
 	ErrUpstreamRedeemUnavailable = infraerrors.ServiceUnavailable(
 		"UPSTREAM_REDEEM_UNAVAILABLE",
 		"upstream redeem adapter is unavailable",
+	)
+	ErrUpstreamWalletSyncUnavailable = infraerrors.ServiceUnavailable(
+		"UPSTREAM_WALLET_SYNC_UNAVAILABLE",
+		"upstream wallet sync is unavailable",
 	)
 )
 
@@ -51,6 +59,7 @@ type UpstreamWallet struct {
 	ID                        int64                     `json:"id"`
 	Name                      string                    `json:"name"`
 	Provider                  string                    `json:"provider"`
+	SyncDomain                string                    `json:"sync_domain,omitempty"`
 	Currency                  string                    `json:"currency"`
 	ConsumptionCurrency       string                    `json:"consumption_currency"`
 	RechargeMode              string                    `json:"recharge_mode"`
@@ -103,6 +112,20 @@ type UpstreamFundsOverview struct {
 	Wallets []UpstreamWallet     `json:"wallets"`
 }
 
+type UpstreamWalletSyncPlan struct {
+	Domain     string
+	WalletID   int64
+	AccountIDs []int64
+}
+
+type UpstreamWalletSyncResult struct {
+	Domains           int `json:"domains"`
+	CreatedWallets    int `json:"created_wallets"`
+	ClassifiedWallets int `json:"classified_wallets"`
+	LinkedAccounts    int `json:"linked_accounts"`
+	SkippedAccounts   int `json:"skipped_accounts"`
+}
+
 type UpstreamRedeemResult struct {
 	Status string          `json:"status"`
 	Wallet *UpstreamWallet `json:"wallet"`
@@ -113,6 +136,8 @@ type UpstreamFundsRepository interface {
 	GetWallet(ctx context.Context, id int64) (*UpstreamWallet, error)
 	CreateWallet(ctx context.Context, input UpstreamWalletInput) (*UpstreamWallet, error)
 	UpdateWallet(ctx context.Context, id int64, input UpstreamWalletInput) (*UpstreamWallet, error)
+	DeleteWallet(ctx context.Context, id int64) error
+	ApplyWalletSync(ctx context.Context, plans []UpstreamWalletSyncPlan) (*UpstreamWalletSyncResult, error)
 	RecordBalanceSuccess(ctx context.Context, id int64, balance float64, currency, source string) (*UpstreamWallet, error)
 	RecordBalanceFailure(ctx context.Context, id int64, errorSummary, source string) error
 	ListRechargeProducts(ctx context.Context, walletID int64) ([]UpstreamRechargeProduct, error)
@@ -219,6 +244,38 @@ func (s *UpstreamFundsService) UpdateWallet(ctx context.Context, id int64, input
 	}
 	s.enrichWallet(ctx, wallet)
 	return wallet, nil
+}
+
+func (s *UpstreamFundsService) DeleteWallet(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return ErrUpstreamWalletNotFound
+	}
+	return s.repo.DeleteWallet(ctx, id)
+}
+
+func (s *UpstreamFundsService) SyncWallets(ctx context.Context) (*UpstreamWalletSyncResult, error) {
+	if s.accountRepo == nil {
+		return nil, ErrUpstreamWalletSyncUnavailable
+	}
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
+	if err != nil {
+		return nil, err
+	}
+	wallets, err := s.repo.ListWallets(ctx, "", 0)
+	if err != nil {
+		return nil, err
+	}
+	plans, domains, skipped := buildUpstreamWalletSyncPlans(accounts, wallets)
+	result, err := s.repo.ApplyWalletSync(ctx, plans)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = &UpstreamWalletSyncResult{}
+	}
+	result.Domains = domains
+	result.SkippedAccounts = skipped
+	return result, nil
 }
 
 func (s *UpstreamFundsService) RecordManualBalance(ctx context.Context, id int64, balance float64) (*UpstreamWallet, error) {
@@ -459,6 +516,140 @@ func normalizeUpstreamWalletInput(input *UpstreamWalletInput) error {
 	sort.Slice(cleanIDs, func(i, j int) bool { return cleanIDs[i] < cleanIDs[j] })
 	input.AccountIDs = cleanIDs
 	return nil
+}
+
+func buildUpstreamWalletSyncPlans(accounts []Account, wallets []UpstreamWallet) ([]UpstreamWalletSyncPlan, int, int) {
+	assignedWalletByAccount := make(map[int64]int64)
+	walletByID := make(map[int64]UpstreamWallet, len(wallets))
+	for _, wallet := range wallets {
+		walletByID[wallet.ID] = wallet
+		for _, accountID := range wallet.AccountIDs {
+			assignedWalletByAccount[accountID] = wallet.ID
+		}
+	}
+
+	domainAccounts := make(map[string][]int64)
+	walletDomains := make(map[int64]map[string]struct{})
+	skipped := 0
+	for i := range accounts {
+		account := &accounts[i]
+		baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+		if !IsUpstreamBillingProbeIdentity(account.Platform, account.Type) ||
+			strings.TrimSpace(account.GetCredential("api_key")) == "" ||
+			upstreamBillingProbeTargetIsOfficialAPI(baseURL) {
+			skipped++
+			continue
+		}
+		domain := upstreamWalletDomain(baseURL)
+		if domain == "" {
+			skipped++
+			continue
+		}
+		domainAccounts[domain] = append(domainAccounts[domain], account.ID)
+		if walletID := assignedWalletByAccount[account.ID]; walletID > 0 {
+			if walletDomains[walletID] == nil {
+				walletDomains[walletID] = make(map[string]struct{})
+			}
+			walletDomains[walletID][domain] = struct{}{}
+		}
+	}
+
+	domains := make([]string, 0, len(domainAccounts))
+	for domain := range domainAccounts {
+		domains = append(domains, domain)
+	}
+	sort.Strings(domains)
+
+	plans := make([]UpstreamWalletSyncPlan, 0, len(domains))
+	for _, domain := range domains {
+		accountIDs := domainAccounts[domain]
+		sort.Slice(accountIDs, func(i, j int) bool { return accountIDs[i] < accountIDs[j] })
+		unassigned := make([]int64, 0, len(accountIDs))
+		for _, accountID := range accountIDs {
+			if assignedWalletByAccount[accountID] == 0 {
+				unassigned = append(unassigned, accountID)
+			}
+		}
+
+		targetIDs := selectUpstreamWalletSyncTargets(domain, wallets, walletDomains)
+		if len(targetIDs) == 0 {
+			if len(unassigned) > 0 {
+				plans = append(plans, UpstreamWalletSyncPlan{Domain: domain, AccountIDs: unassigned})
+			}
+			continue
+		}
+		for index, targetID := range targetIDs {
+			target := walletByID[targetID]
+			accountIDs := []int64(nil)
+			if index == 0 {
+				accountIDs = unassigned
+			}
+			if len(accountIDs) > 0 || !strings.EqualFold(strings.TrimSpace(target.SyncDomain), domain) {
+				plans = append(plans, UpstreamWalletSyncPlan{Domain: domain, WalletID: targetID, AccountIDs: accountIDs})
+			}
+		}
+	}
+	return plans, len(domains), skipped
+}
+
+func selectUpstreamWalletSyncTargets(
+	domain string,
+	wallets []UpstreamWallet,
+	walletDomains map[int64]map[string]struct{},
+) []int64 {
+	type candidate struct {
+		id    int64
+		score int
+	}
+	candidates := make([]candidate, 0)
+	for _, wallet := range wallets {
+		domains := walletDomains[wallet.ID]
+		if len(domains) > 1 {
+			continue
+		}
+		if len(domains) == 1 {
+			if _, matches := domains[domain]; !matches {
+				continue
+			}
+		}
+		score := 0
+		if len(domains) == 1 {
+			score = 30
+		}
+		if strings.EqualFold(strings.TrimSpace(wallet.SyncDomain), domain) && score < 20 {
+			score = 20
+		}
+		if strings.EqualFold(strings.TrimSpace(wallet.Name), domain) && score < 10 {
+			score = 10
+		}
+		if score > 0 {
+			candidates = append(candidates, candidate{id: wallet.ID, score: score})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score != candidates[j].score {
+			return candidates[i].score > candidates[j].score
+		}
+		return candidates[i].id < candidates[j].id
+	})
+	targetIDs := make([]int64, len(candidates))
+	for i := range candidates {
+		targetIDs[i] = candidates[i].id
+	}
+	return targetIDs
+}
+
+func upstreamWalletDomain(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	host = strings.TrimPrefix(host, "www.")
+	if host == "" || len(host) > 100 {
+		return ""
+	}
+	return host
 }
 
 func calculateUpstreamWalletMetrics(wallet *UpstreamWallet) {

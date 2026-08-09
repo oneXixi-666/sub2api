@@ -25,7 +25,7 @@ func (r *upstreamFundsRepository) SaveUpstreamPanelSession(
 			jsonb_set(COALESCE(extra, '{}'::jsonb), '{panel_session_ciphertext}', to_jsonb($2::text), true),
 			'{panel_session_state}', $3::jsonb, true
 		), updated_at = NOW()
-		WHERE id = $1
+			WHERE id = $1 AND deleted_at IS NULL
 	`, walletID, ciphertext, string(payload))
 	if err != nil {
 		return fmt.Errorf("save upstream panel session: %w", err)
@@ -49,7 +49,7 @@ func (r *upstreamFundsRepository) SaveUpstreamPanelCredentials(
 		UPDATE upstream_wallets
 		SET panel_account_id = $2, panel_login_identity = $3,
 			panel_login_password_ciphertext = $4, updated_at = NOW()
-		WHERE id = $1
+			WHERE id = $1 AND deleted_at IS NULL
 	`, walletID, accountID, identity, passwordCiphertext)
 	if err != nil {
 		return fmt.Errorf("save upstream panel credentials: %w", err)
@@ -69,7 +69,7 @@ func (r *upstreamFundsRepository) ClearUpstreamPanelCredentials(ctx context.Cont
 		UPDATE upstream_wallets
 		SET panel_account_id = NULL, panel_login_identity = '',
 			panel_login_password_ciphertext = '', updated_at = NOW()
-		WHERE id = $1
+			WHERE id = $1 AND deleted_at IS NULL
 	`, walletID)
 	if err != nil {
 		return fmt.Errorf("clear upstream panel credentials: %w", err)
@@ -101,8 +101,9 @@ func (r *upstreamFundsRepository) CompareAndSwapUpstreamPanelSession(
 			jsonb_set(COALESCE(extra, '{}'::jsonb), '{panel_session_ciphertext}', to_jsonb($3::text), true),
 			'{panel_session_state}', $4::jsonb, true
 		), updated_at = NOW()
-		WHERE id = $1
-		  AND COALESCE(extra->>'panel_session_ciphertext', '') = $2
+			WHERE id = $1
+			  AND deleted_at IS NULL
+			  AND COALESCE(extra->>'panel_session_ciphertext', '') = $2
 	`, walletID, expectedCiphertext, ciphertext, string(payload))
 	if err != nil {
 		return false, fmt.Errorf("update upstream panel session: %w", err)
@@ -119,7 +120,7 @@ func (r *upstreamFundsRepository) ClearUpstreamPanelSession(ctx context.Context,
 		UPDATE upstream_wallets
 		SET extra = COALESCE(extra, '{}'::jsonb) - 'panel_session_ciphertext' - 'panel_session_state',
 			updated_at = NOW()
-		WHERE id = $1
+			WHERE id = $1 AND deleted_at IS NULL
 	`, walletID)
 	if err != nil {
 		return fmt.Errorf("clear upstream panel session: %w", err)
@@ -145,7 +146,8 @@ func (r *upstreamFundsRepository) ListDueUpstreamPanelSessionWalletIDs(
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id
 		FROM upstream_wallets
-		WHERE enabled = TRUE
+			WHERE enabled = TRUE
+			  AND deleted_at IS NULL
 			  AND (
 				COALESCE(extra->>'panel_session_ciphertext', '') <> ''
 				OR COALESCE(panel_login_password_ciphertext, '') <> ''

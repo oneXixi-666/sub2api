@@ -134,6 +134,25 @@ func (h *UpstreamFundsHandler) UpdateWallet(c *gin.Context) {
 	response.Success(c, wallet)
 }
 
+func (h *UpstreamFundsHandler) DeleteWallet(c *gin.Context) {
+	id, ok := parseUpstreamWalletID(c)
+	if !ok {
+		return
+	}
+	if response.ErrorFrom(c, h.service.DeleteWallet(c.Request.Context(), id)) {
+		return
+	}
+	response.Success(c, gin.H{"deleted": true})
+}
+
+func (h *UpstreamFundsHandler) SyncWallets(c *gin.Context) {
+	result, err := h.service.SyncWallets(c.Request.Context())
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, result)
+}
+
 func (h *UpstreamFundsHandler) RefreshBalance(c *gin.Context) {
 	id, ok := parseUpstreamWalletID(c)
 	if !ok {

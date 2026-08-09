@@ -132,8 +132,10 @@ func registerUpstreamFundsRoutes(admin *gin.RouterGroup, h *handler.Handlers, st
 	{
 		upstreamFunds.GET("/wallets", h.Admin.UpstreamFunds.ListWallets)
 		upstreamFunds.POST("/wallets", h.Admin.UpstreamFunds.CreateWallet)
+		upstreamFunds.POST("/wallets/sync", h.Admin.UpstreamFunds.SyncWallets)
 		upstreamFunds.GET("/wallets/:id", h.Admin.UpstreamFunds.GetWallet)
 		upstreamFunds.PUT("/wallets/:id", h.Admin.UpstreamFunds.UpdateWallet)
+		upstreamFunds.DELETE("/wallets/:id", gin.HandlerFunc(stepUpAuth), h.Admin.UpstreamFunds.DeleteWallet)
 		upstreamFunds.POST("/wallets/:id/refresh-balance", h.Admin.UpstreamFunds.RefreshBalance)
 		upstreamFunds.POST("/wallets/:id/manual-balance", h.Admin.UpstreamFunds.RecordManualBalance)
 		upstreamFunds.POST("/wallets/:id/redeem-code", h.Admin.UpstreamFunds.RedeemCode)

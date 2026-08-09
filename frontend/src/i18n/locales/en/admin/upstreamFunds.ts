@@ -4,6 +4,10 @@ export default {
     description: 'Group accounts by real upstream wallet and track balance, consumption, and current groups.',
     createWallet: 'Add upstream wallet',
     editWallet: 'Edit upstream wallet',
+		syncWallets: 'Sync channels',
+		syncWalletsHint: 'Create wallets and classify existing channels by upstream domain',
+		deleteWallet: 'Delete upstream wallet',
+		deleteConfirm: 'Delete “{name}”? Linked accounts will be released while recharge history is retained.',
     recordBalance: 'Record balance',
 		refreshBalance: 'Sync balance',
     recharge: 'Top up',
@@ -61,6 +65,7 @@ export default {
 			healthy: 'Well funded',
 			normal: 'Normal',
 			alert: 'Alert',
+			attention: 'Needs attention',
 			unknown: 'Not synced'
 		},
 			rechargeForm: {
@@ -135,7 +140,9 @@ export default {
       title: 'No upstream wallets yet',
 			description: 'Start by grouping upstream accounts that share one real balance.',
 			filterTitle: 'No wallets in this balance range',
-			filterDescription: 'Choose another balance tab to view wallets.'
+			filterDescription: 'Choose another balance tab to view wallets.',
+			attentionTitle: 'No wallets need attention',
+			attentionDescription: 'Wallets with a failed balance sync or no recorded balance appear here.'
     },
     messages: {
       loadFailed: 'Failed to load upstream funds',
@@ -143,6 +150,10 @@ export default {
       balanceFailed: 'Failed to record balance',
       created: 'Upstream wallet created',
       updated: 'Upstream wallet updated',
+			deleted: 'Upstream wallet deleted',
+			deleteFailed: 'Failed to delete upstream wallet',
+			walletsSynced: 'Synced {domains} domains: {created} wallets created, {classified} existing wallets classified, and {linked} accounts linked',
+			walletSyncFailed: 'Failed to sync upstream channels',
       balanceRecorded: 'Balance snapshot recorded',
 			balanceSynced: 'Upstream balance synced',
 			allBalancesSynced: 'All configured wallet balances were updated',

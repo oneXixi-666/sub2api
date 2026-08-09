@@ -11,6 +11,9 @@ type upstreamFundsRepositoryStub struct {
 	wallets      []UpstreamWallet
 	createdInput UpstreamWalletInput
 	groupID      int64
+	deletedID    int64
+	syncPlans    []UpstreamWalletSyncPlan
+	syncResult   *UpstreamWalletSyncResult
 }
 
 func (s *upstreamFundsRepositoryStub) ListWallets(_ context.Context, _ string, groupID int64) ([]UpstreamWallet, error) {
@@ -36,6 +39,20 @@ func (s *upstreamFundsRepositoryStub) CreateWallet(_ context.Context, input Upst
 
 func (s *upstreamFundsRepositoryStub) UpdateWallet(context.Context, int64, UpstreamWalletInput) (*UpstreamWallet, error) {
 	return nil, ErrUpstreamWalletNotFound
+}
+
+func (s *upstreamFundsRepositoryStub) DeleteWallet(_ context.Context, id int64) error {
+	s.deletedID = id
+	return nil
+}
+
+func (s *upstreamFundsRepositoryStub) ApplyWalletSync(_ context.Context, plans []UpstreamWalletSyncPlan) (*UpstreamWalletSyncResult, error) {
+	s.syncPlans = append([]UpstreamWalletSyncPlan(nil), plans...)
+	if s.syncResult != nil {
+		result := *s.syncResult
+		return &result, nil
+	}
+	return &UpstreamWalletSyncResult{}, nil
 }
 
 func (s *upstreamFundsRepositoryStub) RecordBalanceSuccess(context.Context, int64, float64, string, string) (*UpstreamWallet, error) {
@@ -131,6 +148,82 @@ func TestUpstreamFundsCreateRejectsUnsafeCardSiteURL(t *testing.T) {
 		CardSiteURL:  "https://user:password@cards.example.com/buy",
 	})
 	require.Error(t, err)
+}
+
+func TestBuildUpstreamWalletSyncPlansGroupsCustomSub2APIDomains(t *testing.T) {
+	accounts := []Account{
+		{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-9", "base_url": "https://relay.example.com/v1"}},
+		{ID: 3, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-3", "base_url": "https://relay.example.com/api"}},
+		{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "official", "base_url": "https://api.openai.com/v1"}},
+		{ID: 12, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"api_key": "oauth", "base_url": "https://other.example.com/v1"}},
+	}
+
+	plans, domains, skipped := buildUpstreamWalletSyncPlans(accounts, nil)
+	require.Equal(t, 1, domains)
+	require.Equal(t, 2, skipped)
+	require.Equal(t, []UpstreamWalletSyncPlan{{Domain: "relay.example.com", AccountIDs: []int64{3, 9}}}, plans)
+}
+
+func TestBuildUpstreamWalletSyncPlansClassifiesExistingWalletAndLinksOldAccounts(t *testing.T) {
+	accounts := []Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-1", "base_url": "https://panel.example.com/v1"}},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-2", "base_url": "https://panel.example.com/v1/chat"}},
+	}
+	wallets := []UpstreamWallet{{ID: 7, Name: "Legacy channel", AccountIDs: []int64{1}}}
+
+	plans, domains, skipped := buildUpstreamWalletSyncPlans(accounts, wallets)
+	require.Equal(t, 1, domains)
+	require.Zero(t, skipped)
+	require.Equal(t, []UpstreamWalletSyncPlan{{Domain: "panel.example.com", WalletID: 7, AccountIDs: []int64{2}}}, plans)
+}
+
+func TestBuildUpstreamWalletSyncPlansClassifiesEveryMatchingLegacyWallet(t *testing.T) {
+	accounts := []Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-1", "base_url": "https://panel.example.com/v1"}},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-2", "base_url": "https://panel.example.com/v1"}},
+		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key-3", "base_url": "https://panel.example.com/v1"}},
+	}
+	wallets := []UpstreamWallet{
+		{ID: 9, Name: "Legacy B", AccountIDs: []int64{2}},
+		{ID: 7, Name: "Legacy A", AccountIDs: []int64{1}},
+	}
+
+	plans, domains, skipped := buildUpstreamWalletSyncPlans(accounts, wallets)
+	require.Equal(t, 1, domains)
+	require.Zero(t, skipped)
+	require.Equal(t, []UpstreamWalletSyncPlan{
+		{Domain: "panel.example.com", WalletID: 7, AccountIDs: []int64{3}},
+		{Domain: "panel.example.com", WalletID: 9},
+	}, plans)
+}
+
+type upstreamFundsSyncAccountRepoStub struct {
+	AccountRepository
+	accounts []Account
+}
+
+func (s *upstreamFundsSyncAccountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]Account, error) {
+	return append([]Account(nil), s.accounts...), nil
+}
+
+func TestUpstreamFundsSyncWalletsReturnsRepositoryCountsAndDiscoverySummary(t *testing.T) {
+	repo := &upstreamFundsRepositoryStub{syncResult: &UpstreamWalletSyncResult{CreatedWallets: 1, LinkedAccounts: 2}}
+	accounts := &upstreamFundsSyncAccountRepoStub{accounts: []Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key", "base_url": "https://sync.example.com/v1"}},
+	}}
+
+	result, err := NewUpstreamFundsService(repo, accounts, nil).SyncWallets(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Domains)
+	require.Equal(t, 1, result.CreatedWallets)
+	require.Equal(t, 2, result.LinkedAccounts)
+	require.Equal(t, []UpstreamWalletSyncPlan{{Domain: "sync.example.com", AccountIDs: []int64{1}}}, repo.syncPlans)
+}
+
+func TestUpstreamFundsDeleteWalletDelegatesToRepository(t *testing.T) {
+	repo := &upstreamFundsRepositoryStub{}
+	require.NoError(t, NewUpstreamFundsService(repo, nil, nil).DeleteWallet(context.Background(), 17))
+	require.Equal(t, int64(17), repo.deletedID)
 }
 
 func TestMapProviderRechargeStatusFailsClosed(t *testing.T) {

@@ -53,6 +53,7 @@ export interface UpstreamWallet {
   id: number
   name: string
   provider: string
+	sync_domain?: string
   currency: string
 	consumption_currency: string
   recharge_mode: UpstreamRechargeMode
@@ -100,6 +101,14 @@ export interface UpstreamWalletInput {
 	card_site_url: string
   enabled: boolean
   account_ids: number[]
+}
+
+export interface UpstreamWalletSyncResult {
+	domains: number
+	created_wallets: number
+	classified_wallets: number
+	linked_accounts: number
+	skipped_accounts: number
 }
 
 export interface UpstreamRedeemResult {
@@ -169,6 +178,15 @@ export async function create(input: UpstreamWalletInput): Promise<UpstreamWallet
 export async function update(id: number, input: UpstreamWalletInput): Promise<UpstreamWallet> {
   const { data } = await apiClient.put<UpstreamWallet>(`/admin/upstream-funds/wallets/${id}`, input)
   return data
+}
+
+export async function remove(id: number): Promise<void> {
+	await apiClient.delete(`/admin/upstream-funds/wallets/${id}`)
+}
+
+export async function syncWallets(): Promise<UpstreamWalletSyncResult> {
+	const { data } = await apiClient.post<UpstreamWalletSyncResult>('/admin/upstream-funds/wallets/sync')
+	return data
 }
 
 export async function refreshBalance(id: number): Promise<UpstreamWallet> {
@@ -255,7 +273,7 @@ export async function listAccounts(): Promise<UpstreamFundsAccount[]> {
 }
 
 const upstreamFundsAPI = {
-	list, listAll, getById, create, update, refreshBalance, recordBalance, redeemCode,
+	list, listAll, getById, create, update, remove, syncWallets, refreshBalance, recordBalance, redeemCode,
 	getPanelSession, loginPanelSession, importPanelSession, completePanelSessionTwoFactor, checkPanelSession, deletePanelSession,
 	listPaymentChannels, createRechargeOrder, getRechargeOrder, pollRechargeOrder, manualCompleteRechargeOrder, listAccounts
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,6 +41,98 @@ func TestUpstreamFundsWalletsFilterByConfiguredOrLatestActualGroup(t *testing.T)
 	wallets, err := repo.ListWallets(context.Background(), "", 17)
 	require.NoError(t, err)
 	require.Empty(t, wallets)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteUpstreamWalletSoftDeletesAndReleasesAccounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT id FROM upstream_wallets.*WHERE id = \$1 AND deleted_at IS NULL.*FOR UPDATE`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(9)))
+	mock.ExpectQuery(`(?s)SELECT EXISTS.*upstream_recharge_orders.*status NOT IN`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectExec(`(?s)UPDATE upstream_wallets.*deleted_at = NOW\(\).*WHERE id = \$1 AND deleted_at IS NULL`).
+		WithArgs(int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM upstream_wallet_accounts WHERE wallet_id = \$1`).
+		WithArgs(int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectCommit()
+
+	repo := &upstreamFundsRepository{db: db}
+	require.NoError(t, repo.DeleteWallet(context.Background(), 9))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteUpstreamWalletRejectsActiveRechargeOrder(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT id FROM upstream_wallets.*WHERE id = \$1 AND deleted_at IS NULL.*FOR UPDATE`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(9)))
+	mock.ExpectQuery(`(?s)SELECT EXISTS.*upstream_recharge_orders.*status NOT IN`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectRollback()
+
+	repo := &upstreamFundsRepository{db: db}
+	err = repo.DeleteWallet(context.Background(), 9)
+	require.ErrorIs(t, err, service.ErrUpstreamWalletHasActiveRecharge)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateUpstreamRechargeOrderRejectsDeletedWalletUnderLock(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT id FROM upstream_wallets.*WHERE id = \$1 AND deleted_at IS NULL.*FOR SHARE`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectRollback()
+
+	repo := &upstreamFundsRepository{db: db}
+	_, err = repo.CreateRechargeOrder(context.Background(), &service.UpstreamRechargeOrder{WalletID: 9}, 1)
+	require.ErrorIs(t, err, service.ErrUpstreamWalletNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyWalletSyncCreatesDomainNamedWalletAndLinksAccounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock\(\$1\)`).
+		WithArgs(int64(0x5550574C)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT a.id.*NOT EXISTS.*FOR UPDATE`).
+		WithArgs(pq.Array([]int64{3, 9})).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(3)).AddRow(int64(9)))
+	mock.ExpectQuery(`(?s)INSERT INTO upstream_wallets.*name, provider, currency, recharge_mode.*RETURNING id`).
+		WithArgs("relay.example.com").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(12)))
+	mock.ExpectExec(`(?s)INSERT INTO upstream_wallet_accounts.*ON CONFLICT \(account_id\) DO NOTHING`).
+		WithArgs(int64(12), pq.Array([]int64{3, 9})).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectCommit()
+
+	repo := &upstreamFundsRepository{db: db}
+	result, err := repo.ApplyWalletSync(context.Background(), []service.UpstreamWalletSyncPlan{{
+		Domain: "relay.example.com", AccountIDs: []int64{3, 9},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.CreatedWallets)
+	require.Equal(t, 2, result.LinkedAccounts)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

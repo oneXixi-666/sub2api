@@ -37,7 +37,7 @@ func (r *upstreamFundsRepository) GetWallet(ctx context.Context, id int64) (*ser
 func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, search string, groupID int64) ([]service.UpstreamWallet, error) {
 	query := `
 		SELECT
-			w.id, w.name, w.provider, w.currency, w.recharge_mode,
+			w.id, w.name, w.provider, COALESCE(w.extra->>'sync_domain', ''), w.currency, w.recharge_mode,
 				COALESCE(w.extra->>'card_site_url', ''),
 				COALESCE(w.extra->>'panel_session_ciphertext', ''),
 				COALESCE(w.extra->'panel_session_state', '{}'::jsonb),
@@ -97,7 +97,7 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 	`
 
 	args := make([]any, 0, 2)
-	conditions := make([]string, 0, 2)
+	conditions := []string{"w.deleted_at IS NULL"}
 	if id != nil {
 		args = append(args, *id)
 		conditions = append(conditions, fmt.Sprintf("w.id = $%d", len(args)))
@@ -149,7 +149,7 @@ func (r *upstreamFundsRepository) queryWallets(ctx context.Context, id *int64, s
 		var panelAccountID sql.NullInt64
 		var panelSessionJSON, accountsJSON, configuredGroupsJSON, actualGroupsJSON []byte
 		if err := rows.Scan(
-			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.Currency, &wallet.RechargeMode, &wallet.CardSiteURL,
+			&wallet.ID, &wallet.Name, &wallet.Provider, &wallet.SyncDomain, &wallet.Currency, &wallet.RechargeMode, &wallet.CardSiteURL,
 			&wallet.PanelSessionCiphertext, &panelSessionJSON,
 			&panelAccountID, &wallet.PanelCredentialIdentity, &wallet.PanelCredentialCiphertext,
 			&wallet.Enabled, &balance, &balanceUpdatedAt, &wallet.BalanceError,
@@ -238,8 +238,8 @@ func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, in
 			SET name = $2, provider = $3, currency = $4, recharge_mode = $5,
 				enabled = $6,
 				extra = jsonb_set(extra, '{card_site_url}', to_jsonb($7::text), true), updated_at = NOW()
-			WHERE id = $1
-		`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Enabled, input.CardSiteURL)
+			WHERE id = $1 AND deleted_at IS NULL
+			`, id, input.Name, input.Provider, input.Currency, input.RechargeMode, input.Enabled, input.CardSiteURL)
 	if err != nil {
 		return nil, fmt.Errorf("update upstream wallet: %w", err)
 	}
@@ -256,6 +256,198 @@ func (r *upstreamFundsRepository) UpdateWallet(ctx context.Context, id int64, in
 		return nil, fmt.Errorf("commit update upstream wallet: %w", err)
 	}
 	return r.GetWallet(ctx, id)
+}
+
+func (r *upstreamFundsRepository) DeleteWallet(ctx context.Context, id int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete upstream wallet: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var lockedID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM upstream_wallets
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE
+	`, id).Scan(&lockedID)
+	if err == sql.ErrNoRows {
+		return service.ErrUpstreamWalletNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock upstream wallet for deletion: %w", err)
+	}
+
+	var hasActiveRecharge bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM upstream_recharge_orders
+			WHERE wallet_id = $1
+			  AND status NOT IN ('completed', 'failed', 'expired', 'cancelled')
+		)
+	`, id).Scan(&hasActiveRecharge)
+	if err != nil {
+		return fmt.Errorf("check active upstream recharge orders: %w", err)
+	}
+	if hasActiveRecharge {
+		return service.ErrUpstreamWalletHasActiveRecharge
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE upstream_wallets
+		SET deleted_at = NOW(), enabled = FALSE,
+			panel_account_id = NULL, panel_login_identity = '', panel_login_password_ciphertext = '',
+			extra = COALESCE(extra, '{}'::jsonb) - 'panel_session_ciphertext' - 'panel_session_state',
+			updated_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, id)
+	if err != nil {
+		return fmt.Errorf("delete upstream wallet: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read upstream wallet delete result: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrUpstreamWalletNotFound
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM upstream_wallet_accounts WHERE wallet_id = $1", id); err != nil {
+		return fmt.Errorf("release deleted upstream wallet accounts: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete upstream wallet: %w", err)
+	}
+	return nil
+}
+
+func (r *upstreamFundsRepository) ApplyWalletSync(
+	ctx context.Context,
+	plans []service.UpstreamWalletSyncPlan,
+) (*service.UpstreamWalletSyncResult, error) {
+	result := &service.UpstreamWalletSyncResult{}
+	if len(plans) == 0 {
+		return result, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin sync upstream wallets: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Serialize catalog syncs so concurrent clicks cannot create duplicate empty wallets.
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", int64(0x5550574C)); err != nil {
+		return nil, fmt.Errorf("lock upstream wallet sync: %w", err)
+	}
+
+	for _, plan := range plans {
+		domain := strings.TrimSpace(plan.Domain)
+		if domain == "" {
+			continue
+		}
+		walletID := plan.WalletID
+		if walletID > 0 {
+			var lockedID int64
+			if err := tx.QueryRowContext(ctx, `
+				SELECT id FROM upstream_wallets
+				WHERE id = $1 AND deleted_at IS NULL
+				FOR UPDATE
+			`, walletID).Scan(&lockedID); err != nil {
+				if err == sql.ErrNoRows {
+					return nil, service.ErrUpstreamWalletNotFound
+				}
+				return nil, fmt.Errorf("lock upstream wallet for sync: %w", err)
+			}
+			updated, err := tx.ExecContext(ctx, `
+				UPDATE upstream_wallets
+				SET extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{sync_domain}', to_jsonb($2::text), true),
+					updated_at = NOW()
+				WHERE id = $1 AND deleted_at IS NULL
+				  AND COALESCE(extra->>'sync_domain', '') IS DISTINCT FROM $2
+			`, walletID, domain)
+			if err != nil {
+				return nil, fmt.Errorf("classify existing upstream wallet: %w", err)
+			}
+			classified, err := updated.RowsAffected()
+			if err != nil {
+				return nil, fmt.Errorf("read upstream wallet classification result: %w", err)
+			}
+			result.ClassifiedWallets += int(classified)
+		}
+
+		accountIDs, err := lockUnassignedWalletAccountIDs(ctx, tx, plan.AccountIDs)
+		if err != nil {
+			return nil, err
+		}
+		if walletID == 0 {
+			if len(accountIDs) == 0 {
+				continue
+			}
+			if err := tx.QueryRowContext(ctx, `
+				INSERT INTO upstream_wallets (
+					name, provider, currency, recharge_mode, enabled, extra
+				) VALUES (
+					$1, 'sub2api', 'USD', 'direct', TRUE,
+					jsonb_build_object('card_site_url', '', 'sync_domain', $1::text)
+				)
+				RETURNING id
+			`, domain).Scan(&walletID); err != nil {
+				return nil, fmt.Errorf("create domain upstream wallet: %w", err)
+			}
+			result.CreatedWallets++
+		}
+		if len(accountIDs) == 0 {
+			continue
+		}
+		linked, err := tx.ExecContext(ctx, `
+			INSERT INTO upstream_wallet_accounts (wallet_id, account_id)
+			SELECT $1, account_id FROM UNNEST($2::bigint[]) AS account_id
+			ON CONFLICT (account_id) DO NOTHING
+		`, walletID, pq.Array(accountIDs))
+		if err != nil {
+			return nil, fmt.Errorf("link synced upstream wallet accounts: %w", err)
+		}
+		linkedCount, err := linked.RowsAffected()
+		if err != nil {
+			return nil, fmt.Errorf("read synced upstream account result: %w", err)
+		}
+		result.LinkedAccounts += int(linkedCount)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit sync upstream wallets: %w", err)
+	}
+	return result, nil
+}
+
+func lockUnassignedWalletAccountIDs(ctx context.Context, tx *sql.Tx, accountIDs []int64) ([]int64, error) {
+	if len(accountIDs) == 0 {
+		return []int64{}, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT a.id
+		FROM accounts a
+		WHERE a.id = ANY($1)
+		  AND a.deleted_at IS NULL
+		  AND NOT EXISTS (
+			SELECT 1 FROM upstream_wallet_accounts uwa WHERE uwa.account_id = a.id
+		  )
+		ORDER BY a.id
+		FOR UPDATE
+	`, pq.Array(accountIDs))
+	if err != nil {
+		return nil, fmt.Errorf("lock upstream accounts for sync: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]int64, 0, len(accountIDs))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan upstream account for sync: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate upstream accounts for sync: %w", err)
+	}
+	return ids, nil
 }
 
 func (r *upstreamFundsRepository) RecordBalanceSuccess(
@@ -275,7 +467,7 @@ func (r *upstreamFundsRepository) RecordBalanceSuccess(
 	err = tx.QueryRowContext(ctx, `
 		UPDATE upstream_wallets
 		SET balance = $2, balance_updated_at = NOW(), balance_error = '', updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING currency
 	`, id, balance).Scan(&walletCurrency)
 	if err == sql.ErrNoRows {
@@ -315,7 +507,7 @@ func (r *upstreamFundsRepository) RecordBalanceFailure(
 	err = tx.QueryRowContext(ctx, `
 		UPDATE upstream_wallets
 		SET balance_error = $2, updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING currency
 	`, id, strings.TrimSpace(errorSummary)).Scan(&currency)
 	if err == sql.ErrNoRows {
@@ -339,10 +531,10 @@ func (r *upstreamFundsRepository) RecordBalanceFailure(
 
 func (r *upstreamFundsRepository) ListAccountOptions(ctx context.Context) ([]service.UpstreamFundsAccount, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.name, a.platform, a.type, uwa.wallet_id, COALESCE(w.name, '')
+		SELECT a.id, a.name, a.platform, a.type, w.id, COALESCE(w.name, '')
 		FROM accounts a
 		LEFT JOIN upstream_wallet_accounts uwa ON uwa.account_id = a.id
-		LEFT JOIN upstream_wallets w ON w.id = uwa.wallet_id
+		LEFT JOIN upstream_wallets w ON w.id = uwa.wallet_id AND w.deleted_at IS NULL
 		WHERE a.deleted_at IS NULL
 		ORDER BY a.platform, a.name, a.id
 	`)
