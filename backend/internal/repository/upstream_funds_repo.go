@@ -386,10 +386,10 @@ func (r *upstreamFundsRepository) ApplyWalletSync(
 					name, provider, currency, recharge_mode, enabled, extra
 				) VALUES (
 					$1, 'sub2api', 'USD', 'direct', TRUE,
-					jsonb_build_object('card_site_url', '', 'sync_domain', $1::text)
+					jsonb_build_object('card_site_url', '', 'sync_domain', $2::text)
 				)
 				RETURNING id
-			`, domain).Scan(&walletID); err != nil {
+			`, domain, domain).Scan(&walletID); err != nil {
 				return nil, fmt.Errorf("create domain upstream wallet: %w", err)
 			}
 			result.CreatedWallets++

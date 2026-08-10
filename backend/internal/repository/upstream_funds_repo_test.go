@@ -119,7 +119,7 @@ func TestApplyWalletSyncCreatesDomainNamedWalletAndLinksAccounts(t *testing.T) {
 		WithArgs(pq.Array([]int64{3, 9})).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(3)).AddRow(int64(9)))
 	mock.ExpectQuery(`(?s)INSERT INTO upstream_wallets.*name, provider, currency, recharge_mode.*RETURNING id`).
-		WithArgs("relay.example.com").
+		WithArgs("relay.example.com", "relay.example.com").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(12)))
 	mock.ExpectExec(`(?s)INSERT INTO upstream_wallet_accounts.*ON CONFLICT \(account_id\) DO NOTHING`).
 		WithArgs(int64(12), pq.Array([]int64{3, 9})).
