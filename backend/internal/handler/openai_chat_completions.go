@@ -285,7 +285,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					}
 					// Pool mode: retry on the same account
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := failoverErr.RetryLimit(account.GetPoolModeRetryCount())
+						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
@@ -304,7 +304,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.FinalizeOpenAIOAuthRetryState(c.Request.Context(), account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr

@@ -304,7 +304,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := failoverErr.RetryLimit(account.GetPoolModeRetryCount())
+						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
 							reqLog.Warn("openai.images.pool_mode_same_account_retry",
@@ -321,7 +321,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.FinalizeOpenAIOAuthRetryState(requestCtx, account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr

@@ -247,19 +247,19 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
 		}
-		shouldFailover := s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody)
+		shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody)
 		if account.Platform == PlatformGrok {
 			shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
 			s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, resolveGrokWSUpstreamModel(account, body, originalModel)), account, resp.StatusCode, resp.Header, respBody)
 			if turn == 1 && shouldFailover {
-				return nil, s.newOpenAIOAuthAwareFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
+				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
 			}
 		} else if turn == 1 && shouldFailover {
 			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
 		}
 		if account.Platform != PlatformGrok && (shouldFailover || shouldCooldownOpenAITransientUpstreamError(resp.StatusCode, respBody)) {
 			canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-			s.handleOpenAIFailoverSideEffects(ctx, resp, account, respBody, canonicalModel)
+			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, canonicalModel)
 		}
 		_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(resp.StatusCode, upstreamMsg))
 		return nil, fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg)
@@ -399,7 +399,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				errMessage = "upstream error event"
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-			shouldFailover := s.shouldFailoverOpenAIUpstreamResponseForAccount(account, statusCode, errMessage, upstreamMessage)
+			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
 			if account.Platform == PlatformGrok {
 				// SSE error events do not carry an HTTP status. The local status
 				// mapper therefore defaults unknown xAI codes (for example
@@ -417,13 +417,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					accountStatus = transientStatus
 				}
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-				decision := openAIOAuthRetryDecisionForError(account, accountStatus, errMessage, upstreamMessage)
-				if !decision.deferAccountState {
-					s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
-				}
+				s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
 			}
 			if turn == 1 && !wroteDownstream && shouldFailover {
-				return nil, s.newOpenAIOAuthAwareFailoverError(account, statusCode, resp.Header, upstreamMessage, errMessage, false)
+				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 			}
 			upstreamEventErr = errors.New(errMessage)
 		}

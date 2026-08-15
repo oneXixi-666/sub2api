@@ -622,7 +622,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
 	reqModel, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
 	canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
-	shouldDisable := s.handleOpenAIFailoverSideEffects(ctx, resp, account, body, canonicalModel)
+	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, canonicalModel)
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform:             account.Platform,
 		AccountID:            account.ID,
@@ -635,8 +635,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: upstreamDetail,
 	})
-	return s.newOpenAIOAuthAwareFailoverError(
-		account,
+	return newOpenAIUpstreamFailoverError(
 		resp.StatusCode,
 		resp.Header,
 		body,
@@ -883,7 +882,12 @@ func openAIStreamFailedEventErrorCode(payload []byte) string {
 // 上游在容量紧张时会把请求丢进降载路径：HTTP 200 之后立刻推 event: error
 // （code=server_is_overloaded / slow_down）并以 response.failed 收尾。
 func isOpenAIUpstreamCapacityShedEvent(payload []byte) bool {
-	return isOpenAIUpstreamCapacityShedPayload(payload)
+	switch openAIStreamFailedEventErrorCode(payload) {
+	case "server_is_overloaded", "slow_down":
+		return true
+	default:
+		return false
+	}
 }
 
 // openAICapacityShedRetryableClientCode 是把上游容量降载错误转发给客户端时改写
@@ -1169,21 +1173,13 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
-	failoverErr := &UpstreamFailoverError{
+	return &UpstreamFailoverError{
 		StatusCode:             statusCode,
 		ResponseBody:           body,
 		ResponseHeaders:        headers,
 		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
 		RequestScopedTransient: isOpenAIUpstreamCapacityShedEvent(payload),
 	}
-	decision := openAIOAuthRetryDecisionForError(account, statusCode, message, payload)
-	if decision.matched {
-		failoverErr.RetryableOnSameAccount = decision.retryableOnSameAccount
-		failoverErr.SameAccountRetryLimit = decision.retryLimit
-		failoverErr.DeferAccountState = decision.deferAccountState
-		failoverErr.RequestScopedTransient = decision.requestScopedTransient
-	}
-	return failoverErr
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(

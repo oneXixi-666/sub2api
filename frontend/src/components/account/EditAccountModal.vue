@@ -2001,65 +2001,6 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth upstream retry policy -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
-        class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.oauthRetry') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.oauthRetryDesc') }}
-            </p>
-          </div>
-          <Toggle v-model="openAIOAuthRetryEnabled" :aria-label="t('admin.accounts.openai.oauthRetry')" />
-        </div>
-        <div v-if="openAIOAuthRetryEnabled" class="space-y-3 border-l-2 border-gray-200 pl-4 dark:border-dark-600">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryCount') }}</label>
-            <input v-model.number="openAIOAuthRetryCount" type="number" min="1" max="10" class="input w-32" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryStatusCodes') }}</label>
-            <input v-model="openAIOAuthRetryStatusCodes" type="text" class="input font-mono" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryKeywords') }}</label>
-            <textarea v-model="openAIOAuthRetryKeywords" rows="2" class="input font-mono" />
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
-        class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.oauthRateLimitRetry') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.oauthRateLimitRetryDesc') }}
-            </p>
-          </div>
-          <Toggle v-model="openAIOAuthRateLimitRetryEnabled" :aria-label="t('admin.accounts.openai.oauthRateLimitRetry')" />
-        </div>
-        <div v-if="openAIOAuthRateLimitRetryEnabled" class="space-y-3 border-l-2 border-gray-200 pl-4 dark:border-dark-600">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryCount') }}</label>
-            <input v-model.number="openAIOAuthRateLimitRetryCount" type="number" min="1" max="10" class="input w-32" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryStatusCodes') }}</label>
-            <input v-model="openAIOAuthRateLimitRetryStatusCodes" type="text" class="input font-mono" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.oauthRetryKeywords') }}</label>
-            <textarea v-model="openAIOAuthRateLimitRetryKeywords" rows="2" class="input font-mono" />
-          </div>
-        </div>
-      </div>
-
       <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
       <div
         v-if="account?.platform === 'openai' && account?.type === 'oauth'"
@@ -3026,41 +2967,6 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
-const openAIOAuthRetryEnabled = ref(false)
-const openAIOAuthRetryCount = ref(2)
-const openAIOAuthRetryStatusCodes = ref('403, 500, 502, 503, 504')
-const openAIOAuthRetryKeywords = ref('unsupported_value\nX-OpenAI-Internal-Codex-Responses-Lite')
-const openAIOAuthRateLimitRetryEnabled = ref(false)
-const openAIOAuthRateLimitRetryCount = ref(2)
-const openAIOAuthRateLimitRetryStatusCodes = ref('429')
-const openAIOAuthRateLimitRetryKeywords = ref('rate_limit_error\nrate_limit_exceeded\nrate limit exceeded\nretry later')
-
-const formatOpenAIOAuthRetryList = (value: unknown, fallback: string) => {
-  if (!Array.isArray(value)) return fallback
-  return value.map(item => String(item).trim()).filter(Boolean).join(', ')
-}
-
-const parseOpenAIOAuthRetryList = (value: string, numeric = false) => {
-  const items = value
-    .split(/[,\n]/)
-    .map(item => item.trim())
-    .filter(Boolean)
-  if (!numeric) return items
-  return items
-    .map(item => Number(item))
-    .filter(item => Number.isInteger(item) && item >= 100 && item <= 599)
-}
-
-const applyOpenAIOAuthRetryCredentials = (credentials: Record<string, unknown>) => {
-  credentials.openai_oauth_retry_enabled = openAIOAuthRetryEnabled.value
-  credentials.openai_oauth_retry_count = Math.min(10, Math.max(1, Number(openAIOAuthRetryCount.value) || 2))
-  credentials.openai_oauth_retry_status_codes = parseOpenAIOAuthRetryList(openAIOAuthRetryStatusCodes.value, true)
-  credentials.openai_oauth_retry_keywords = parseOpenAIOAuthRetryList(openAIOAuthRetryKeywords.value)
-  credentials.openai_oauth_rate_limit_retry_enabled = openAIOAuthRateLimitRetryEnabled.value
-  credentials.openai_oauth_rate_limit_retry_count = Math.min(10, Math.max(1, Number(openAIOAuthRateLimitRetryCount.value) || 2))
-  credentials.openai_oauth_rate_limit_status_codes = parseOpenAIOAuthRetryList(openAIOAuthRateLimitRetryStatusCodes.value, true)
-  credentials.openai_oauth_rate_limit_retry_keywords = parseOpenAIOAuthRetryList(openAIOAuthRateLimitRetryKeywords.value)
-}
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
@@ -3523,14 +3429,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
-  openAIOAuthRetryEnabled.value = false
-  openAIOAuthRetryCount.value = 2
-  openAIOAuthRetryStatusCodes.value = '403, 500, 502, 503, 504'
-  openAIOAuthRetryKeywords.value = 'unsupported_value\nX-OpenAI-Internal-Codex-Responses-Lite'
-  openAIOAuthRateLimitRetryEnabled.value = false
-  openAIOAuthRateLimitRetryCount.value = 2
-  openAIOAuthRateLimitRetryStatusCodes.value = '429'
-  openAIOAuthRateLimitRetryKeywords.value = 'rate_limit_error\nrate_limit_exceeded\nrate limit exceeded\nretry later'
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
   editPlanType.value = ''
@@ -3549,27 +3447,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
-    if (newAccount.type === 'oauth') {
-      const oauthRetryCredentials = newAccount.credentials as Record<string, unknown> | undefined
-      openAIOAuthRetryEnabled.value = oauthRetryCredentials?.openai_oauth_retry_enabled === true
-      openAIOAuthRetryCount.value = Number(oauthRetryCredentials?.openai_oauth_retry_count) || 2
-      openAIOAuthRetryStatusCodes.value = formatOpenAIOAuthRetryList(
-        oauthRetryCredentials?.openai_oauth_retry_status_codes,
-        '403, 500, 502, 503, 504'
-      )
-      openAIOAuthRetryKeywords.value = Array.isArray(oauthRetryCredentials?.openai_oauth_retry_keywords)
-        ? oauthRetryCredentials.openai_oauth_retry_keywords.map(item => String(item).trim()).filter(Boolean).join('\n')
-        : 'unsupported_value\nX-OpenAI-Internal-Codex-Responses-Lite'
-      openAIOAuthRateLimitRetryEnabled.value = oauthRetryCredentials?.openai_oauth_rate_limit_retry_enabled === true
-      openAIOAuthRateLimitRetryCount.value = Number(oauthRetryCredentials?.openai_oauth_rate_limit_retry_count) || 2
-      openAIOAuthRateLimitRetryStatusCodes.value = formatOpenAIOAuthRetryList(
-        oauthRetryCredentials?.openai_oauth_rate_limit_status_codes,
-        '429'
-      )
-      openAIOAuthRateLimitRetryKeywords.value = Array.isArray(oauthRetryCredentials?.openai_oauth_rate_limit_retry_keywords)
-        ? oauthRetryCredentials.openai_oauth_rate_limit_retry_keywords.map(item => String(item).trim()).filter(Boolean).join('\n')
-        : 'rate_limit_error\nrate_limit_exceeded\nrate limit exceeded\nretry later'
-    }
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
@@ -4649,7 +4526,6 @@ const handleSubmit = async () => {
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
       if (props.account.platform === 'openai') {
         applyOpenAIModelMappingCredentials(newCredentials)
-        applyOpenAIOAuthRetryCredentials(newCredentials)
       } else {
         const modelMapping = buildModelRestrictionMapping()
         if (modelMapping) {

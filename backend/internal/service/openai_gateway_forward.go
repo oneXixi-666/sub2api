@@ -915,7 +915,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request after %s (account: %s)", reason, account.Name)
 				continue
 			}
-			if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
+			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -935,9 +935,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					Detail:             upstreamDetail,
 				})
 
-				shouldDisable := s.handleOpenAIFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				return nil, s.newOpenAIOAuthAwareFailoverError(
-					account,
+				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+				return nil, newOpenAIUpstreamFailoverError(
 					resp.StatusCode,
 					resp.Header,
 					respBody,

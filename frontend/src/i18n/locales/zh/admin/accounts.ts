@@ -589,15 +589,6 @@ export default {
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
-        oauthRetry: 'OAuth 上游自动重试',
-        oauthRetryDesc:
-          '仅对当前 OpenAI OAuth 账号生效。状态码或关键词命中后先在同一账号重试，再进入切换账号流程；服务过载提示已内置识别，无需手动填写。',
-        oauthRetryCount: '同账号重试次数',
-        oauthRetryStatusCodes: '状态码',
-        oauthRetryKeywords: '关键词',
-        oauthRateLimitRetry: 'OAuth 限流重试',
-        oauthRateLimitRetryDesc:
-          '匹配 429 或限流错误时先在同一 OAuth 账号重试，重试耗尽后才写入原有限流状态。',
         flattenNamespaces: '摊平 Codex namespace 工具（兼容）',
         flattenNamespacesDesc:
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',

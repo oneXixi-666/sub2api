@@ -607,7 +607,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := failoverErr.RetryLimit(account.GetPoolModeRetryCount())
+						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
@@ -626,7 +626,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.FinalizeOpenAIOAuthRetryState(c.Request.Context(), account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -1158,7 +1157,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					}
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := failoverErr.RetryLimit(account.GetPoolModeRetryCount())
+						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
@@ -1177,7 +1176,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.FinalizeOpenAIOAuthRetryState(c.Request.Context(), account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
