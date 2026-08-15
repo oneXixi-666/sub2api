@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -88,6 +88,8 @@ const createDashboardStats = (): DashboardStats => ({
 
 describe('admin DashboardView', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0))
     setActivePinia(createPinia())
 
     getSnapshotV2.mockReset()
@@ -115,7 +117,11 @@ describe('admin DashboardView', () => {
     })
   })
 
-  it('uses last 24 hours as default dashboard range', async () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('uses today as the default dashboard range', async () => {
     mount(DashboardView, {
       global: {
         stubs: {
@@ -133,13 +139,12 @@ describe('admin DashboardView', () => {
 
     await flushPromises()
 
-    const now = new Date()
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const today = formatLocalDate(new Date())
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
-      end_date: formatLocalDate(now),
+      start_date: today,
+      end_date: today,
       granularity: 'hour'
     }))
   })

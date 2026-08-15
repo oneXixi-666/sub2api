@@ -181,6 +181,11 @@ export function formatDateLocalInput(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function getTodayDateRange(date: Date = new Date()): { start: string; end: string } {
+  const today = formatDateLocalInput(date)
+  return { start: today, end: today }
+}
+
 /**
  * 格式化为 datetime-local 控件值（YYYY-MM-DDTHH:mm，使用本地时间）
  */

@@ -95,9 +95,13 @@ vi.mock('@/stores/app', () => ({
   }),
 }))
 
-vi.mock('@/utils/format', () => ({
-  formatReasoningEffort: (value: string | null | undefined) => value ?? '-',
-}))
+vi.mock('@/utils/format', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/format')>('@/utils/format')
+  return {
+    ...actual,
+    formatReasoningEffort: (value: string | null | undefined) => value ?? '-',
+  }
+})
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -209,6 +213,19 @@ describe('admin UsageView route filters', () => {
     expect(getById).toHaveBeenCalledWith(42, true)
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('route-user@test.com')
+  })
+
+  it('keeps explicit routed dates instead of the default today range', async () => {
+    routeQuery.start_date = '2026-08-01'
+    routeQuery.end_date = '2026-08-03'
+
+    mountRouteFilteredUsageView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-08-01',
+      end_date: '2026-08-03',
+    }), expect.anything())
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {
@@ -365,11 +382,10 @@ describe('admin UsageView distribution metric toggles', () => {
     await flushPromises()
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
-    const now = new Date()
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const today = formatLocalDate(new Date())
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
-      end_date: formatLocalDate(now),
+      start_date: today,
+      end_date: today,
       granularity: 'hour'
     }))
 

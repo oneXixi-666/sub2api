@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
@@ -149,6 +149,8 @@ function mountUsageView() {
 
 describe('user UsageView', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0))
     query.mockReset()
     getStats.mockReset()
     getDashboardModels.mockReset()
@@ -191,20 +193,44 @@ describe('user UsageView', () => {
     getAvailable.mockResolvedValue([{ id: 1, name: 'default' }])
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('loads logs, stats, model stats, and snapshot on first render', async () => {
     mountUsageView()
     await flushPromises()
 
-    expect(query).toHaveBeenCalled()
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-08-15',
+      end_date: '2026-08-15',
+    }), expect.anything())
     expect(getStats).toHaveBeenCalled()
     expect(getDashboardModels).toHaveBeenCalled()
     expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-08-15',
+      end_date: '2026-08-15',
       include_trend: true,
       include_model_stats: false,
       include_group_stats: true,
     }))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('resets the range to the current local day', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+    query.mockClear()
+
+    vi.setSystemTime(new Date(2026, 7, 16, 0, 5))
+    ;(wrapper.vm as any).resetFilters()
+    await flushPromises()
+
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-08-16',
+      end_date: '2026-08-16',
+    }), expect.anything())
   })
 
   it('exports csv with current filters and without admin-only fields', async () => {

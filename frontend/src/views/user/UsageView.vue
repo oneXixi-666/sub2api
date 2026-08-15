@@ -230,7 +230,7 @@ import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-import { formatReasoningEffort } from '@/utils/format'
+import { formatReasoningEffort, getTodayDateRange } from '@/utils/format'
 import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import type {
@@ -324,22 +324,13 @@ let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
 
-const formatLocalDate = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-
-const getLast24HoursRangeDates = () => {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return { start: formatLocalDate(start), end: formatLocalDate(end) }
-}
-
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const startTime = new Date(`${start}T00:00:00`).getTime()
   const endTime = new Date(`${end}T00:00:00`).getTime()
   return Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24)) <= 1 ? 'hour' : 'day'
 }
 
-const defaultRange = getLast24HoursRangeDates()
+const defaultRange = getTodayDateRange()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
@@ -544,7 +535,7 @@ const refreshData = () => {
 }
 
 const resetFilters = () => {
-  const range = getLast24HoursRangeDates()
+  const range = getTodayDateRange()
   startDate.value = range.start
   endDate.value = range.end
   filters.value = {

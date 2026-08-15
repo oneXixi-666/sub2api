@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { formatDateLocalInput } from '../format'
+import { formatDateLocalInput, getTodayDateRange } from '../format'
 
 describe('formatDateLocalInput', () => {
   it('formats the calendar date in local time', () => {
@@ -14,5 +14,12 @@ describe('formatDateLocalInput', () => {
 
   it('returns an empty string for an invalid date', () => {
     expect(formatDateLocalInput(new Date('invalid'))).toBe('')
+  })
+
+  it('builds a same-day range in local time', () => {
+    expect(getTodayDateRange(new Date(2026, 7, 15, 12, 30))).toEqual({
+      start: '2026-08-15',
+      end: '2026-08-15',
+    })
   })
 })

@@ -103,7 +103,7 @@ import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardR
 import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
 import type { UsageLog, TrendDataPoint, ModelStat, PlatformQuotaItem } from '@/types'
 import { getMyPlatformQuotas } from '@/api/user'
-import { formatDateLocalInput } from '@/utils/format'
+import { getTodayDateRange } from '@/utils/format'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -123,9 +123,10 @@ const chartsError = ref('')
 const usageError = ref('')
 const quotaError = ref('')
 
-const startDate = ref(formatDateLocalInput(new Date(Date.now() - 6 * 86400000)))
-const endDate = ref(formatDateLocalInput(new Date()))
-const granularity = ref<'day' | 'hour'>('day')
+const defaultRange = getTodayDateRange()
+const startDate = ref(defaultRange.start)
+const endDate = ref(defaultRange.end)
+const granularity = ref<'day' | 'hour'>('hour')
 const recentRangeLabel = computed(() => `${startDate.value} - ${endDate.value}`)
 const refreshing = computed(() => loadingOverview.value || loadingCharts.value || loadingUsage.value)
 
