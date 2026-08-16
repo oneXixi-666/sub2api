@@ -881,6 +881,110 @@ func TestResolve_GroupLongContextUsesPresetNotCustomIntervals(t *testing.T) {
 	require.InDelta(t, 2.0, resolved.BasePricing.LongContextInputMultiplier, 1e-12)
 }
 
+func TestCalculateCostUnified_ChannelLongContextPolicy(t *testing.T) {
+	const (
+		baseInput     = 2e-6
+		baseOutput    = 6e-6
+		baseCacheRead = 0.5e-6
+		tierInput     = 4e-6
+		tierOutput    = 12e-6
+		tierCacheRead = 1e-6
+	)
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:       "anthropic",
+		Models:         []string{"claude-sonnet-4"},
+		BillingMode:    BillingModeToken,
+		InputPrice:     testPtrFloat64(baseInput),
+		OutputPrice:    testPtrFloat64(baseOutput),
+		CacheReadPrice: testPtrFloat64(baseCacheRead),
+		Intervals: []PricingInterval{{
+			MinTokens:      200000,
+			InputPrice:     testPtrFloat64(tierInput),
+			OutputPrice:    testPtrFloat64(tierOutput),
+			CacheReadPrice: testPtrFloat64(tierCacheRead),
+		}},
+	}})
+	base := r.billingService.fallbackPrices["claude-sonnet-4"]
+	base.InputPricePerToken = baseInput
+	base.OutputPricePerToken = baseOutput
+	base.CacheReadPricePerToken = baseCacheRead
+
+	tests := []struct {
+		name               string
+		enabled            bool
+		tokens             UsageTokens
+		wantInputPrice     float64
+		wantOutputPrice    float64
+		wantCacheReadPrice float64
+		wantLongContext    bool
+	}{
+		{
+			name:           "reported small request keeps base price",
+			enabled:        true,
+			tokens:         UsageTokens{InputTokens: 79, OutputTokens: 1, CacheReadTokens: 128},
+			wantInputPrice: baseInput, wantOutputPrice: baseOutput, wantCacheReadPrice: baseCacheRead,
+		},
+		{
+			name:           "1000 tokens enabled keeps base price",
+			enabled:        true,
+			tokens:         UsageTokens{InputTokens: 1000},
+			wantInputPrice: baseInput, wantOutputPrice: baseOutput, wantCacheReadPrice: baseCacheRead,
+		},
+		{
+			name:           "200001 tokens enabled selects long context tier",
+			enabled:        true,
+			tokens:         UsageTokens{InputTokens: 200001, OutputTokens: 1},
+			wantInputPrice: tierInput, wantOutputPrice: tierOutput, wantCacheReadPrice: tierCacheRead,
+			wantLongContext: true,
+		},
+		{
+			name:           "200001 tokens disabled keeps base price",
+			enabled:        false,
+			tokens:         UsageTokens{InputTokens: 200001, OutputTokens: 1},
+			wantInputPrice: baseInput, wantOutputPrice: baseOutput, wantCacheReadPrice: baseCacheRead,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			group := &Group{ID: 100, LongContextPricingEnabled: tt.enabled}
+			cost, err := r.billingService.CalculateCostUnified(CostInput{
+				Ctx: context.Background(), Model: "claude-sonnet-4", GroupID: groupIDPtr(), Group: group,
+				Tokens: tt.tokens, RateMultiplier: 1, Resolver: r,
+			})
+			require.NoError(t, err)
+			want := float64(tt.tokens.InputTokens)*tt.wantInputPrice +
+				float64(tt.tokens.OutputTokens)*tt.wantOutputPrice +
+				float64(tt.tokens.CacheReadTokens)*tt.wantCacheReadPrice
+			require.InDelta(t, want, cost.TotalCost, 1e-12)
+			require.Equal(t, tt.wantLongContext, cost.LongContextBillingApplied)
+		})
+	}
+}
+
+func TestResolve_ChannelLongContextDisabledPreservesZeroTokenBaseTier(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(200000), InputPrice: testPtrFloat64(1e-6), OutputPrice: testPtrFloat64(5e-6)},
+			{MinTokens: 200000, InputPrice: testPtrFloat64(2e-6), OutputPrice: testPtrFloat64(10e-6)},
+		},
+	}})
+	group := &Group{ID: 100, LongContextPricingEnabled: false}
+
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model: "claude-sonnet-4", GroupID: groupIDPtr(), Group: group,
+	})
+
+	require.Empty(t, resolved.Intervals)
+	pricing := r.GetIntervalPricing(resolved, 300000)
+	require.NotNil(t, pricing)
+	require.InDelta(t, 1e-6, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 5e-6, pricing.OutputPricePerToken, 1e-12)
+}
+
 func TestCalculateCostUnified_UsesContinuousMediaUnits(t *testing.T) {
 	bs := newTestBillingServiceForResolver()
 	r := NewModelPricingResolver(nil, bs)

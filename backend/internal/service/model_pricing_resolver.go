@@ -119,15 +119,9 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	if chPricing != nil {
 		resolved.Source = PricingSourceChannel
 		resolved.channelPricing = chPricing
-		r.applyTokenOverrides(chPricing, resolved)
-		if !longContextPricingEnabled {
-			r.applyFirstTokenTier(resolved, chPricing)
-		}
+		r.applyTokenOverridesWithLongContextPolicy(chPricing, resolved, longContextPricingEnabled)
 	} else if input.GroupID != nil && r.channelService != nil {
-		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
-		if resolved.Source == PricingSourceChannel && !longContextPricingEnabled {
-			r.applyFirstTokenTier(resolved, resolved.channelPricing)
-		}
+		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved, longContextPricingEnabled)
 	}
 
 	return resolved
@@ -172,20 +166,6 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 	return wildcard
 }
 
-func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, config *ChannelModelPricing) {
-	if resolved == nil || len(resolved.Intervals) == 0 {
-		return
-	}
-	first := resolved.Intervals[0]
-	for _, interval := range resolved.Intervals[1:] {
-		if interval.MinTokens < first.MinTokens {
-			first = interval
-		}
-	}
-	resolved.BasePricing = intervalToModelPricing(&first, resolved.SupportsCacheBreakdown, config)
-	resolved.Intervals = nil
-}
-
 // resolveBasePricing 从 LiteLLM 或 Fallback 获取基础定价
 func (r *ModelPricingResolver) resolveBasePricing(model string) (*ModelPricing, string) {
 	pricing, err := r.billingService.GetModelPricing(model)
@@ -198,7 +178,7 @@ func (r *ModelPricingResolver) resolveBasePricing(model string) (*ModelPricing, 
 }
 
 // applyChannelOverrides 应用渠道定价覆盖
-func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupID int64, model string, resolved *ResolvedPricing) {
+func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupID int64, model string, resolved *ResolvedPricing, longContextPricingEnabled bool) {
 	chPricing := r.channelService.GetChannelModelPricing(ctx, groupID, model)
 	if chPricing == nil {
 		return
@@ -213,10 +193,47 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 
 	switch resolved.Mode {
 	case BillingModeToken:
-		r.applyTokenOverrides(chPricing, resolved)
+		r.applyTokenOverridesWithLongContextPolicy(chPricing, resolved, longContextPricingEnabled)
 	case BillingModePerRequest, BillingModeImage, BillingModeVideo:
 		r.applyRequestTierOverrides(chPricing, resolved)
 	}
+}
+
+func (r *ModelPricingResolver) applyTokenOverridesWithLongContextPolicy(chPricing *ChannelModelPricing, resolved *ResolvedPricing, enabled bool) {
+	if enabled {
+		r.applyTokenOverrides(chPricing, resolved)
+		return
+	}
+
+	basePricing := chPricing.Clone()
+	basePricing.Intervals = nil
+	r.applyTokenOverrides(&basePricing, resolved)
+
+	// Some legacy cards store their ordinary price only in a min_tokens=0
+	// interval. Preserve that true base tier, but never promote a high-context
+	// interval (for example min_tokens=200000) to the default price.
+	if !hasFlatTokenPricing(chPricing) {
+		if baseInterval := findZeroTokenBaseInterval(chPricing.Intervals); baseInterval != nil {
+			resolved.BasePricing = intervalToModelPricing(baseInterval, resolved.SupportsCacheBreakdown, chPricing)
+		}
+	}
+	resolved.Intervals = nil
+}
+
+func hasFlatTokenPricing(pricing *ChannelModelPricing) bool {
+	return pricing != nil && (pricing.InputPrice != nil || pricing.OutputPrice != nil ||
+		pricing.CacheWritePrice != nil || pricing.CacheReadPrice != nil)
+}
+
+func findZeroTokenBaseInterval(intervals []PricingInterval) *PricingInterval {
+	for i := range intervals {
+		interval := &intervals[i]
+		if interval.MinTokens == 0 && (interval.InputPrice != nil || interval.OutputPrice != nil ||
+			interval.CacheWritePrice != nil || interval.CacheReadPrice != nil) {
+			return interval
+		}
+	}
+	return nil
 }
 
 // applyTokenOverrides 应用 token 模式的渠道覆盖

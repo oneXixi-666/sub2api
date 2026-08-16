@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 19 // v19: group search/audio/video_model_prices billing fields (force refresh of pre-fix snapshots)
+const apiKeyAuthSnapshotVersion = 20 // v20: group long-context toggle and model pricing
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -406,6 +406,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			AudioRealtimePricePerMin:        apiKey.Group.AudioRealtimePricePerMin,
 			AudioTTSPricePerMillionChars:    apiKey.Group.AudioTTSPricePerMillionChars,
 			AudioSTTPricePerHour:            apiKey.Group.AudioSTTPricePerHour,
+			LongContextPricingEnabled:       apiKey.Group.LongContextPricingEnabled,
+			ModelPricing:                    cloneAuthSnapshotModelPricing(apiKey.Group.ModelPricing),
 			ClaudeCodeOnly:                  apiKey.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 apiKey.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: apiKey.Group.FallbackGroupIDOnInvalidRequest,
@@ -501,6 +503,8 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			AudioRealtimePricePerMin:        snapshot.Group.AudioRealtimePricePerMin,
 			AudioTTSPricePerMillionChars:    snapshot.Group.AudioTTSPricePerMillionChars,
 			AudioSTTPricePerHour:            snapshot.Group.AudioSTTPricePerHour,
+			LongContextPricingEnabled:       snapshot.Group.LongContextPricingEnabled,
+			ModelPricing:                    cloneAuthSnapshotModelPricing(snapshot.Group.ModelPricing),
 			ClaudeCodeOnly:                  snapshot.Group.ClaudeCodeOnly,
 			FallbackGroupID:                 snapshot.Group.FallbackGroupID,
 			FallbackGroupIDOnInvalidRequest: snapshot.Group.FallbackGroupIDOnInvalidRequest,
@@ -527,4 +531,40 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 	}
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey
+}
+
+func cloneAuthSnapshotModelPricing(pricing []ChannelModelPricing) []ChannelModelPricing {
+	if pricing == nil {
+		return nil
+	}
+	cloned := make([]ChannelModelPricing, len(pricing))
+	for i := range pricing {
+		cloned[i] = pricing[i].Clone()
+		entry := &cloned[i]
+		entry.InputPrice = cloneAuthSnapshotValuePointer(entry.InputPrice)
+		entry.OutputPrice = cloneAuthSnapshotValuePointer(entry.OutputPrice)
+		entry.CacheWritePrice = cloneAuthSnapshotValuePointer(entry.CacheWritePrice)
+		entry.CacheReadPrice = cloneAuthSnapshotValuePointer(entry.CacheReadPrice)
+		entry.ImageInputPrice = cloneAuthSnapshotValuePointer(entry.ImageInputPrice)
+		entry.ImageOutputPrice = cloneAuthSnapshotValuePointer(entry.ImageOutputPrice)
+		entry.PerRequestPrice = cloneAuthSnapshotValuePointer(entry.PerRequestPrice)
+		for j := range entry.Intervals {
+			interval := &entry.Intervals[j]
+			interval.MaxTokens = cloneAuthSnapshotValuePointer(interval.MaxTokens)
+			interval.InputPrice = cloneAuthSnapshotValuePointer(interval.InputPrice)
+			interval.OutputPrice = cloneAuthSnapshotValuePointer(interval.OutputPrice)
+			interval.CacheWritePrice = cloneAuthSnapshotValuePointer(interval.CacheWritePrice)
+			interval.CacheReadPrice = cloneAuthSnapshotValuePointer(interval.CacheReadPrice)
+			interval.PerRequestPrice = cloneAuthSnapshotValuePointer(interval.PerRequestPrice)
+		}
+	}
+	return cloned
+}
+
+func cloneAuthSnapshotValuePointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
