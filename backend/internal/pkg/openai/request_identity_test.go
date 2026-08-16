@@ -30,6 +30,13 @@ func TestPairCodexClientIdentity(t *testing.T) {
 			wantOK:         true,
 		},
 		{
+			name:           "Windows 平台改写为 macOS",
+			ua:             "codex_cli_rs/0.177.0 (Windows 10.0.19045; x86_64) WindowsTerminal",
+			wantOriginator: "codex_cli_rs",
+			wantUA:         "codex_cli_rs/0.177.0 (Mac OS X 14.0; arm64) WindowsTerminal",
+			wantOK:         true,
+		},
+		{
 			name:           "Codex 家族前缀配对保留原大小写",
 			ua:             "Codex Desktop/1.2.3",
 			wantOriginator: "Codex Desktop",

@@ -192,10 +192,11 @@ func matchCodexClientHeaderStrictPrefixes(value string, prefixes []string) bool 
 // 404（issue #3901，2026-07 实测）。
 //
 // 推导优先级：
-//  1. UA 首段是官方 originator（精确集合或 `Codex ` 家族前缀）→ 直接配对，UA 原样保留；
+//  1. UA 首段是官方 originator（精确集合或 `Codex ` 家族前缀）→ 直接配对；Windows 平台段
+//     会统一改写为网关的 macOS profile；
 //  2. UA 尾部括号组 `(name; version)` 的 name 是官方 originator——CODEX_INTERNAL_ORIGINATOR_OVERRIDE
 //     只改 UA 前缀不改尾部（如 cccc/0.142.0 ... (codex-tui; 0.142.0)）→ 用尾部 name 重写
-//     UA 首段后配对，保留真实版本/OS/终端指纹；
+//     UA 首段后配对，保留真实版本/终端指纹并按同一规则处理 Windows 平台段；
 //  3. 均不命中 → ok=false，调用方应整体回退为默认官方身份。
 func PairCodexClientIdentity(userAgent string) (originator string, pairedUA string, ok bool) {
 	ua := strings.TrimSpace(userAgent)
@@ -205,16 +206,38 @@ func PairCodexClientIdentity(userAgent string) (originator string, pairedUA stri
 	}
 	if leading := strings.TrimSpace(ua[:slash]); isSaneCodexOriginator(leading) && IsCodexOfficialClientOriginator(leading) {
 		leading = canonicalizeCodexOriginator(leading)
-		return leading, leading + ua[slash:], true
+		return leading, leading + normalizeCodexUserAgentPlatform(ua[slash:]), true
 	}
 	// 传原始大小写 UA 提取 trailer，保留 `Codex ` 家族身份的真实大小写；含 '/' 的
 	// trailer 会破坏重写后 UA 首段与 originator 的一致性，直接拒绝。
 	if trailer := codexUATrailerName(ua); trailer != "" && !strings.ContainsRune(trailer, '/') &&
 		isSaneCodexOriginator(trailer) && IsCodexOfficialClientOriginator(trailer) {
 		trailer = canonicalizeCodexOriginator(trailer)
-		return trailer, trailer + ua[slash:], true
+		return trailer, trailer + normalizeCodexUserAgentPlatform(ua[slash:]), true
 	}
 	return "", "", false
+}
+
+// normalizeCodexUserAgentPlatform replaces Windows platform metadata with the
+// macOS profile used by the gateway's canonical Codex identity. Windows Codex
+// clients have produced an upstream-visible fingerprint that is rejected or
+// quota-degraded; keep the client/originator and terminal shape, but expose a
+// stable Apple desktop platform instead.
+func normalizeCodexUserAgentPlatform(suffix string) string {
+	open := strings.IndexByte(suffix, '(')
+	if open < 0 {
+		return suffix
+	}
+	closeRel := strings.IndexByte(suffix[open+1:], ')')
+	if closeRel < 0 {
+		return suffix
+	}
+	close := open + 1 + closeRel
+	platform := strings.TrimSpace(suffix[open+1 : close])
+	if !strings.HasPrefix(strings.ToLower(platform), "windows") {
+		return suffix
+	}
+	return suffix[:open+1] + "Mac OS X 14.0; arm64" + suffix[close:]
 }
 
 // codexOriginatorMaxLen 官方 clientInfo.name 均为短 ASCII 标识，远低于此上限。

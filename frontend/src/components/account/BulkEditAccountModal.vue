@@ -1535,7 +1535,7 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const enableCodexFingerprintMode = ref(false)
-const codexFingerprintMode = ref<CodexFingerprintMode>('off')
+const codexFingerprintMode = ref<CodexFingerprintMode>('session')
 const codexFingerprintModeOptions = computed(() => [
   { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
   { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
@@ -1829,12 +1829,8 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableCodexFingerprintMode.value) {
     const extra = ensureExtra()
-    // off = 默认值，清键即可；device/session/full 是显式 opt-in，必须落键（#5610）。
-    if (codexFingerprintMode.value !== 'off') {
-      extra.codex_fingerprint_mode = codexFingerprintMode.value
-    } else {
-      delete extra.codex_fingerprint_mode
-    }
+    // 缺失键默认 session，因此 off 必须显式落键才能关闭收敛。
+    extra.codex_fingerprint_mode = codexFingerprintMode.value
   }
 
   if (enableOpenAICompactMode.value) {
@@ -2083,7 +2079,7 @@ watch(
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
       enableCodexFingerprintMode.value = false
-      codexFingerprintMode.value = 'off'
+      codexFingerprintMode.value = 'session'
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false
