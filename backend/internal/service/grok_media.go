@@ -36,6 +36,19 @@ const (
 	grokMediaMaxEditSourceImages = 3
 )
 
+// grokOpenAIImageProtocolModelAllowlist contains models exposed through a Grok
+// group whose upstream speaks the OpenAI Images edit schema instead of xAI's
+// media schema. Keep this explicit: changing the wire format for every Grok
+// model would break native xAI image generation.
+var grokOpenAIImageProtocolModelAllowlist = map[string]struct{}{
+	"gpt-image-2": {},
+}
+
+func IsGrokOpenAIImageProtocolModel(model string) bool {
+	_, ok := grokOpenAIImageProtocolModelAllowlist[strings.ToLower(strings.TrimSpace(model))]
+	return ok
+}
+
 func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 	return !e.IsVideoLookupRequest()
 }
@@ -626,6 +639,8 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		return nil, err
 	}
 
+	requestInfo := ParseGrokMediaRequest(contentType, body)
+	preserveOpenAIImageProtocol := endpoint.IsGenerationRequest() && IsGrokOpenAIImageProtocolModel(requestInfo.Model)
 	body, contentType, err = prepareGrokMediaForwardBody(endpoint, body, contentType)
 	if err != nil {
 		return nil, err
@@ -634,7 +649,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
-	requestInfo := ParseGrokMediaRequest(contentType, body)
+	requestInfo = ParseGrokMediaRequest(contentType, body)
 	upstreamModel := requestInfo.Model
 	if endpoint.RequiresRequestBody() && gjson.ValidBytes(body) {
 		if mappedModel := strings.TrimSpace(account.GetMappedModel(requestInfo.Model)); mappedModel != "" {
@@ -647,7 +662,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 			}
 		}
 	}
-	body, contentType, err = sanitizeGrokMediaForwardBody(endpoint, body, contentType)
+	body, contentType, err = sanitizeGrokMediaForwardBody(endpoint, body, contentType, preserveOpenAIImageProtocol)
 	if err != nil {
 		return nil, err
 	}
@@ -911,6 +926,13 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 	if endpoint != GrokMediaEndpointImagesEdits {
 		return body, contentType, nil
 	}
+	info := ParseGrokMediaRequest(contentType, body)
+	if IsGrokOpenAIImageProtocolModel(info.Model) {
+		if gjson.ValidBytes(body) {
+			return normalizeGrokOpenAIImageJSONRefs(body)
+		}
+		return prepareGrokOpenAIImageMultipartBody(info)
+	}
 	if gjson.ValidBytes(body) {
 		out, err := normalizeGrokMediaJSONImageRefs(body)
 		return out, contentType, err
@@ -920,7 +942,6 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 		return body, contentType, nil
 	}
 
-	info := ParseGrokMediaRequest(contentType, body)
 	payload := make(map[string]any)
 	if info.Model != "" {
 		payload["model"] = info.Model
@@ -977,6 +998,121 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 	return out, "application/json", nil
 }
 
+func prepareGrokOpenAIImageMultipartBody(info GrokMediaRequestInfo) ([]byte, string, error) {
+	payload := make(map[string]any)
+	if info.Model != "" {
+		payload["model"] = info.Model
+	}
+	if info.Prompt != "" {
+		payload["prompt"] = info.Prompt
+	}
+	if info.N > 1 {
+		payload["n"] = info.N
+	}
+	if info.Size != "" {
+		payload["size"] = info.Size
+	}
+
+	images := make([]map[string]string, 0, len(info.InputImageURLs)+len(info.Uploads))
+	for _, imageURL := range info.InputImageURLs {
+		if imageURL = strings.TrimSpace(imageURL); imageURL != "" {
+			images = append(images, map[string]string{"image_url": imageURL})
+		}
+	}
+	for _, upload := range info.Uploads {
+		dataURL, err := openAIImageUploadToDataURL(upload)
+		if err != nil {
+			return nil, "", err
+		}
+		images = append(images, map[string]string{"image_url": dataURL})
+	}
+	if len(images) > 0 {
+		payload["images"] = images
+	}
+
+	maskImageURL := strings.TrimSpace(info.MaskImageURL)
+	if info.MaskUpload != nil {
+		dataURL, err := openAIImageUploadToDataURL(*info.MaskUpload)
+		if err != nil {
+			return nil, "", err
+		}
+		maskImageURL = dataURL
+	}
+	if maskImageURL != "" {
+		payload["mask"] = map[string]string{"image_url": maskImageURL}
+	}
+
+	out, err := marshalOpenAIUpstreamJSON(payload)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, "application/json", nil
+}
+
+func normalizeGrokOpenAIImageJSONRefs(body []byte) ([]byte, string, error) {
+	out := body
+	if !gjson.ValidBytes(out) {
+		return body, "application/json", nil
+	}
+
+	images := gjson.GetBytes(out, "images")
+	if images.Exists() && images.IsArray() {
+		for index := range images.Array() {
+			path := fmt.Sprintf("images.%d", index)
+			imageURL := extractGrokMediaImageURL(gjson.GetBytes(out, path))
+			if imageURL == "" {
+				continue
+			}
+			var err error
+			out, err = sjson.SetBytes(out, path+".image_url", imageURL)
+			if err != nil {
+				return nil, "", fmt.Errorf("normalize OpenAI image url: %w", err)
+			}
+			for _, key := range []string{"url", "type"} {
+				if gjson.GetBytes(out, path+"."+key).Exists() {
+					out, err = sjson.DeleteBytes(out, path+"."+key)
+					if err != nil {
+						return nil, "", fmt.Errorf("remove Grok image field %s: %w", key, err)
+					}
+				}
+			}
+		}
+	} else if image := gjson.GetBytes(out, "image"); image.Exists() {
+		imageURL := extractGrokMediaImageURL(image)
+		if imageURL != "" && !images.Exists() {
+			var err error
+			out, err = sjson.SetBytes(out, "images", []map[string]string{{"image_url": imageURL}})
+			if err != nil {
+				return nil, "", fmt.Errorf("convert OpenAI image field: %w", err)
+			}
+			out, err = sjson.DeleteBytes(out, "image")
+			if err != nil {
+				return nil, "", fmt.Errorf("remove Grok image field: %w", err)
+			}
+		}
+	}
+
+	mask := gjson.GetBytes(out, "mask")
+	if mask.Exists() {
+		if imageURL := extractGrokMediaImageURL(mask); imageURL != "" {
+			var err error
+			out, err = sjson.SetBytes(out, "mask.image_url", imageURL)
+			if err != nil {
+				return nil, "", fmt.Errorf("normalize OpenAI mask image url: %w", err)
+			}
+			for _, key := range []string{"url", "type"} {
+				if gjson.GetBytes(out, "mask."+key).Exists() {
+					out, err = sjson.DeleteBytes(out, "mask."+key)
+					if err != nil {
+						return nil, "", fmt.Errorf("remove Grok mask field %s: %w", key, err)
+					}
+				}
+			}
+		}
+	}
+	return out, "application/json", nil
+}
+
 func normalizeGrokMediaJSONImageRefs(body []byte) ([]byte, error) {
 	info := ParseGrokMediaRequest("application/json", body)
 	if len(info.InputImageURLs) > grokMediaMaxEditSourceImages {
@@ -1028,6 +1164,10 @@ func normalizeGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, cont
 	if !endpoint.RequiresRequestBody() || !gjson.ValidBytes(body) {
 		return body, contentType, nil
 	}
+	info := ParseGrokMediaRequest(contentType, body)
+	if IsGrokOpenAIImageProtocolModel(info.Model) {
+		return body, contentType, nil
+	}
 	var imageFields []string
 	switch endpoint {
 	case GrokMediaEndpointImagesEdits:
@@ -1040,7 +1180,6 @@ func normalizeGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, cont
 	if err != nil {
 		return nil, "", err
 	}
-	info := ParseGrokMediaRequest(contentType, body)
 	upstreamModel := NormalizeGrokMediaModelForEndpoint(endpoint, info.Model, info.HasInputImage())
 	if upstreamModel == "" || upstreamModel == info.Model {
 		return body, contentType, nil
@@ -1100,8 +1239,11 @@ func canonicalizeGrokMediaImageURLObject(body []byte, path string) ([]byte, erro
 	return out, nil
 }
 
-func sanitizeGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, contentType string) ([]byte, string, error) {
+func sanitizeGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, contentType string, preserveOpenAIImageProtocol bool) ([]byte, string, error) {
 	if !endpoint.RequiresRequestBody() || !gjson.ValidBytes(body) {
+		return body, contentType, nil
+	}
+	if preserveOpenAIImageProtocol {
 		return body, contentType, nil
 	}
 	switch endpoint {

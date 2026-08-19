@@ -932,6 +932,83 @@ func TestPrepareGrokImageEditNormalizesOfficialImageObjects(t *testing.T) {
 	}
 }
 
+func TestGrokOpenAIImageProtocolModelAllowlist(t *testing.T) {
+	require.True(t, IsGrokOpenAIImageProtocolModel("gpt-image-2"))
+	require.True(t, IsGrokOpenAIImageProtocolModel(" GPT-IMAGE-2 "))
+	require.False(t, IsGrokOpenAIImageProtocolModel("grok-imagine-image-quality"))
+}
+
+func TestPrepareGrokImageEditGPTImage2PreservesOpenAIImageURL(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-image-2",
+		"prompt":"replace the background",
+		"size":"1536x1024",
+		"images":[{"image_url":"https://example.com/source.png"}],
+		"mask":{"image_url":"https://example.com/mask.png"}
+	}`)
+
+	out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointImagesEdits, body, "application/json")
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.JSONEq(t, string(body), string(out))
+
+	out, contentType, err = normalizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType)
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.JSONEq(t, string(body), string(out))
+
+	out, _, err = sanitizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType, true)
+	require.NoError(t, err)
+	require.Equal(t, "1536x1024", gjson.GetBytes(out, "size").String())
+	require.Equal(t, "https://example.com/source.png", gjson.GetBytes(out, "images.0.image_url").String())
+	require.False(t, gjson.GetBytes(out, "images.0.url").Exists())
+}
+
+func TestPrepareGrokImageEditGPTImage2MultipartUsesOpenAIImageURL(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "edit this image"))
+	require.NoError(t, writer.WriteField("size", "1024x1024"))
+	imageHeader := textproto.MIMEHeader{}
+	imageHeader.Set("Content-Disposition", `form-data; name="image"; filename="input.png"`)
+	imageHeader.Set("Content-Type", "image/png")
+	imagePart, err := writer.CreatePart(imageHeader)
+	require.NoError(t, err)
+	_, err = imagePart.Write([]byte("source-image"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointImagesEdits, body.Bytes(), writer.FormDataContentType())
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(out, "model").String())
+	require.Equal(t, "1024x1024", gjson.GetBytes(out, "size").String())
+	require.NotEmpty(t, gjson.GetBytes(out, "images.0.image_url").String())
+	require.False(t, gjson.GetBytes(out, "images.0.url").Exists())
+}
+
+func TestPrepareGrokImageEditGPTImage2FlattensImageURLObjects(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-image-2",
+		"images":[
+			{"url":"https://example.com/first.png","type":"image_url"},
+			{"image_url":{"url":"https://example.com/second.png"}}
+		],
+		"mask":{"url":"https://example.com/mask.png","type":"image_url"}
+	}`)
+
+	out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointImagesEdits, body, "application/json")
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.Equal(t, "https://example.com/first.png", gjson.GetBytes(out, "images.0.image_url").String())
+	require.Equal(t, "https://example.com/second.png", gjson.GetBytes(out, "images.1.image_url").String())
+	require.Equal(t, "https://example.com/mask.png", gjson.GetBytes(out, "mask.image_url").String())
+	require.False(t, gjson.GetBytes(out, "images.0.url").Exists())
+	require.False(t, gjson.GetBytes(out, "images.0.type").Exists())
+	require.False(t, gjson.GetBytes(out, "mask.url").Exists())
+}
+
 func TestPrepareGrokImageEditRejectsMoreThanThreeSources(t *testing.T) {
 	body := []byte(`{"images":["https://example.com/1.png","https://example.com/2.png","https://example.com/3.png","https://example.com/4.png"]}`)
 
