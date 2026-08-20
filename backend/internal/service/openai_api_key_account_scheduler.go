@@ -14,7 +14,7 @@ func (s *OpenAIGatewayService) selectOpenAIAPIKeyAccountRoute(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, bool, error) {
-	if s == nil || s.settingService == nil || normalizeOpenAICompatiblePlatform(req.Platform) != PlatformOpenAI {
+	if s == nil || s.settingService == nil || NormalizeOpenAICompatiblePlatform(req.Platform) != PlatformOpenAI {
 		return nil, false, nil
 	}
 	apiKeyID, ok := ctx.Value(ctxkey.APIKeyID).(int64)

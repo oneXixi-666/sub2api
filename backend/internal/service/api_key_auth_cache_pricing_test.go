@@ -1,5 +1,3 @@
-//go:build unit
-
 package service
 
 import (
@@ -9,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func apiKeyAuthCachePricingPtr(v float64) *float64 { return &v }
 
 func TestAPIKeyAuthSnapshotGroupPricingRedisRoundTrip(t *testing.T) {
 	groupID := int64(51)
@@ -37,14 +37,14 @@ func TestAPIKeyAuthSnapshotGroupPricingRedisRoundTrip(t *testing.T) {
 				Platform:       PlatformGrok,
 				Models:         []string{"grok-4.6"},
 				BillingMode:    BillingModeToken,
-				InputPrice:     testPtrFloat64(2e-6),
-				OutputPrice:    testPtrFloat64(6e-6),
-				CacheReadPrice: testPtrFloat64(0.5e-6),
+				InputPrice:     apiKeyAuthCachePricingPtr(2e-6),
+				OutputPrice:    apiKeyAuthCachePricingPtr(6e-6),
+				CacheReadPrice: apiKeyAuthCachePricingPtr(0.5e-6),
 				Intervals: []PricingInterval{{
 					MinTokens:      200000,
-					InputPrice:     testPtrFloat64(4e-6),
-					OutputPrice:    testPtrFloat64(12e-6),
-					CacheReadPrice: testPtrFloat64(1e-6),
+					InputPrice:     apiKeyAuthCachePricingPtr(4e-6),
+					OutputPrice:    apiKeyAuthCachePricingPtr(12e-6),
+					CacheReadPrice: apiKeyAuthCachePricingPtr(1e-6),
 				}},
 			}},
 		},
@@ -85,4 +85,14 @@ func TestAPIKeyAuthSnapshotGroupPricingRedisRoundTrip(t *testing.T) {
 	*cached.Snapshot.Group.ModelPricing[0].InputPrice = 77
 	require.Equal(t, "grok-4.6", materialized.Group.ModelPricing[0].Models[0])
 	require.InDelta(t, 2e-6, *materialized.Group.ModelPricing[0].InputPrice, 1e-12)
+
+	billing := &BillingService{fallbackPrices: map[string]*ModelPricing{
+		"grok-4.6": {InputPricePerToken: 3e-6, OutputPricePerToken: 15e-6},
+	}}
+	resolver := NewModelPricingResolver(nil, billing)
+	resolved := resolver.Resolve(context.Background(), PricingInput{Model: "grok-4.6", Group: materialized.Group})
+	require.Equal(t, PricingSourceGroup, resolved.Source)
+	require.True(t, resolved.longContextPricingEnabled)
+	require.InDelta(t, 2e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 6e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
 }

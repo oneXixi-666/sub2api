@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +16,30 @@ import (
 )
 
 type upstreamContextTestKey string
+
+type contentBlockStartSignalWriter struct {
+	gin.ResponseWriter
+	started chan struct{}
+	once    sync.Once
+}
+
+func (w *contentBlockStartSignalWriter) signalContentBlockStart(data string) {
+	if strings.Contains(data, `"type":"content_block_start"`) {
+		w.once.Do(func() { close(w.started) })
+	}
+}
+
+func (w *contentBlockStartSignalWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	w.signalContentBlockStart(string(data))
+	return n, err
+}
+
+func (w *contentBlockStartSignalWriter) WriteString(data string) (int, error) {
+	n, err := w.ResponseWriter.WriteString(data)
+	w.signalContentBlockStart(data)
+	return n, err
+}
 
 func newStreamingResponseTestGatewayService() *GatewayService {
 	return &GatewayService{
@@ -90,6 +116,8 @@ func TestGatewayService_StreamingKeepaliveUsesNoopDeltaForAffectedClaudeCodeVers
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	c.Request.Header.Set("User-Agent", "claude-cli/2.1.198 (external, cli)")
+	contentBlockStarted := make(chan struct{})
+	c.Writer = &contentBlockStartSignalWriter{ResponseWriter: c.Writer, started: contentBlockStarted}
 
 	pr, pw := io.Pipe()
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
@@ -98,7 +126,8 @@ func TestGatewayService_StreamingKeepaliveUsesNoopDeltaForAffectedClaudeCodeVers
 		defer func() { _ = pw.Close() }()
 		_, _ = pw.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n"))
 		_, _ = pw.Write([]byte("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"))
-		time.Sleep(1100 * time.Millisecond)
+		<-contentBlockStarted
+		time.Sleep(1200 * time.Millisecond)
 		_, _ = pw.Write([]byte("event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"))
 		_, _ = pw.Write([]byte("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
 	}()
@@ -121,6 +150,8 @@ func TestGatewayService_StreamingKeepaliveUsesNoopDeltaDuringToolUseForAffectedC
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	c.Request.Header.Set("User-Agent", "claude-cli/2.1.198 (external, cli)")
+	contentBlockStarted := make(chan struct{})
+	c.Writer = &contentBlockStartSignalWriter{ResponseWriter: c.Writer, started: contentBlockStarted}
 
 	pr, pw := io.Pipe()
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
@@ -129,7 +160,8 @@ func TestGatewayService_StreamingKeepaliveUsesNoopDeltaDuringToolUseForAffectedC
 		defer func() { _ = pw.Close() }()
 		_, _ = pw.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n"))
 		_, _ = pw.Write([]byte("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Edit\",\"input\":{}}}\n\n"))
-		time.Sleep(1100 * time.Millisecond)
+		<-contentBlockStarted
+		time.Sleep(1200 * time.Millisecond)
 		_, _ = pw.Write([]byte("event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n"))
 		_, _ = pw.Write([]byte("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
 	}()

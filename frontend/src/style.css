@@ -11,6 +11,11 @@
     @apply scroll-smooth antialiased;
     font-family: var(--promo-font-body);
     letter-spacing: 0;
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
   }
 
   body {
