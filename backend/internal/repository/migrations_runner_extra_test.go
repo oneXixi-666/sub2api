@@ -12,6 +12,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,11 +105,64 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		"118_wechat_dual_mode_and_auth_source_defaults.sql",
 		"120_enforce_payment_orders_out_trade_no_unique_notx.sql",
 		"123_fix_legacy_auth_source_grant_on_signup_defaults.sql",
+		"225_backfill_codex_fingerprint_seed.sql",
 	} {
 		rule, ok := migrationChecksumCompatibilityRules[name]
 		require.Truef(t, ok, "missing compatibility rule for %s", name)
 		require.NotEmpty(t, rule.fileChecksum)
 		require.NotEmpty(t, rule.acceptedDBChecksum)
+	}
+}
+
+func TestMigration225ChecksumCompatibilityRuleMatchesOfficialFile(t *testing.T) {
+	const name = "225_backfill_codex_fingerprint_seed.sql"
+	rule, ok := migrationChecksumCompatibilityRules[name]
+	require.True(t, ok)
+	content, err := migrations.FS.ReadFile(name)
+	require.NoError(t, err)
+
+	sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+	require.Equal(t, rule.fileChecksum, hex.EncodeToString(sum[:]))
+}
+
+func TestApplyMigrationsFS_Migration225ChecksumCompatibility(t *testing.T) {
+	const migrationName = "225_backfill_codex_fingerprint_seed.sql"
+	content, err := migrations.FS.ReadFile(migrationName)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		dbChecksum string
+		wantErr    bool
+	}{
+		{name: "official checksum", dbChecksum: "bd8d6dff505e417eee69a2da300aa1df06e832fd668c7848f06944c7c0c3fd26"},
+		{name: "v0.1.193 fork checksum", dbChecksum: "ccce6f9cd2e5c692bd764ef2474792107a36e7f1a75043c60603253eaff32c3e"},
+		{name: "unknown checksum", dbChecksum: strings.Repeat("f", 64), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer func() { _ = db.Close() }()
+
+			prepareMigrationsBootstrapExpectations(mock)
+			mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+				WithArgs(migrationName).
+				WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(tt.dbChecksum))
+			mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+				WithArgs(migrationsAdvisoryLockID).
+				WillReturnResult(sqlmock.NewResult(0, 1))
+
+			fsys := fstest.MapFS{migrationName: &fstest.MapFile{Data: content}}
+			err = applyMigrationsFS(context.Background(), db, fsys)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "checksum mismatch")
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
 	}
 }
 

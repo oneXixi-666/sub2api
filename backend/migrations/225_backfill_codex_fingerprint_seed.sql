@@ -10,9 +10,7 @@ SET extra = jsonb_set(
 WHERE deleted_at IS NULL
   AND platform = 'openai'
   AND type = 'oauth'
-  -- Missing, empty, and invalid modes use this fork's default session mode.
-  -- Only an explicit lowercase "off" disables convergence.
-  AND COALESCE(extra->>'codex_fingerprint_mode', '') <> 'off'
+  AND COALESCE(extra->>'codex_fingerprint_mode', '') IN ('device', 'session', 'full')
   AND (
       extra->>'codex_fingerprint_seed' IS NULL
       OR btrim(extra->>'codex_fingerprint_seed') = ''

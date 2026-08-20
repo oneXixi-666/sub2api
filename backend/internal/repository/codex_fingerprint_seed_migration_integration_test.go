@@ -21,18 +21,13 @@ func requireCanonicalUUIDString(t *testing.T, value string) {
 	require.Equal(t, parsed.String(), value)
 }
 
-func TestMigration225BackfillsDefaultAndEnabledOpenAIOAuthMissingOrMalformedSeeds(t *testing.T) {
+func TestMigration225BackfillsOnlyEnabledOpenAIOAuthMissingOrMalformedSeeds(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 	migrationSQL, err := dbmigrations.FS.ReadFile("225_backfill_codex_fingerprint_seed.sql")
 	require.NoError(t, err)
 
-	var defaultModeID, missingID, blankID, malformedID, validID, offID, apiKeyID int64
-	require.NoError(t, tx.QueryRowContext(ctx, `
-INSERT INTO accounts (name, platform, type, extra)
-VALUES ('migration-225-default-mode', 'openai', 'oauth', '{}'::jsonb)
-RETURNING id
-`).Scan(&defaultModeID))
+	var missingID, blankID, malformedID, validID, offID, apiKeyID int64
 	require.NoError(t, tx.QueryRowContext(ctx, `
 INSERT INTO accounts (name, platform, type, extra)
 VALUES ('migration-225-missing', 'openai', 'oauth', '{"codex_fingerprint_mode":"session"}'::jsonb)
@@ -68,7 +63,7 @@ RETURNING id
 	require.NoError(t, err)
 
 	seedsAfterFirst := map[int64]string{}
-	for _, id := range []int64{defaultModeID, missingID, blankID, malformedID, validID} {
+	for _, id := range []int64{missingID, blankID, malformedID, validID} {
 		var seed string
 		require.NoError(t, tx.QueryRowContext(ctx, `SELECT extra->>'codex_fingerprint_seed' FROM accounts WHERE id = $1`, id).Scan(&seed))
 		requireCanonicalUUIDString(t, seed)

@@ -161,4 +161,31 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		)
 		require.False(t, ok)
 	})
+
+	t.Run("225接受v0.1.193已应用的fork checksum", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"225_backfill_codex_fingerprint_seed.sql",
+			"ccce6f9cd2e5c692bd764ef2474792107a36e7f1a75043c60603253eaff32c3e",
+			"bd8d6dff505e417eee69a2da300aa1df06e832fd668c7848f06944c7c0c3fd26",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("225拒绝未知数据库checksum", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"225_backfill_codex_fingerprint_seed.sql",
+			"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+			"bd8d6dff505e417eee69a2da300aa1df06e832fd668c7848f06944c7c0c3fd26",
+		)
+		require.False(t, ok)
+	})
+
+	t.Run("225拒绝恢复错误的fork迁移文件", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"225_backfill_codex_fingerprint_seed.sql",
+			"bd8d6dff505e417eee69a2da300aa1df06e832fd668c7848f06944c7c0c3fd26",
+			"ccce6f9cd2e5c692bd764ef2474792107a36e7f1a75043c60603253eaff32c3e",
+		)
+		require.False(t, ok)
+	})
 }
