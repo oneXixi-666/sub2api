@@ -180,6 +180,7 @@ export default {
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     upstreamFunds: 'Upstream Funds',
+    plugins: 'Plugins',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

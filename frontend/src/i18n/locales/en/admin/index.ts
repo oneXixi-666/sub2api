@@ -7,6 +7,7 @@ import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
 import upstreamFunds from './upstreamFunds'
+import plugins from './plugins'
 
 export default {
   ...overview,
@@ -18,4 +19,5 @@ export default {
   ...audit,
   ...promptAudit,
   ...upstreamFunds,
+  ...plugins,
 }

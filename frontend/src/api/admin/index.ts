@@ -36,6 +36,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import upstreamFundsAPI from './upstreamFunds'
+import pluginsAPI from './plugins'
 
 /**
  * Unified admin API object for convenient access
@@ -73,7 +74,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  upstreamFunds: upstreamFundsAPI
+  upstreamFunds: upstreamFundsAPI,
+  plugins: pluginsAPI
 }
 
 export {
@@ -109,7 +111,8 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  upstreamFundsAPI
+  upstreamFundsAPI,
+  pluginsAPI
 }
 
 export default adminAPI
@@ -126,12 +129,18 @@ export type {
   UpstreamFundsGroup,
   UpstreamFundsOverview,
   UpstreamFundsSummary,
-	UpstreamPanelLoginResult,
-	UpstreamPanelImportInput,
-	UpstreamPanelSessionStatus,
-	UpstreamPanelSessionState,
-	UpstreamPaymentChannel,
-	UpstreamRechargeOrder,
+  UpstreamPanelLoginResult,
+  UpstreamPanelImportInput,
+  UpstreamPanelSessionStatus,
+  UpstreamPanelSessionState,
+  UpstreamPaymentChannel,
+  UpstreamRechargeOrder,
   UpstreamWallet,
   UpstreamWalletInput
 } from './upstreamFunds'
+export type {
+  PluginInstallation,
+  PluginCompatibility,
+  PluginUISession,
+  PluginTestResult
+} from './plugins'
