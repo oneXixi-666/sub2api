@@ -126,7 +126,7 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 	catalogFilter := channelMonitorV2CatalogFilter(channelMonitorV2CommonCoverageFilter(filter, *coverage))
 	where, args, _ := channelMonitorV2WhereWithRollup(catalogFilter, cfg, "m")
 	query := `SELECT m.platform, COALESCE(g.name, ''), lower(COALESCE(NULLIF(TRIM(g.platform), ''), 'unknown')), m.group_id, m.model,
-	                 SUM(m.success_requests + m.error_requests)
+	                 SUM(m.success_requests + m.error_requests), MAX(g.rate_multiplier)
 	          FROM ` + channelMonitorV2MetricsTable(catalogFilter) + ` m
 	          LEFT JOIN groups g ON g.id = NULLIF(m.group_id, 0) ` + where + `
 	          GROUP BY m.platform, g.name, g.platform, m.group_id, m.model`
@@ -144,9 +144,10 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 	// different upstream models and must not share counts.
 	modelCounts := map[string]modelValue{}
 	type groupValue struct {
-		name     string
-		platform string
-		count    int64
+		name           string
+		platform       string
+		count          int64
+		rateMultiplier *float64
 	}
 	groupCounts := map[int64]groupValue{}
 	for _, platform := range channelMonitorV2EnabledPlatforms(cfg) {
@@ -165,12 +166,14 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 		return nil, err
 	}
 	for groupID, info := range groupInfo {
-		groupCounts[groupID] = groupValue{name: info.name, platform: info.platform, count: 0}
+		rate := info.rateMultiplier
+		groupCounts[groupID] = groupValue{name: info.name, platform: info.platform, count: 0, rateMultiplier: &rate}
 	}
 	for rows.Next() {
 		var platform, groupName, groupPlatform, model string
 		var groupID, count int64
-		if err := rows.Scan(&platform, &groupName, &groupPlatform, &groupID, &model, &count); err != nil {
+		var rate sql.NullFloat64
+		if err := rows.Scan(&platform, &groupName, &groupPlatform, &groupID, &model, &count, &rate); err != nil {
 			return nil, err
 		}
 		platformCounts[platform] += count
@@ -187,6 +190,10 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 			current.name = groupName
 			current.platform = groupPlatform
 			current.count += count
+			if rate.Valid {
+				v := rate.Float64
+				current.rateMultiplier = &v
+			}
 			groupCounts[groupID] = current
 		}
 	}
@@ -202,7 +209,7 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 		result.Models = append(result.Models, service.ChannelMonitorV2Dimension{Value: value, Label: channelMonitorV2ModelLabel(value), Platform: meta.platform, RequestCount: meta.count})
 	}
 	for id, value := range groupCounts {
-		result.Groups = append(result.Groups, service.ChannelMonitorV2GroupDimension{ID: id, Name: value.name, Platform: value.platform, RequestCount: value.count})
+		result.Groups = append(result.Groups, service.ChannelMonitorV2GroupDimension{ID: id, Name: value.name, Platform: value.platform, RequestCount: value.count, RateMultiplier: value.rateMultiplier})
 	}
 	sort.Slice(result.Platforms, func(i, j int) bool { return result.Platforms[i].RequestCount > result.Platforms[j].RequestCount })
 	sort.Slice(result.Models, func(i, j int) bool { return result.Models[i].RequestCount > result.Models[j].RequestCount })
@@ -446,6 +453,7 @@ func (r *channelMonitorV2Repository) GetMatrix(ctx context.Context, filter servi
 		if key.groupID > 0 {
 			groupID := key.groupID
 			row.GroupID = &groupID
+			attachChannelMonitorV2GroupRate(&row, groupInfo)
 		}
 		bucketKeys := make([]string, 0, len(acc.buckets))
 		for bucket := range acc.buckets {
@@ -593,8 +601,24 @@ func configuredChannelMonitorV2GroupIDs(filter service.ChannelMonitorV2Filter, c
 }
 
 type channelMonitorV2GroupInfo struct {
-	name     string
-	platform string
+	name           string
+	platform       string
+	rateMultiplier float64
+}
+
+func attachChannelMonitorV2GroupRate(row *service.ChannelMonitorV2MatrixRow, groupInfo map[int64]channelMonitorV2GroupInfo) {
+	if row == nil || row.GroupID == nil || *row.GroupID <= 0 || len(groupInfo) == 0 {
+		return
+	}
+	info, ok := groupInfo[*row.GroupID]
+	if !ok {
+		return
+	}
+	rate := info.rateMultiplier
+	row.RateMultiplier = &rate
+	if row.GroupName == "" {
+		row.GroupName = info.name
+	}
 }
 
 func (r *channelMonitorV2Repository) listActiveGroupIDs(ctx context.Context) ([]int64, error) {
@@ -619,7 +643,7 @@ func (r *channelMonitorV2Repository) loadChannelMonitorV2GroupInfo(ctx context.C
 	if len(groupIDs) == 0 {
 		return out, nil
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), lower(COALESCE(NULLIF(TRIM(platform), ''), 'unknown')) FROM groups WHERE id = ANY($1) AND deleted_at IS NULL AND status = 'active'`, pq.Array(groupIDs))
+	rows, err := r.db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), lower(COALESCE(NULLIF(TRIM(platform), ''), 'unknown')), rate_multiplier FROM groups WHERE id = ANY($1) AND deleted_at IS NULL AND status = 'active'`, pq.Array(groupIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -627,10 +651,11 @@ func (r *channelMonitorV2Repository) loadChannelMonitorV2GroupInfo(ctx context.C
 	for rows.Next() {
 		var id int64
 		var name, platform string
-		if err := rows.Scan(&id, &name, &platform); err != nil {
+		var rate float64
+		if err := rows.Scan(&id, &name, &platform, &rate); err != nil {
 			return nil, err
 		}
-		out[id] = channelMonitorV2GroupInfo{name: name, platform: platform}
+		out[id] = channelMonitorV2GroupInfo{name: name, platform: platform, rateMultiplier: rate}
 	}
 	return out, rows.Err()
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   formatLatencyKpiSecondary,
   formatLatencyPrivacy,
+  formatMonitorGroupRate,
+  formatMonitorMatrixRowLabel,
   formatMonitorMs,
   formatMonitorNumber,
   formatMonitorPercent,
@@ -14,6 +16,7 @@ import {
   healthStateClass,
   scoreToBand,
   tokensPerSecondFromTpm,
+  withMonitorGroupRate,
 } from '../monitorFormat'
 import type { MonitorHealth } from '@/api/channelMonitorV2'
 
@@ -115,5 +118,25 @@ describe('monitorFormat accuracy', () => {
     expect(formatLatencyPrivacy(100, 250, 120, 300)).toBe('AVG 120ms · P50 100ms · P90 250ms')
     expect(formatLatencyPrivacy(100, null, null, 300)).toBe('P50 100ms · P95 300ms')
     expect(formatLatencyPrivacy(null, null)).toBe('-')
+  })
+
+  it('appends group billing rate after the group name', () => {
+    expect(formatMonitorGroupRate(0.5)).toBe('0.50x')
+    expect(formatMonitorGroupRate(0)).toBe('0.0x')
+    expect(formatMonitorGroupRate(1)).toBe('1.00x')
+    expect(formatMonitorGroupRate(undefined)).toBe('')
+    expect(withMonitorGroupRate('【福利】', 0.5)).toBe('【福利】 0.50x')
+    expect(formatMonitorMatrixRowLabel(
+      { platform: 'openai', group_id: 7, group_name: '【福利】', rate_multiplier: 0.5 },
+      '其他模型',
+    )).toBe('openai / 【福利】 0.50x')
+    expect(formatMonitorMatrixRowLabel(
+      { platform: 'openai', group_id: 7, group_name: '【福利】', model: 'gpt-5', rate_multiplier: 0.5 },
+      '其他模型',
+    )).toBe('openai / 【福利】 0.50x / gpt-5')
+    expect(formatMonitorMatrixRowLabel(
+      { platform: 'openai', model: 'gpt-5' },
+      '其他模型',
+    )).toBe('openai / gpt-5')
   })
 })

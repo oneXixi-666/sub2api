@@ -498,6 +498,7 @@ import {
   tokensPerSecondFromTpm,
   healthScoreClass,
   monitorErrorCategoryLabel,
+  withMonitorGroupRate,
 } from '@/features/channel-monitor-v2/monitorFormat'
 
 type Tab = 'models' | 'errors' | 'users'
@@ -583,10 +584,14 @@ const groupOptions = computed(() =>
         !item.platform ||
         selectedPlatforms.value.has(item.platform),
     )
-    .map((item) => ({
-      value: String(item.id),
-      label: item.platform ? `${item.platform} / ${item.name || `#${item.id}`}` : item.name || `#${item.id}`,
-    }))
+    .map((item) => {
+      const name = item.name || `#${item.id}`
+      const labeled = item.platform ? `${item.platform} / ${name}` : name
+      return {
+        value: String(item.id),
+        label: withMonitorGroupRate(labeled, item.rate_multiplier),
+      }
+    })
 )
 const modelOptions = computed(() =>
   (dimensions.value.models || [])

@@ -58,7 +58,17 @@
           >
             <div class="dimension-cell flex min-w-0 items-center gap-2 bg-white dark:bg-dark-800" :title="rowLabel(entry.row)">
               <span :class="['status-dot', cellClass(entry.row.health, entry.row.metrics.request_count)]"></span>
-              <strong class="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{{ rowLabel(entry.row) }}</strong>
+              <strong class="flex min-w-0 items-baseline gap-1 text-xs font-semibold text-gray-800 dark:text-gray-100">
+                <span class="truncate">{{ rowHeadLabel(entry.row) }}</span>
+                <span
+                  v-if="rowGroupRate(entry.row)"
+                  class="shrink-0 font-semibold tabular-nums text-gray-500 dark:text-gray-400"
+                >{{ rowGroupRate(entry.row) }}</span>
+                <span
+                  v-if="rowModelLabel(entry.row)"
+                  class="min-w-0 truncate font-medium text-gray-500 dark:text-gray-400"
+                >/ {{ rowModelLabel(entry.row) }}</span>
+              </strong>
             </div>
             <strong class="summary-value bg-white text-xs font-medium tabular-nums text-gray-600 dark:bg-dark-800 dark:text-gray-300">
               {{ successRate(entry.row.metrics) }}
@@ -179,6 +189,10 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
   formatLatencyPrivacy,
+  formatMonitorGroupRate,
+  formatMonitorMatrixHeadLabel,
+  formatMonitorMatrixModelLabel,
+  formatMonitorMatrixRowLabel,
   formatMonitorMs,
   formatMonitorPercent,
   formatMonitorSuccessRateFromError,
@@ -347,11 +361,25 @@ function cellClass(health: MonitorHealth, requestCount: number): string {
   return healthScoreClass(health, props.healthMode, requestCount)
 }
 
+function otherModelsLabel() {
+  return t('channelMonitorV2.otherModels')
+}
+
+function rowHeadLabel(row: MonitorMatrixRow): string {
+  return formatMonitorMatrixHeadLabel(row)
+}
+
+function rowGroupRate(row: MonitorMatrixRow): string {
+  if (!row.group_name && !row.group_id) return ''
+  return formatMonitorGroupRate(row.rate_multiplier)
+}
+
+function rowModelLabel(row: MonitorMatrixRow): string {
+  return formatMonitorMatrixModelLabel(row.model, otherModelsLabel())
+}
+
 function rowLabel(row: MonitorMatrixRow): string {
-  const parts = [row.platform]
-  if (row.group_name || row.group_id) parts.push(row.group_name || `#${row.group_id}`)
-  if (row.model) parts.push(row.model === '__other__' ? t('channelMonitorV2.otherModels') : row.model)
-  return parts.join(' / ')
+  return formatMonitorMatrixRowLabel(row, otherModelsLabel())
 }
 
 function rowKey(row: MonitorMatrixRow): string {
@@ -476,7 +504,7 @@ function formatBucketRange(value: string) {
 .matrix-row {
   display: grid;
   grid-template-columns:
-    minmax(120px, 1.2fr)
+    minmax(148px, 1.35fr)
     minmax(52px, 0.34fr)
     minmax(58px, 0.36fr)
     minmax(52px, 0.34fr)
@@ -488,7 +516,7 @@ function formatBucketRange(value: string) {
 /* + tokens/s column when throughput visible */
 .matrix-row--with-tps {
   grid-template-columns:
-    minmax(110px, 1.15fr)
+    minmax(140px, 1.25fr)
     minmax(48px, 0.3fr)
     minmax(54px, 0.32fr)
     minmax(58px, 0.36fr)

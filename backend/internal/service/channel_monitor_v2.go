@@ -219,10 +219,11 @@ type ChannelMonitorV2Dimension struct {
 }
 
 type ChannelMonitorV2GroupDimension struct {
-	ID           int64  `json:"id"`
-	Name         string `json:"name"`
-	Platform     string `json:"platform,omitempty"`
-	RequestCount int64  `json:"request_count"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	Platform       string   `json:"platform,omitempty"`
+	RequestCount   int64    `json:"request_count"`
+	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
 }
 
 type ChannelMonitorV2Dimensions struct {
@@ -239,13 +240,14 @@ type ChannelMonitorV2ModelRow struct {
 }
 
 type ChannelMonitorV2MatrixRow struct {
-	Platform  string                       `json:"platform"`
-	GroupID   *int64                       `json:"group_id,omitempty"`
-	GroupName string                       `json:"group_name,omitempty"`
-	Model     string                       `json:"model,omitempty"`
-	Metrics   ChannelMonitorV2Metric       `json:"metrics"`
-	Health    ChannelMonitorV2Health       `json:"health"`
-	Buckets   []ChannelMonitorV2TrendPoint `json:"buckets"`
+	Platform       string                       `json:"platform"`
+	GroupID        *int64                       `json:"group_id,omitempty"`
+	GroupName      string                       `json:"group_name,omitempty"`
+	RateMultiplier *float64                     `json:"rate_multiplier,omitempty"`
+	Model          string                       `json:"model,omitempty"`
+	Metrics        ChannelMonitorV2Metric       `json:"metrics"`
+	Health         ChannelMonitorV2Health       `json:"health"`
+	Buckets        []ChannelMonitorV2TrendPoint `json:"buckets"`
 }
 
 type ChannelMonitorV2Matrix struct {

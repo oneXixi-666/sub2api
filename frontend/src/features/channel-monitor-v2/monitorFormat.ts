@@ -8,6 +8,7 @@
 
 import type { HealthScoreBand, MonitorHealth } from '@/api/channelMonitorV2'
 import { formatCompactNumber } from '@/utils/format'
+import { formatMultiplier } from '@/utils/formatters'
 
 export function monitorIntlLocale(): string {
   if (typeof document !== 'undefined') {
@@ -75,6 +76,56 @@ export function formatMonitorSuccessRate(successRequests: number, requestCount: 
 
 export function formatMonitorSuccessRateFromError(errorRate: number): string {
   return formatMonitorPercent(1 - (errorRate || 0))
+}
+
+/** Compact group billing rate, e.g. "0.50x". Empty when the payload has no group rate. */
+export function formatMonitorGroupRate(rate?: number | null): string {
+  if (rate == null || Number.isNaN(Number(rate))) return ''
+  return `${formatMultiplier(Number(rate))}x`
+}
+
+/** Append billing rate after a group name: "【福利】 0.50x". */
+export function withMonitorGroupRate(name: string, rate?: number | null): string {
+  const suffix = formatMonitorGroupRate(rate)
+  return suffix ? `${name} ${suffix}` : name
+}
+
+export function formatMonitorMatrixHeadLabel(row: {
+  platform: string
+  group_id?: number
+  group_name?: string
+}): string {
+  const parts = [row.platform]
+  if (row.group_name || row.group_id) parts.push(row.group_name || `#${row.group_id}`)
+  return parts.join(' / ')
+}
+
+export function formatMonitorMatrixModelLabel(
+  model: string | undefined,
+  otherModelsLabel: string,
+): string {
+  if (!model) return ''
+  return model === '__other__' ? otherModelsLabel : model
+}
+
+/** `platform / group 0.50x / model` — rate sits after the group name, never after the model. */
+export function formatMonitorMatrixRowLabel(
+  row: {
+    platform: string
+    group_id?: number
+    group_name?: string
+    model?: string
+    rate_multiplier?: number | null
+  },
+  otherModelsLabel: string,
+): string {
+  const parts = [row.platform]
+  if (row.group_name || row.group_id) {
+    parts.push(withMonitorGroupRate(row.group_name || `#${row.group_id}`, row.rate_multiplier))
+  }
+  const model = formatMonitorMatrixModelLabel(row.model, otherModelsLabel)
+  if (model) parts.push(model)
+  return parts.join(' / ')
 }
 
 /**

@@ -174,3 +174,38 @@ describe('RelayPulseMatrix axis range', () => {
     expect(wrapper.findAll('.pulse-cell')).toHaveLength(5)
   })
 })
+
+describe('RelayPulseMatrix group rate', () => {
+  it('shows billing rate after the group name', () => {
+    const wrapper = mount(RelayPulseMatrix, {
+      props: {
+        rows: [{
+          platform: 'openai',
+          group_id: 7,
+          group_name: '【福利】',
+          rate_multiplier: 0.5,
+          metrics: metrics(10),
+          health,
+          buckets: [
+            { bucket_start: '2026-08-01T00:00:00Z', metrics: metrics(10), health },
+          ],
+        }],
+        coverage: {
+          requested_start: '2026-08-01T00:00:00Z',
+          requested_end: '2026-08-01T00:01:00Z',
+          coverage_start: '2026-08-01T00:00:00Z',
+          data_through: '2026-08-01T00:01:00Z',
+          computed_at: '2026-08-01T00:01:00Z',
+          aggregation_lag_seconds: 0,
+          coverage_complete: true,
+          bucket_seconds: 60,
+        },
+        healthMode: 'overall',
+      },
+    })
+    const cell = wrapper.find('.dimension-cell')
+    expect(cell.text()).toContain('openai / 【福利】')
+    expect(cell.text()).toContain('0.50x')
+    expect(cell.attributes('title')).toBe('openai / 【福利】 0.50x')
+  })
+})

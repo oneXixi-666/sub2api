@@ -299,3 +299,27 @@ func TestChannelMonitorV2CatalogFilterClearsMultiSelectDimensions(t *testing.T) 
 	require.Equal(t, []int64{3, 4}, configuredChannelMonitorV2GroupIDs(catalog, cfg))
 	require.Equal(t, []int64{3}, configuredChannelMonitorV2GroupIDs(filter, cfg))
 }
+
+func TestAttachChannelMonitorV2GroupRateCopiesMultiplierAfterGroupNameSource(t *testing.T) {
+	id := int64(7)
+	row := service.ChannelMonitorV2MatrixRow{GroupID: &id, GroupName: "福利"}
+	attachChannelMonitorV2GroupRate(&row, map[int64]channelMonitorV2GroupInfo{
+		7: {name: "福利", platform: "openai", rateMultiplier: 0.5},
+	})
+	require.NotNil(t, row.RateMultiplier)
+	require.InDelta(t, 0.5, *row.RateMultiplier, 1e-9)
+	require.Equal(t, "福利", row.GroupName)
+
+	freeID := int64(9)
+	free := service.ChannelMonitorV2MatrixRow{GroupID: &freeID}
+	attachChannelMonitorV2GroupRate(&free, map[int64]channelMonitorV2GroupInfo{
+		9: {name: "free", platform: "openai", rateMultiplier: 0},
+	})
+	require.NotNil(t, free.RateMultiplier)
+	require.Equal(t, 0.0, *free.RateMultiplier)
+	require.Equal(t, "free", free.GroupName)
+
+	missing := service.ChannelMonitorV2MatrixRow{GroupID: &id, GroupName: "福利"}
+	attachChannelMonitorV2GroupRate(&missing, map[int64]channelMonitorV2GroupInfo{})
+	require.Nil(t, missing.RateMultiplier)
+}
