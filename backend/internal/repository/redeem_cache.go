@@ -12,7 +12,7 @@ import (
 const (
 	redeemRateLimitKeyPrefix = "redeem:ratelimit:"
 	redeemLockKeyPrefix      = "redeem:lock:"
-	redeemRateLimitDuration  = 24 * time.Hour
+	redeemRateLimitDuration  = 10 * time.Minute
 )
 
 // redeemRateLimitKey generates the Redis key for redeem attempt rate limiting.
