@@ -5218,9 +5218,10 @@
                     class="input mt-2 w-full"
                     list="grok-default-text-model-options"
                     data-testid="grok-default-text-model"
-                    placeholder="grok-4.5"
+                    placeholder="grok-4.6"
                   />
                   <datalist id="grok-default-text-model-options">
+                    <option value="grok-4.6" />
                     <option value="grok-4.5" />
                     <option value="grok-4.1-fast" />
                     <option value="grok-4" />
@@ -9655,7 +9656,7 @@ const form = reactive<SettingsForm>({
   fallback_model_openai: "gpt-4o",
   fallback_model_gemini: "gemini-2.5-pro",
   fallback_model_antigravity: "gemini-2.5-pro",
-  grok_default_text_model: "grok-4.5",
+  grok_default_text_model: "grok-4.6",
   grok_cross_client_model_map_enabled: false,
   grok_default_base_url_mode: "cli",
   // Identity patch (Claude -> Gemini)
@@ -11252,7 +11253,7 @@ async function saveSettings() {
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
       grok_default_text_model:
-        form.grok_default_text_model.trim() || "grok-4.5",
+        form.grok_default_text_model.trim() || "grok-4.6",
       grok_cross_client_model_map_enabled:
         form.grok_cross_client_model_map_enabled,
       grok_default_base_url_mode: form.grok_default_base_url_mode,

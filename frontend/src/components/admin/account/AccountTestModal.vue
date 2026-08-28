@@ -724,6 +724,7 @@ const pickDefaultModelForMode = () => {
   if (opts.some((m) => m.id === selectedModelId.value)) return
   if (grokTestMode.value === 'text') {
     const preferred =
+      opts.find((m) => m.id.includes('grok-4.6')) ||
       opts.find((m) => m.id.includes('grok-4.5')) ||
       opts.find((m) => m.id === 'grok') ||
       opts[0]

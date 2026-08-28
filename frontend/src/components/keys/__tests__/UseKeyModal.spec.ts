@@ -49,17 +49,18 @@ describe('UseKeyModal', () => {
     const allCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
     expect(allCode).toContain('GROK_MODELS_BASE_URL')
     expect(allCode).toContain('XAI_API_KEY')
+    expect(allCode).toContain('[model."grok-4.6"]')
     expect(allCode).toContain('[model."grok-4.5"]')
     expect(allCode).toContain('[model."grok-build-0.1"]')
     expect(allCode).toContain('[model."grok-4.20-multi-agent-0309"]')
     expect(allCode).toContain('[model."grok-4.3"]')
-    expect(allCode).toContain('default = "grok-4.5"')
+    expect(allCode).toContain('default = "grok-4.6"')
     expect(allCode).toContain('models_base_url = "https://example.com/v1"')
     expect(allCode).toContain('models_list_url = "https://example.com/v1/models"')
     expect(allCode).toContain('xai_api_base_url = "https://example.com/v1"')
     expect(allCode).toContain('cli_chat_proxy_base_url = "https://example.com/v1"')
     expect(allCode).toContain('preferred_method = "api_key"')
-    expect(allCode).toContain('image_description = "grok-4.5"')
+    expect(allCode).toContain('image_description = "grok-4.6"')
     expect(allCode).toContain('auto_compact_threshold_percent = 80')
     expect(allCode).toContain('image_gen = true')
     expect(allCode).toContain('video_gen = true')
@@ -69,6 +70,7 @@ describe('UseKeyModal', () => {
     expect(allCode).toContain('Keep api_backend = "responses" on every model entry.')
     expect(allCode).toContain('grok-imagine-image')
     expect(allCode).toContain('grok-imagine-edit')
+    expect(allCode).toMatch(/\[model\."grok-4\.6"\][\s\S]*?context_window = 500000/)
     expect(allCode).toMatch(/\[model\."grok-4\.5"\][\s\S]*?context_window = 500000/)
     expect(allCode).toMatch(/\[model\."grok-build-0\.1"\][\s\S]*?context_window = 256000/)
     // Prefer env_key; hardcode api_key only as commented alternative
@@ -105,6 +107,8 @@ describe('UseKeyModal', () => {
       baseURL: 'https://example.com/v1',
       apiKey: 'sk-grok-test'
     })
+    expect(parsed.provider.grok.models['grok-4.6']).toBeDefined()
+    expect(parsed.provider.grok.models['grok-4.6'].limit.context).toBe(500000)
     expect(parsed.provider.grok.models['grok-4.5']).toBeDefined()
     expect(parsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
     expect(parsed.provider.grok.models['grok-build-0.1']).toBeDefined()
@@ -154,13 +158,13 @@ describe('UseKeyModal', () => {
       'ANTHROPIC_DEFAULT_FABLE_MODEL',
       'CLAUDE_CODE_SUBAGENT_MODEL'
     ]) {
-      expect(unixConfig).toContain(`export ${name}="grok-4.5"`)
+      expect(unixConfig).toContain(`export ${name}="grok-4.6"`)
     }
     const settingsConfig = codeBlocks.find((content) => content.includes('"$schema"'))
     expect(settingsConfig).toBeDefined()
     const parsedSettings = JSON.parse(settingsConfig!)
     expect(parsedSettings.$schema).toBe('https://json.schemastore.org/claude-code-settings.json')
-    expect(parsedSettings.env.ANTHROPIC_MODEL).toBe('grok-4.5')
+    expect(parsedSettings.env.ANTHROPIC_MODEL).toBe('grok-4.6')
     expect(wrapper.text()).toContain('keys.useKeyModal.claudeSettingsHint')
     expect(wrapper.text()).toContain('keys.useKeyModal.grok.claudeNote')
     expect(wrapper.find('nav[aria-label="Client"]').classes()).toContain('min-w-max')
@@ -174,9 +178,9 @@ describe('UseKeyModal', () => {
     await nextTick()
 
     codeBlocks = wrapper.findAll('pre code').map((code) => code.text())
-    expect(codeBlocks.join('\n')).toContain('set ANTHROPIC_MODEL=grok-4.5')
-    expect(codeBlocks.join('\n')).toContain('set ANTHROPIC_DEFAULT_FABLE_MODEL=grok-4.5')
-    expect(codeBlocks.join('\n')).toContain('set CLAUDE_CODE_SUBAGENT_MODEL=grok-4.5')
+    expect(codeBlocks.join('\n')).toContain('set ANTHROPIC_MODEL=grok-4.6')
+    expect(codeBlocks.join('\n')).toContain('set ANTHROPIC_DEFAULT_FABLE_MODEL=grok-4.6')
+    expect(codeBlocks.join('\n')).toContain('set CLAUDE_CODE_SUBAGENT_MODEL=grok-4.6')
 
     const powershellTab = wrapper.findAll('button').find(
       (button) => button.text().trim() === 'PowerShell'
@@ -187,9 +191,9 @@ describe('UseKeyModal', () => {
 
     codeBlocks = wrapper.findAll('pre code').map((code) => code.text())
     expect(codeBlocks.join('\n')).toContain('$env:ANTHROPIC_BASE_URL="https://example.com"')
-    expect(codeBlocks.join('\n')).toContain('$env:ANTHROPIC_MODEL="grok-4.5"')
-    expect(codeBlocks.join('\n')).toContain('$env:ANTHROPIC_DEFAULT_FABLE_MODEL="grok-4.5"')
-    expect(codeBlocks.join('\n')).toContain('$env:CLAUDE_CODE_SUBAGENT_MODEL="grok-4.5"')
+    expect(codeBlocks.join('\n')).toContain('$env:ANTHROPIC_MODEL="grok-4.6"')
+    expect(codeBlocks.join('\n')).toContain('$env:ANTHROPIC_DEFAULT_FABLE_MODEL="grok-4.6"')
+    expect(codeBlocks.join('\n')).toContain('$env:CLAUDE_CODE_SUBAGENT_MODEL="grok-4.6"')
     expect(wrapper.text()).toContain('%USERPROFILE%\\.claude\\settings.json')
 
     const copyButton = wrapper.findAll('button').find((button) =>
@@ -234,7 +238,7 @@ describe('UseKeyModal', () => {
     const configToml = codeBlocks.find((content) => content.includes('[model_providers.sub2api]'))
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model_provider = "sub2api"')
-    expect(configToml).toContain('model = "grok-4.5"')
+    expect(configToml).toContain('model = "grok-4.6"')
     expect(configToml).toContain('base_url = "https://example.com/v1"')
     expect(configToml).toContain('env_key = "SUB2API_API_KEY"')
     expect(configToml).toContain('wire_api = "responses"')

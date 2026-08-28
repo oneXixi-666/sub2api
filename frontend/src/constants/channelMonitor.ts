@@ -19,7 +19,7 @@ export const PROVIDER_ZHIPU: Provider = 'zhipu'
 export const PROVIDER_DEEPSEEK: Provider = 'deepseek'
 
 export const DEFAULT_GROK_ENDPOINT = 'https://api.x.ai'
-export const DEFAULT_GROK_MODEL = 'grok-4.5'
+export const DEFAULT_GROK_MODEL = 'grok-4.6'
 
 /** 国产 provider 的官方 endpoint（探活模式预填；配额模式可留空）。 */
 export const DEFAULT_KIMI_ENDPOINT = 'https://api.moonshot.cn'

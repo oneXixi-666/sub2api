@@ -96,7 +96,7 @@ const (
 	monitorQuotaDegradedUsedPercent = 90.0
 
 	// MonitorDefaultGrokModel 是新增 Grok 监控未显式指定模型时使用的轻量测活模型。
-	MonitorDefaultGrokModel = "grok-4.5"
+	MonitorDefaultGrokModel = "grok-4.6"
 
 	// MonitorStatusOperational 等监控状态字符串常量（与 ent enum 一致）。
 	MonitorStatusOperational = "operational"
