@@ -1103,7 +1103,11 @@ func channelMonitorV2HistoryCoverageComplete(coverageStart, filterStart time.Tim
 func channelMonitorV2FixedBucketSeconds(filter service.ChannelMonitorV2Filter) int {
 	seconds := int(filter.Bucket.Seconds())
 	switch seconds {
-	case 300, 3600, 43200, 86400:
+	// 90m still displays 5-minute cells, but reads 1m facts and date_bins at query
+	// time. The stored 5m rollup (bucket_seconds=300) can lag or be empty after a
+	// trailing refresh, which made the default 90m dimension/matrix look blank
+	// while 24h/7d/30d still had coarser rollups.
+	case 3600, 43200, 86400:
 		return seconds
 	default:
 		return 0

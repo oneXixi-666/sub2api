@@ -323,3 +323,28 @@ func TestAttachChannelMonitorV2GroupRateCopiesMultiplierAfterGroupNameSource(t *
 	attachChannelMonitorV2GroupRate(&missing, map[int64]channelMonitorV2GroupInfo{})
 	require.Nil(t, missing.RateMultiplier)
 }
+
+func TestChannelMonitorV2NinetyMinuteReadsOneMinuteFacts(t *testing.T) {
+	start := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
+	cfg := service.ChannelMonitorV2Config{
+		Platforms: []service.ChannelMonitorV2PlatformConfig{{Platform: "openai", Enabled: true}},
+	}
+	ninety := service.ChannelMonitorV2Filter{Start: start, End: start.Add(90 * time.Minute), Bucket: 5 * time.Minute}
+	require.Equal(t, 0, channelMonitorV2FixedBucketSeconds(ninety))
+	require.Equal(t, "channel_monitor_v2_metrics_1m", channelMonitorV2MetricsTable(ninety))
+	require.Equal(t, "channel_monitor_v2_user_metrics_1m", channelMonitorV2UserMetricsTable(ninety))
+	require.Equal(t, "channel_monitor_v2_error_metrics_1m", channelMonitorV2ErrorMetricsTable(ninety))
+	require.Equal(t, "channel_monitor_v2_latency_histograms_1m", channelMonitorV2HistogramTable(ninety))
+	where, args, bucketSeconds := channelMonitorV2WhereWithRollup(ninety, cfg, "m")
+	require.Equal(t, 0, bucketSeconds)
+	require.NotContains(t, where, "bucket_seconds")
+	require.Len(t, args, 3)
+
+	day := service.ChannelMonitorV2Filter{Start: start, End: start.Add(24 * time.Hour), Bucket: time.Hour}
+	require.Equal(t, 3600, channelMonitorV2FixedBucketSeconds(day))
+	require.Equal(t, "channel_monitor_v2_metrics_rollup", channelMonitorV2MetricsTable(day))
+	where, args, bucketSeconds = channelMonitorV2WhereWithRollup(day, cfg, "m")
+	require.Equal(t, 3600, bucketSeconds)
+	require.Contains(t, where, "m.bucket_seconds = $")
+	require.Equal(t, 3600, args[len(args)-1])
+}
