@@ -8,7 +8,7 @@
       <div
         v-for="index in 8"
         :key="index"
-        class="min-h-[268px] animate-pulse rounded-2xl border border-gray-200/70 bg-white p-4 dark:border-dark-700/70 dark:bg-dark-800"
+        class="min-h-[268px] animate-pulse rounded-2xl border border-gray-200/70 bg-transparent p-4 dark:border-dark-700/70"
       >
         <div class="flex items-start gap-3">
           <div class="h-9 w-9 rounded-xl bg-gray-200 dark:bg-dark-700" />
@@ -40,8 +40,7 @@
       >
         <div class="flex items-center gap-2 px-1">
           <span
-            class="grid h-7 w-7 place-items-center rounded-lg ring-1 ring-black/5 dark:ring-white/10"
-            :class="providerGradient(group.platform)"
+            class="grid h-7 w-7 place-items-center rounded-lg border border-gray-200/70 bg-transparent dark:border-dark-700/70"
             aria-hidden="true"
           >
             <ProviderIcon :provider="group.platform" :size="16" />
@@ -63,6 +62,7 @@
             :row="row"
             :coverage="coverage"
             :health-mode="healthMode"
+            :show-throughput="showThroughput"
             @select="emit('select', $event)"
           />
         </div>
@@ -77,13 +77,14 @@ import { useI18n } from 'vue-i18n'
 import type { MonitorCoverage, MonitorMatrixRow } from '@/api/channelMonitorV2'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
-import { providerGradient, useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
+import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import MonitorStatusCard from './MonitorStatusCard.vue'
 
 const props = defineProps<{
   rows: MonitorMatrixRow[]
   coverage: MonitorCoverage | null
   healthMode: 'overall' | 'success' | 'ttft' | 'cache'
+  showThroughput: boolean
   loading: boolean
 }>()
 
@@ -94,7 +95,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { providerLabel } = useChannelMonitorFormat()
 
-const PLATFORM_ORDER = ['openai', 'gemini', 'grok', 'anthropic', 'antigravity', 'kiro', 'kimi', 'deepseek', 'zhipu']
+const PLATFORM_ORDER = ['openai', 'anthropic', 'grok', 'gemini', 'antigravity', 'kiro', 'kimi', 'deepseek', 'zhipu']
 
 const platformGroups = computed(() => {
   const groups = new Map<string, MonitorMatrixRow[]>()

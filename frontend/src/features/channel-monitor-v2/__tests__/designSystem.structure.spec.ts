@@ -31,8 +31,9 @@ describe('channel-monitor-v2 design system structure', () => {
     // Ops elevation: rounded-3xl + ring surfaces
     expect(src).toContain('rounded-3xl')
     expect(src).toContain('ring-1 ring-gray-900/5')
-    // V1-style channel cards replace the page-level KPI strip.
+    // V1-style channel cards replace the page-level KPI strip without changing V2 data privacy.
     expect(src).toContain('MonitorStatusCardGrid')
+    expect(src).toContain(':show-throughput="showThroughput"')
     expect(src).not.toContain('MetricCell')
     // Model / error / user details are administrator-only.
     expect(src).toContain('<section v-if="isAdmin" class="card')
@@ -53,9 +54,31 @@ describe('channel-monitor-v2 design system structure', () => {
     const src = read('features/channel-monitor-v2/MonitorStatusCardGrid.vue')
     expect(src).toContain('platformGroups')
     expect(src).toContain('PLATFORM_ORDER')
+    expect(src).toContain("const PLATFORM_ORDER = ['openai', 'anthropic', 'grok', 'gemini'")
     expect(src).toContain('v-for="group in platformGroups"')
     expect(src).toContain('MonitorStatusCard')
     expect(src).toContain('sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4')
+    expect(src).toContain('bg-transparent')
+    expect(src).not.toContain('providerGradient')
+  })
+
+  it('MonitorStatusCard keeps V2 metrics and tooltip behavior on transparent surfaces', () => {
+    const card = read('features/channel-monitor-v2/MonitorStatusCard.vue')
+    const pulse = read('features/channel-monitor-v2/MonitorStatusPulse.vue')
+    expect(card).toContain('bg-transparent')
+    expect(card).toContain("channelMonitorV2.metrics.successRate")
+    expect(card).toContain("channelMonitorV2.metrics.ttft")
+    expect(card).toContain("channelMonitorV2.metrics.tps")
+    expect(card).toContain("channelMonitorV2.metrics.cacheRate")
+    expect(card).toContain('MonitorStatusPulse')
+    expect(pulse).toContain('monitor-card-floating-tooltip')
+    expect(pulse).toContain("channelMonitorV2.metrics.successRateValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.ttftValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.tpsValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.cacheRateValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.errorRateValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.rpmValue")
+    expect(pulse).toContain("channelMonitorV2.metrics.durationValue")
   })
 
   it('RelayPulseMatrix uses card chrome, matrix scroll, and hover tooltips (no click modal)', () => {

@@ -205,6 +205,7 @@
           :rows="matrixRows"
           :coverage="matrix?.coverage || null"
           :health-mode="healthMode"
+          :show-throughput="showThroughput"
           :loading="loading && !matrix"
           @select="drillCard"
         />
