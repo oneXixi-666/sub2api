@@ -1,7 +1,7 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
-    title: '渠道监控',
+    title: '渠道状态',
     updating: '正在更新数据',
     updatedTo: '更新至 {time}',
     partialCoverage: '部分历史覆盖',
@@ -32,6 +32,19 @@ export default {
     },
     trendView: { label: '趋势视图', pulse: '色块矩阵', line: '折线图' },
     healthMode: { label: '健康显示', overall: '综合', success: '错误率', ttft: '首 Token', cache: '缓存率' },
+    cards: {
+      title: '渠道状态',
+      count: '{count} 个维度',
+      platformCount: '{count} 个维度',
+      availability: '可用率',
+      firstToken: '首 TOKEN',
+      rate: '用户倍率 {value}',
+      history: '最近 {count} 个区间',
+      historyAria: '最近 {count} 个监控区间',
+      past: '过去',
+      now: '现在',
+      status: { healthy: '正常', warning: '降级', critical: '失败', unknown: '样本不足' },
+    },
     tabs: { aria: '明细维度', models: '模型', errors: '错误原因', users: '用户排行' },
     metrics: {
       rpm: 'RPM',

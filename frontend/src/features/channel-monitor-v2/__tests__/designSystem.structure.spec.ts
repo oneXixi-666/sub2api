@@ -31,8 +31,12 @@ describe('channel-monitor-v2 design system structure', () => {
     // Ops elevation: rounded-3xl + ring surfaces
     expect(src).toContain('rounded-3xl')
     expect(src).toContain('ring-1 ring-gray-900/5')
-    // Overview-first KPI strip before primary viz
-    expect(src.indexOf('summaryAria')).toBeLessThan(src.indexOf('MonitorTrendChart'))
+    // V1-style channel cards replace the page-level KPI strip.
+    expect(src).toContain('MonitorStatusCardGrid')
+    expect(src).not.toContain('MetricCell')
+    // Model / error / user details are administrator-only.
+    expect(src).toContain('<section v-if="isAdmin" class="card')
+    expect(src).toContain('if (!isAdmin.value)')
     // No page-level fixed min-width that forces viewport horizontal scroll
     expect(src).not.toMatch(/min-width:\s*980px/)
     expect(src).not.toMatch(/min-w-\[980px\]/)
@@ -43,6 +47,15 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain("trendView")
     expect(src).toContain("'platform_group'")
     expect(src).toContain('MonitorTrendChart')
+  })
+
+  it('MonitorStatusCardGrid groups compact cards by platform', () => {
+    const src = read('features/channel-monitor-v2/MonitorStatusCardGrid.vue')
+    expect(src).toContain('platformGroups')
+    expect(src).toContain('PLATFORM_ORDER')
+    expect(src).toContain('v-for="group in platformGroups"')
+    expect(src).toContain('MonitorStatusCard')
+    expect(src).toContain('sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4')
   })
 
   it('RelayPulseMatrix uses card chrome, matrix scroll, and hover tooltips (no click modal)', () => {

@@ -1,7 +1,7 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
-    title: 'Channel Monitor',
+    title: 'Channel status',
     updating: 'Updating data',
     updatedTo: 'Updated to {time}',
     partialCoverage: 'Partial historical coverage',
@@ -32,6 +32,19 @@ export default {
     },
     trendView: { label: 'Trend view', pulse: 'Pulse matrix', line: 'Line chart' },
     healthMode: { label: 'Health display', overall: 'Overall', success: 'Error rate', ttft: 'First token', cache: 'Cache rate' },
+    cards: {
+      title: 'Channel status',
+      count: '{count} dimensions',
+      platformCount: '{count} dimensions',
+      availability: 'Availability',
+      firstToken: 'First token',
+      rate: 'User rate {value}',
+      history: 'Last {count} intervals',
+      historyAria: 'Last {count} monitoring intervals',
+      past: 'Past',
+      now: 'Now',
+      status: { healthy: 'Operational', warning: 'Degraded', critical: 'Failed', unknown: 'Insufficient data' },
+    },
     tabs: { aria: 'Detail dimension', models: 'Models', errors: 'Error reasons', users: 'User ranking' },
     metrics: {
       rpm: 'RPM',

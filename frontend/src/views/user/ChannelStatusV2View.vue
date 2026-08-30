@@ -3,7 +3,7 @@
     <div class="space-y-6 pb-12">
       <!-- Ops-style elevated shell: title toolbar + filters (mirrors OpsDashboardHeader) -->
       <section
-        class="card sticky top-0 z-20 !rounded-3xl !border-0 p-0 shadow-sm ring-1 ring-gray-900/5 backdrop-blur-sm dark:!bg-dark-800 dark:ring-dark-700 supports-[backdrop-filter]:bg-white/95 dark:supports-[backdrop-filter]:bg-dark-800/95"
+        class="card sticky top-0 z-20 !rounded-lg !border-0 p-0 shadow-sm ring-1 ring-gray-900/5 backdrop-blur-sm dark:!bg-dark-800 dark:ring-dark-700 supports-[backdrop-filter]:bg-white/95 dark:supports-[backdrop-filter]:bg-dark-800/95"
       >
         <header class="page-header mb-0 flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
           <div class="min-w-0">
@@ -193,83 +193,24 @@
         </div>
       </section>
 
-      <!-- Overview KPI: success · TTFT · tokens/s(optional) · cache · (+ RPM when throughput visible) -->
-      <section
-        v-if="snapshot"
-        class="grid grid-cols-2 gap-3 sm:grid-cols-3"
-        :class="showThroughput ? 'xl:grid-cols-5' : 'xl:grid-cols-4'"
-        :aria-label="t('channelMonitorV2.summaryAria')"
-      >
-        <MetricCell
-          :label="t('channelMonitorV2.metrics.successRate')"
-          :value="formatPercent(1 - snapshot.metrics.error_rate)"
-          :detail="t('channelMonitorV2.metrics.errorRateValue', { value: formatPercent(snapshot.metrics.error_rate) })"
-          :state="snapshot.health.error_rate"
-        />
-        <MetricCell
-          :label="t('channelMonitorV2.metrics.ttftP50')"
-          :value="formatMs(snapshot.metrics.ttft.p50_ms)"
-          :detail="latencyKpiSecondary(snapshot.metrics.ttft)"
-          :title="latencyDetail(snapshot.metrics.ttft)"
-          :state="snapshot.health.ttft"
-        />
-        <MetricCell
-          v-if="showThroughput"
-          :label="t('channelMonitorV2.metrics.tps')"
-          :value="formatTps(snapshot.metrics.tpm)"
-          :detail="t('channelMonitorV2.metrics.tpsDetail')"
-          :title="exactTps(snapshot.metrics.tpm)"
-        />
-        <MetricCell
-          :label="t('channelMonitorV2.metrics.cacheRate')"
-          :value="formatPercent(snapshot.metrics.cache_rate)"
-          :detail="t('channelMonitorV2.metrics.cacheDetail')"
-          :state="snapshot.health.cache || snapshot.health.overall"
-        />
-        <MetricCell
-          v-if="showThroughput"
-          :label="t('channelMonitorV2.metrics.rpm')"
-          :value="formatRate(snapshot.metrics.rpm)"
-          :detail="t('channelMonitorV2.metrics.rpmDetail')"
-          :title="exactRate(snapshot.metrics.rpm)"
-        />
-      </section>
-      <section
-        v-else-if="loading"
-        class="grid grid-cols-2 gap-3 sm:grid-cols-3"
-        :class="showThroughput ? 'xl:grid-cols-5' : 'xl:grid-cols-4'"
-        aria-hidden="true"
-      >
-        <div
-          v-for="i in (showThroughput ? 5 : 4)"
-          :key="i"
-          class="h-24 animate-pulse rounded-2xl bg-gray-50 dark:bg-dark-900/30"
-        />
-      </section>
-
-      <div class="relative min-h-[320px]">
+      <section :aria-label="t('channelMonitorV2.cards.title')">
         <MonitorTrendChart
           v-if="trendView === 'line'"
           :trend="snapshot?.trend || []"
           :coverage="snapshot?.coverage || null"
           :loading="loading && !snapshot"
         />
-        <RelayPulseMatrix
-          v-else-if="matrix"
+        <MonitorStatusCardGrid
+          v-else
           :rows="matrixRows"
-          :coverage="matrix.coverage"
+          :coverage="matrix?.coverage || null"
           :health-mode="healthMode"
-          :show-throughput="showThroughput"
+          :loading="loading && !matrix"
+          @select="drillCard"
         />
-        <div
-          v-else-if="loading"
-          class="card flex min-h-[320px] items-center justify-center !rounded-3xl !border-0 text-sm text-gray-400 shadow-sm ring-1 ring-gray-900/5 dark:ring-dark-700"
-        >
-          <span class="animate-pulse">{{ t('common.loading') }}</span>
-        </div>
-      </div>
+      </section>
 
-      <section class="card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
+      <section v-if="isAdmin" class="card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
         <div class="border-b border-gray-100 px-5 pt-4 dark:border-dark-700 sm:px-6">
           <nav class="tabs w-full max-w-md sm:w-auto" role="tablist" :aria-label="t('channelMonitorV2.tabs.aria')">
             <button
@@ -466,10 +407,9 @@ import Icon from '@/components/icons/Icon.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Select from '@/components/common/Select.vue'
 import FilterMultiSelect from '@/features/channel-monitor-v2/FilterMultiSelect.vue'
-import MetricCell from '@/features/channel-monitor-v2/MetricCell.vue'
 import MonitorRankBadge from '@/features/channel-monitor-v2/MonitorRankBadge.vue'
 import MonitorTrendChart from '@/features/channel-monitor-v2/MonitorTrendChart.vue'
-import RelayPulseMatrix from '@/features/channel-monitor-v2/RelayPulseMatrix.vue'
+import MonitorStatusCardGrid from '@/features/channel-monitor-v2/MonitorStatusCardGrid.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -483,13 +423,13 @@ import type {
   MonitorHealth,
   MonitorMatrixGroupBy,
   MonitorMatrixResponse,
+  MonitorMatrixRow,
   MonitorModelRow,
   MonitorRange,
   MonitorSnapshot,
   MonitorUserRow,
 } from '@/api/channelMonitorV2'
 import {
-  formatLatencyKpiSecondary,
   formatLatencyPrivacy,
   formatMonitorMs,
   formatMonitorPercent,
@@ -694,7 +634,7 @@ function syncQuery() {
       group_by: matrixGroupBy.value,
       health_mode: healthMode.value,
       trend_view: trendView.value === 'line' ? 'line' : undefined,
-      tab: activeTab.value,
+      tab: isAdmin.value ? activeTab.value : undefined,
     },
   })
 }
@@ -772,6 +712,10 @@ async function reloadMetricsOnly(silent = true) {
   }
 }
 async function loadTab(signal?: AbortSignal, id = sequence) {
+  if (!isAdmin.value) {
+    tabLoading.value = false
+    return
+  }
   tabLoading.value = true
   try {
     if (activeTab.value === 'models') {
@@ -820,11 +764,13 @@ function drillModel(row: MonitorModelRow) {
   filter.value.platforms = [row.platform]
   filter.value.models = [row.model]
 }
+function drillCard(row: MonitorMatrixRow) {
+  filter.value.platforms = [row.platform]
+  filter.value.groupIds = row.group_id && row.group_id > 0 ? [row.group_id] : []
+  filter.value.models = row.model && row.model !== '__other__' ? [row.model] : []
+}
 function formatRate(value: number) {
   return formatMonitorThroughput(value)
-}
-function exactRate(value: number) {
-  return Intl.NumberFormat(locale.value || undefined, { maximumFractionDigits: 2 }).format(value || 0)
 }
 function formatTps(tpm: number | null | undefined) {
   return formatMonitorTokensPerSecond(tpm)
@@ -847,14 +793,6 @@ function latencyDetail(metric: {
   avg_ms?: number | null
 }) {
   return formatLatencyPrivacy(metric.p50_ms, metric.p90_ms, metric.avg_ms, metric.p95_ms)
-}
-/** KPI secondary: AVG · P90 under the P50 primary value. */
-function latencyKpiSecondary(metric: {
-  p90_ms?: number | null
-  p95_ms: number | null
-  avg_ms?: number | null
-}) {
-  return formatLatencyKpiSecondary(metric.avg_ms, metric.p90_ms, metric.p95_ms)
 }
 function formatTime(value: string) {
   return new Intl.DateTimeFormat(locale.value || undefined, {
