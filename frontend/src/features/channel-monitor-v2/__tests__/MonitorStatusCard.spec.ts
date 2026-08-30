@@ -156,8 +156,8 @@ describe('MonitorStatusCard V2 contract', () => {
     expect(tooltip?.textContent).toContain('时长')
     expect(tooltip?.textContent).not.toContain('请求数')
 
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.emitted('select')?.[0]?.[0]).toEqual(row())
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.emitted('select')).toBeUndefined()
     wrapper.unmount()
   })
 

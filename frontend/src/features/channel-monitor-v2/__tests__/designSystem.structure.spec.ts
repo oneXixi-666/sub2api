@@ -23,11 +23,15 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain('class="tab')
     expect(src).toContain('tab-active')
     expect(src).toContain('badge badge-warning')
-    // Compact single-row toolbar
+    // Public toolbar keeps only the time range; advanced filtering/view controls stay hidden.
     expect(src).toContain('monitor-toolbar')
-    expect(src).toContain('clearFilters')
-    expect(src).toContain('healthModeOptions')
-    expect(src).toContain("'cache'")
+    expect(src).toContain('v-for="option in ranges"')
+    expect(src).not.toContain('<FilterMultiSelect')
+    expect(src).not.toContain('<Select')
+    expect(src).not.toContain('clearFilters')
+    expect(src).not.toContain('healthModeOptions')
+    expect(src).not.toContain('trendView')
+    expect(src).not.toContain('MonitorTrendChart')
     // Ops elevation: rounded-3xl + ring surfaces
     expect(src).toContain('rounded-3xl')
     expect(src).toContain('ring-1 ring-gray-900/5')
@@ -44,10 +48,11 @@ describe('channel-monitor-v2 design system structure', () => {
     // Dense tables scroll internally
     expect(src).toMatch(/max-h-\[min\(52vh/)
     expect(src).toContain('overflow-auto')
-    // Trend view toggle (pulse matrix / line chart) + default platform/group dimension
-    expect(src).toContain("trendView")
-    expect(src).toContain("'platform_group'")
-    expect(src).toContain('MonitorTrendChart')
+    // Cards are fixed to the platform/group matrix with overall health and no click-to-filter path.
+    expect(src).toContain("const matrixGroupBy: MonitorMatrixGroupBy = 'platform_group'")
+    expect(src).toContain("const healthMode: HealthMode = 'overall'")
+    expect(src).not.toContain('drillCard')
+    expect(src).not.toContain('drillModel')
   })
 
   it('MonitorStatusCardGrid groups compact cards by platform', () => {
@@ -58,14 +63,20 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain('v-for="group in platformGroups"')
     expect(src).toContain('MonitorStatusCard')
     expect(src).toContain('sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4')
-    expect(src).toContain('bg-transparent')
+    expect(src).toContain('bg-white')
+    expect(src).toContain('dark:bg-dark-800')
     expect(src).not.toContain('providerGradient')
+    expect(src).not.toContain('@select')
   })
 
-  it('MonitorStatusCard keeps V2 metrics and tooltip behavior on transparent surfaces', () => {
+  it('MonitorStatusCard keeps V2 metrics and tooltip behavior on a non-clickable surface', () => {
     const card = read('features/channel-monitor-v2/MonitorStatusCard.vue')
     const pulse = read('features/channel-monitor-v2/MonitorStatusPulse.vue')
-    expect(card).toContain('bg-transparent')
+    expect(card).toContain('bg-white')
+    expect(card).toContain('dark:bg-dark-800')
+    expect(card).not.toContain("emit('select'")
+    expect(card).not.toContain('defineEmits')
+    expect(card).not.toContain('<button')
     expect(card).toContain("channelMonitorV2.metrics.successRate")
     expect(card).toContain("channelMonitorV2.metrics.ttft")
     expect(card).toContain("channelMonitorV2.metrics.tps")

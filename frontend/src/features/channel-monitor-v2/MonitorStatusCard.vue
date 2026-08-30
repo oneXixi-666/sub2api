@@ -1,13 +1,9 @@
 <template>
   <article
-    class="monitor-status-card group flex min-h-[268px] w-full flex-col rounded-2xl border border-gray-200/80 bg-transparent p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:bg-white/35 hover:shadow-md focus-within:ring-2 focus-within:ring-primary-500/60 dark:border-dark-700/80 dark:hover:border-dark-600 dark:hover:bg-dark-800/30"
+    class="monitor-status-card group flex min-h-[268px] w-full flex-col rounded-2xl border border-gray-200/80 bg-white p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:bg-gray-50 hover:shadow-md focus-within:ring-2 focus-within:ring-primary-500/60 dark:border-dark-700/80 dark:bg-dark-800 dark:hover:border-dark-600 dark:hover:bg-dark-700/80"
+    :aria-label="cardLabel"
   >
-    <button
-      type="button"
-      class="w-full text-left focus-visible:outline-none"
-      :aria-label="cardLabel"
-      @click="emit('select', row)"
-    >
+    <div class="w-full text-left">
       <div class="flex items-start gap-3">
         <span
           class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-gray-200/70 bg-transparent dark:border-dark-700/70"
@@ -63,7 +59,7 @@
           </strong>
         </div>
       </div>
-    </button>
+    </div>
 
     <MonitorStatusPulse
       class="mt-auto"
@@ -101,10 +97,6 @@ const props = defineProps<{
   coverage: MonitorCoverage | null
   healthMode: HealthMode
   showThroughput: boolean
-}>()
-
-const emit = defineEmits<{
-  (event: 'select', row: MonitorMatrixRow): void
 }>()
 
 const { t, locale } = useI18n()

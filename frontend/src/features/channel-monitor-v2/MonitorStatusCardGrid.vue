@@ -8,7 +8,7 @@
       <div
         v-for="index in 8"
         :key="index"
-        class="min-h-[268px] animate-pulse rounded-2xl border border-gray-200/70 bg-transparent p-4 dark:border-dark-700/70"
+        class="min-h-[268px] animate-pulse rounded-2xl border border-gray-200/70 bg-white p-4 shadow-sm dark:border-dark-700/70 dark:bg-dark-800"
       >
         <div class="flex items-start gap-3">
           <div class="h-9 w-9 rounded-xl bg-gray-200 dark:bg-dark-700" />
@@ -63,7 +63,6 @@
             :coverage="coverage"
             :health-mode="healthMode"
             :show-throughput="showThroughput"
-            @select="emit('select', $event)"
           />
         </div>
       </section>
@@ -86,10 +85,6 @@ const props = defineProps<{
   healthMode: 'overall' | 'success' | 'ttft' | 'cache'
   showThroughput: boolean
   loading: boolean
-}>()
-
-const emit = defineEmits<{
-  (event: 'select', row: MonitorMatrixRow): void
 }>()
 
 const { t } = useI18n()
