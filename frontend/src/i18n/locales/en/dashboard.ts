@@ -109,6 +109,18 @@ export default {
     namePlaceholder: 'My API Key',
     groupLabel: 'Group',
     selectGroup: 'Select a group',
+    groupPicker: {
+      title: 'Select a group',
+      searchPlaceholder: 'Search groups...',
+      platformFilter: 'Filter groups by platform',
+      allPlatforms: 'All platforms',
+      resultCount: '{count} groups',
+      noResults: 'No matching groups',
+      noGroup: 'No group',
+      noGroupDescription: 'Leave this key unassigned and choose a group later.',
+      exclusive: 'Exclusive',
+      personalRate: 'Personal rate'
+    },
     statusLabel: 'Status',
     selectStatus: 'Select status',
     saving: 'Saving...',

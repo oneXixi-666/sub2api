@@ -134,12 +134,12 @@
           </template>
 
           <template #cell-group="{ row }">
-            <div class="group/dropdown relative">
+            <div class="relative">
               <button
-                :ref="(el) => setGroupButtonRef(row.id, el)"
                 @click="openGroupSelector(row)"
-                class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
+                class="group -mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 dark:hover:bg-dark-700"
                 :title="t('keys.clickToChangeGroup')"
+                type="button"
               >
                 <GroupBadge
                   v-if="row.group"
@@ -158,7 +158,7 @@
                 }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
                 <svg
-                  class="h-3.5 w-3.5 text-gray-400 opacity-60 transition-opacity group-hover/dropdown:opacity-100"
+                  class="h-3.5 w-3.5 text-gray-400 opacity-60 transition-opacity group-hover:opacity-100"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -466,45 +466,27 @@
 
         <div>
           <label class="input-label">{{ t('keys.groupLabel') }}</label>
-          <Select
-            v-model="formData.group_id"
-            :options="groupOptions"
-            :placeholder="t('keys.selectGroup')"
-            :searchable="true"
-            :search-placeholder="t('keys.searchGroup')"
+          <button
+            type="button"
             data-tour="key-form-group"
+            class="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-left transition hover:border-primary-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500"
+            @click="openFormGroupSelector"
           >
-            <template #selected="{ option }">
-              <GroupBadge
-                v-if="option"
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
-                :peak-start="(option as unknown as GroupOption).peakStart"
-                :peak-end="(option as unknown as GroupOption).peakEnd"
-                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
-              />
-              <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
-            </template>
-            <template #option="{ option, selected }">
-              <GroupOptionItem
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
-                :peak-start="(option as unknown as GroupOption).peakStart"
-                :peak-end="(option as unknown as GroupOption).peakEnd"
-                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
-                :description="(option as unknown as GroupOption).description"
-                :selected="selected"
-              />
-            </template>
-          </Select>
+            <GroupBadge
+              v-if="selectedFormGroup"
+              :name="selectedFormGroup.label"
+              :platform="selectedFormGroup.platform"
+              :subscription-type="selectedFormGroup.subscriptionType"
+              :rate-multiplier="selectedFormGroup.rate"
+              :user-rate-multiplier="selectedFormGroup.userRate"
+              :peak-rate-enabled="selectedFormGroup.peakRateEnabled"
+              :peak-start="selectedFormGroup.peakStart"
+              :peak-end="selectedFormGroup.peakEnd"
+              :peak-rate-multiplier="selectedFormGroup.peakRateMultiplier"
+            />
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.selectGroup') }}</span>
+            <Icon name="chevronDown" size="sm" class="shrink-0 text-gray-400" />
+          </button>
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -998,6 +980,17 @@
       @close="closeUseKeyModal"
     />
 
+    <!-- Shared group picker for API key creation, editing, and inline reassignment -->
+    <GroupSelectorModal
+      :show="showGroupSelectorModal"
+      :groups="groups"
+      :user-group-rates="userGroupRates"
+      :model-value="groupPickerValue"
+      :allow-empty="groupSelectorTarget === 'key'"
+      @select="handleGroupSelected"
+      @close="closeGroupSelector"
+    />
+
     <!-- CCS Client Selection Dialog for Antigravity -->
     <BaseDialog
       :show="showCcsClientSelect"
@@ -1045,79 +1038,11 @@
       </template>
     </BaseDialog>
 
-    <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
-    <Teleport to="body">
-      <div
-        v-if="groupSelectorKeyId !== null && dropdownPosition"
-        ref="dropdownRef"
-        class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 duration-200 sm:min-w-[380px] dark:bg-dark-800 dark:ring-white/10"
-        style="pointer-events: auto !important;"
-        :style="{
-          top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
-          bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
-          left: dropdownPosition.left + 'px'
-        }"
-      >
-        <!-- Search box -->
-        <div class="border-b border-gray-100 p-2 dark:border-dark-700">
-          <div class="relative">
-            <svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              v-model="groupSearchQuery"
-              type="text"
-              class="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-300 dark:border-dark-600 dark:bg-dark-700 dark:text-white dark:placeholder-gray-500 dark:focus:border-primary-600 dark:focus:ring-primary-600"
-              :placeholder="t('keys.searchGroup')"
-              @click.stop
-            />
-          </div>
-        </div>
-        <!-- Group list -->
-        <div class="max-h-80 overflow-y-auto p-1.5">
-          <button
-            v-for="option in filteredGroupOptions"
-            :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
-            :class="[
-              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
-              'border-b border-gray-100 last:border-0 dark:border-dark-700',
-              selectedKeyForGroup?.group_id === option.value ||
-              (!selectedKeyForGroup?.group_id && option.value === null)
-                ? 'bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-700'
-            ]"
-            :title="option.description || undefined"
-          >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :peak-rate-enabled="option.peakRateEnabled"
-              :peak-start="option.peakStart"
-              :peak-end="option.peakEnd"
-              :peak-rate-multiplier="option.peakRateMultiplier"
-              :description="option.description"
-              :selected="
-                selectedKeyForGroup?.group_id === option.value ||
-                (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
-          </button>
-          <!-- Empty state when search has no results -->
-          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
-            {{ t('keys.noGroupFound') }}
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1138,9 +1063,9 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
+	import GroupSelectorModal from '@/components/keys/GroupSelectorModal.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
-	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+	import type { ApiKey, Group, PublicSettings, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1155,20 +1080,6 @@ const formatDateTimeLocal = (isoDate: string): string => {
   const date = new Date(isoDate)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-interface GroupOption {
-  value: number
-  label: string
-  description: string | null
-  rate: number
-  userRate: number | null
-  peakRateEnabled: boolean
-  peakStart: string
-  peakEnd: string
-  peakRateMultiplier: number
-  subscriptionType: SubscriptionType
-  platform: GroupPlatform
 }
 
 const appStore = useAppStore()
@@ -1301,31 +1212,23 @@ const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
+const showGroupSelectorModal = ref(false)
 const showColumnDropdown = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
+type GroupSelectorTarget = 'form' | 'key'
+const groupSelectorTarget = ref<GroupSelectorTarget | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
-const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
-const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
-const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
 
 // Get the currently selected key for group change
 const selectedKeyForGroup = computed(() => {
-  if (groupSelectorKeyId.value === null) return null
+  if (groupSelectorTarget.value !== 'key' || groupSelectorKeyId.value === null) return null
   return apiKeys.value.find((k) => k.id === groupSelectorKeyId.value) || null
 })
-
-const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
-  if (el instanceof HTMLElement) {
-    groupButtonRefs.value.set(keyId, el)
-  } else {
-    groupButtonRefs.value.delete(keyId)
-  }
-}
 
 const formData = ref({
   name: '',
@@ -1424,15 +1327,13 @@ const groupOptions = computed(() =>
   }))
 )
 
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
+const selectedFormGroup = computed(() =>
+  groupOptions.value.find((option) => option.value === formData.value.group_id) || null
+)
+
+const groupPickerValue = computed(() => {
+  if (groupSelectorTarget.value === 'form') return formData.value.group_id
+  return selectedKeyForGroup.value?.group_id ?? null
 })
 
 const copyToClipboard = async (text: string, keyId: number) => {
@@ -1596,43 +1497,19 @@ const toggleKeyStatus = async (key: ApiKey) => {
   }
 }
 
-const openGroupSelector = (key: ApiKey) => {
-  if (groupSelectorKeyId.value === key.id) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
-  } else {
-    const buttonEl = groupButtonRefs.value.get(key.id)
-    if (buttonEl) {
-      const rect = buttonEl.getBoundingClientRect()
-      const dropdownEstHeight = 400 // estimated max dropdown height
-      const dropdownEstWidth = Math.min(380, window.innerWidth - 16)
-      const spaceBelow = window.innerHeight - rect.bottom
-      const spaceAbove = rect.top
-      // 夹取 left，避免窄屏下浮层超出视口右缘
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - dropdownEstWidth - 8))
+const openFormGroupSelector = () => {
+  groupSelectorTarget.value = 'form'
+  groupSelectorKeyId.value = null
+  showGroupSelectorModal.value = true
+}
 
-      if (spaceBelow < dropdownEstHeight && spaceAbove > spaceBelow) {
-        // Not enough space below, pop upward
-        dropdownPosition.value = {
-          bottom: window.innerHeight - rect.top + 4,
-          left
-        }
-      } else {
-        // Default: pop downward
-        dropdownPosition.value = {
-          top: rect.bottom + 4,
-          left
-        }
-      }
-    }
-    groupSelectorKeyId.value = key.id
-    groupSearchQuery.value = ''
-  }
+const openGroupSelector = (key: ApiKey) => {
+  groupSelectorTarget.value = 'key'
+  groupSelectorKeyId.value = key.id
+  showGroupSelectorModal.value = true
 }
 
 const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
-  groupSelectorKeyId.value = null
-  dropdownPosition.value = null
   if (key.group_id === newGroupId) return
 
   try {
@@ -1644,13 +1521,26 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
   }
 }
 
-const closeGroupSelector = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  // Check if click is inside the dropdown or the trigger button
-  if (!target.closest('.group\\/dropdown') && !dropdownRef.value?.contains(target)) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
+const handleGroupSelected = async (newGroupId: number | null) => {
+  if (groupSelectorTarget.value === 'form') {
+    formData.value.group_id = newGroupId
+    closeGroupSelector()
+    return
   }
+
+  const key = selectedKeyForGroup.value
+  closeGroupSelector()
+  if (key) await changeGroup(key, newGroupId)
+}
+
+const closeGroupSelector = () => {
+  showGroupSelectorModal.value = false
+  groupSelectorTarget.value = null
+  groupSelectorKeyId.value = null
+}
+
+const closeColumnDropdown = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
   }
@@ -1959,12 +1849,12 @@ onMounted(() => {
   loadGroups()
   loadUserGroupRates()
   loadPublicSettings()
-  document.addEventListener('click', closeGroupSelector)
+  document.addEventListener('click', closeColumnDropdown)
   resetTimer = setInterval(() => { now.value = new Date() }, 60000)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeGroupSelector)
+  document.removeEventListener('click', closeColumnDropdown)
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>

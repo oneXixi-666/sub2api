@@ -109,6 +109,18 @@ export default {
     namePlaceholder: '我的 API 密钥',
     groupLabel: '分组',
     selectGroup: '选择分组',
+    groupPicker: {
+      title: '选择分组',
+      searchPlaceholder: '搜索分组...',
+      platformFilter: '按平台筛选分组',
+      allPlatforms: '全部平台',
+      resultCount: '{count} 个分组',
+      noResults: '未找到匹配的分组',
+      noGroup: '无分组',
+      noGroupDescription: '不绑定分组，稍后可在密钥列表中分配。',
+      exclusive: '专属',
+      personalRate: '专属倍率'
+    },
     statusLabel: '状态',
     selectStatus: '选择状态',
     saving: '保存中...',
