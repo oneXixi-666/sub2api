@@ -978,6 +978,7 @@
         <div class="mb-3 flex items-center justify-between">
           <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
           <input
+            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
             v-model="enableCodexFingerprintMode"
             type="checkbox"
             class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -2089,7 +2090,8 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableCodexFingerprintMode.value) {
     const extra = ensureExtra()
-    // 缺失键默认 session，因此 off 必须显式落键才能关闭收敛。
+    // 批量接口通过 JSONB 增量合并 extra；删除 payload 中的键只表示“不更新”。
+    // 本地缺失键默认 session，因此关闭收敛时必须显式写入 off（#6327）。
     extra.codex_fingerprint_mode = codexFingerprintMode.value
   }
 
