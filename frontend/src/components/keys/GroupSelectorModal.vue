@@ -59,29 +59,6 @@
         </div>
       </div>
 
-      <div v-if="allowEmpty" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <button
-          type="button"
-          class="group-picker-card text-left"
-          :class="modelValue === null ? 'group-picker-card-selected' : ''"
-          :aria-pressed="modelValue === null"
-          @click="emit('select', null)"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <span class="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
-              <span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-300">
-                <Icon name="ban" size="sm" />
-              </span>
-              <span class="truncate">{{ t('keys.groupPicker.noGroup') }}</span>
-            </span>
-            <Icon v-if="modelValue === null" name="checkCircle" size="sm" class="shrink-0 text-primary-500" :stroke-width="2" />
-          </div>
-          <p class="mt-3 text-xs leading-relaxed text-gray-500 dark:text-dark-400">
-            {{ t('keys.groupPicker.noGroupDescription') }}
-          </p>
-        </button>
-      </div>
-
       <div v-if="groupSections.length" class="space-y-5">
         <section v-for="section in groupSections" :key="section.platform" class="space-y-2.5">
           <div class="flex items-center gap-2 px-1">
@@ -166,10 +143,8 @@ const props = withDefaults(defineProps<{
   groups: Group[]
   userGroupRates?: Record<number, number>
   modelValue: number | null
-  allowEmpty?: boolean
 }>(), {
-  userGroupRates: () => ({}),
-  allowEmpty: false
+  userGroupRates: () => ({})
 })
 
 const emit = defineEmits<{

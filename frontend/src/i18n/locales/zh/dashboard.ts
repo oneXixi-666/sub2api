@@ -116,8 +116,6 @@ export default {
       allPlatforms: '全部平台',
       resultCount: '{count} 个分组',
       noResults: '未找到匹配的分组',
-      noGroup: '无分组',
-      noGroupDescription: '不绑定分组，稍后可在密钥列表中分配。',
       exclusive: '专属',
       personalRate: '专属倍率'
     },

@@ -116,8 +116,6 @@ export default {
       allPlatforms: 'All platforms',
       resultCount: '{count} groups',
       noResults: 'No matching groups',
-      noGroup: 'No group',
-      noGroupDescription: 'Leave this key unassigned and choose a group later.',
       exclusive: 'Exclusive',
       personalRate: 'Personal rate'
     },

@@ -986,7 +986,6 @@
       :groups="groups"
       :user-group-rates="userGroupRates"
       :model-value="groupPickerValue"
-      :allow-empty="groupSelectorTarget === 'key'"
       @select="handleGroupSelected"
       @close="closeGroupSelector"
     />
