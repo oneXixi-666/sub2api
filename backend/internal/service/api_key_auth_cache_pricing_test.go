@@ -53,7 +53,7 @@ func TestAPIKeyAuthSnapshotGroupPricingRedisRoundTrip(t *testing.T) {
 	svc := &APIKeyService{}
 	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
 	require.NotNil(t, snapshot)
-	require.Equal(t, 20, snapshot.Version)
+	require.Equal(t, apiKeyAuthSnapshotVersion, snapshot.Version)
 	require.NotNil(t, snapshot.Group)
 	require.True(t, snapshot.Group.LongContextPricingEnabled)
 	require.Equal(t, apiKey.Group.ModelPricing, snapshot.Group.ModelPricing)
