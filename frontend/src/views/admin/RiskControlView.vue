@@ -987,11 +987,32 @@
               </div>
               <textarea
                 v-model="configForm.blocked_keywords_text"
+                data-test="observation-keywords"
                 class="input min-h-52 resize-y font-mono text-sm"
                 :placeholder="t('admin.riskControl.blockedKeywordsPlaceholder')"
+              ></textarea>
+              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.riskControl.blockedKeywordsDescription') }}
+                {{ t('admin.riskControl.blockedKeywordsLimit', { max: blockedKeywordMax }) }}
+              </p>
+            </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <label class="input-label mb-0">{{ t('admin.riskControl.hardBlockedKeywords') }}</label>
+                <span class="inline-flex rounded-md bg-red-50 px-2 py-1 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-300">
+                  {{ t('admin.riskControl.hardBlockedKeywordCount', { count: hardBlockedKeywordCount }) }}
+                </span>
+              </div>
+              <textarea
+                v-model="configForm.hard_blocked_keywords_text"
+                data-test="hard-block-keywords"
+                class="input min-h-40 resize-y font-mono text-sm"
+                :placeholder="t('admin.riskControl.hardBlockedKeywordsPlaceholder')"
                 :disabled="configForm.keyword_blocking_mode === 'api_only'"
               ></textarea>
               <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.riskControl.hardBlockedKeywordsDescription') }}
                 {{ t('admin.riskControl.blockedKeywordsLimit', { max: blockedKeywordMax }) }}
               </p>
             </div>
@@ -1310,6 +1331,7 @@ const configForm = reactive({
   pre_hash_check_enabled: false,
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
+  hard_blocked_keywords_text: '',
   keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
   model_filter_type: 'all' as ContentModerationModelFilterType,
   model_filter_models: [] as string[],
@@ -1485,6 +1507,10 @@ const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).l
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
 const blockedKeywordCount = computed(() => blockedKeywordList.value.length)
+
+const hardBlockedKeywordList = computed(() => parseBlockedKeywords(configForm.hard_blocked_keywords_text))
+
+const hardBlockedKeywordCount = computed(() => hardBlockedKeywordList.value.length)
 
 const pendingDeletedApiKeyCount = computed(() => pendingDeleteApiKeyHashes.value.length)
 
@@ -1785,6 +1811,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.pre_hash_check_enabled = config.pre_hash_check_enabled ?? false
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
+  configForm.hard_blocked_keywords_text = Array.isArray(config.hard_blocked_keywords) ? config.hard_blocked_keywords.join('\n') : ''
   configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
   const modelFilter = normalizeModelFilter(config.model_filter)
   configForm.model_filter_type = modelFilter.type
@@ -1875,6 +1902,7 @@ async function saveConfig() {
       pre_hash_check_enabled: configForm.pre_hash_check_enabled,
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
+      hard_blocked_keywords: hardBlockedKeywordList.value,
       keyword_blocking_mode: configForm.keyword_blocking_mode,
       model_filter: modelFilterPayload,
     }
@@ -2173,6 +2201,7 @@ function modeDescription(mode: ModerationMode): string {
 
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
+  if (row.action === 'keyword_observe') return t('admin.riskControl.action.keywordObserve')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')
   if (row.action === 'error' || row.error) return t('admin.riskControl.action.error')
@@ -2182,6 +2211,7 @@ function resultLabel(row: ContentModerationLog): string {
 
 function resultBadgeClass(row: ContentModerationLog): string {
   if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'keyword_observe') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'

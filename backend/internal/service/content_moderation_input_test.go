@@ -177,3 +177,54 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 	require.Empty(t, input.Text)
 	require.Empty(t, input.Images)
 }
+
+func TestExtractContentModerationInputs_ResponsesOpaqueStringIsObservationOnly(t *testing.T) {
+	body := []byte(`{"input":"tool output with broad-policy-term and approval context"}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Empty(t, extracted.User.Text)
+	require.Equal(t, "tool output with broad-policy-term and approval context", extracted.Observation.Text)
+}
+
+func TestExtractContentModerationInputs_ResponsesUnroledInputTextIsObservationOnly(t *testing.T) {
+	body := []byte(`{"input":[{"type":"input_text","text":"flattened tool result"}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Empty(t, extracted.User.Text)
+	require.Equal(t, "flattened tool result", extracted.Observation.Text)
+}
+
+func TestExtractContentModerationInputs_ResponsesSyntheticUserEnvelopeIsObservationOnly(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"developer","content":[{"type":"input_text","text":"policy"}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n<environment_context>tool output broad-policy-term</environment_context>"}]}
+		]
+	}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Empty(t, extracted.User.Text)
+	require.Contains(t, extracted.Observation.Text, "broad-policy-term")
+}
+
+func TestExtractContentModerationInputs_ResponsesContextRolesStayObservable(t *testing.T) {
+	body := []byte(`{
+		"instructions":"developer broad-policy-term",
+		"input":[
+			{"type":"message","role":"system","content":"system broad-policy-term"},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"assistant broad-policy-term"}]},
+			{"type":"function_call_output","call_id":"call_1","output":"tool broad-policy-term"}
+		]
+	}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Empty(t, extracted.User.Text)
+	require.Contains(t, extracted.Observation.Text, "developer broad-policy-term")
+	require.Contains(t, extracted.Observation.Text, "system broad-policy-term")
+	require.Contains(t, extracted.Observation.Text, "assistant broad-policy-term")
+	require.Contains(t, extracted.Observation.Text, "tool broad-policy-term")
+}

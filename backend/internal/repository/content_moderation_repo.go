@@ -226,7 +226,7 @@ SELECT COUNT(*)
 FROM content_moderation_logs
 WHERE user_id = $1
   AND flagged = TRUE
-  AND action <> 'hash_block'
+  AND action NOT IN ('hash_block', 'keyword_observe')
   AND NOT (action = 'cyber_policy' AND cyber_policy_mode = 'collect_only')
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2

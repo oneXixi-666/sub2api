@@ -14,34 +14,72 @@ func ExtractContentModerationText(protocol string, body []byte) string {
 }
 
 func ExtractContentModerationInput(protocol string, body []byte) ContentModerationInput {
+	return extractContentModerationInputs(protocol, body).User
+}
+
+// contentModerationExtractedInputs separates enforceable user content from
+// contextual evidence. Contextual evidence remains useful for observing broad
+// keyword hits, but must never drive hash, keyword, or moderation API blocking.
+type contentModerationExtractedInputs struct {
+	User        ContentModerationInput
+	Observation ContentModerationInput
+}
+
+func extractContentModerationInputs(protocol string, body []byte) contentModerationExtractedInputs {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
-		return ContentModerationInput{}
+		return contentModerationExtractedInputs{}
 	}
 	var parts []string
 	var images []string
+	var observationParts []string
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages:
 		collectLastAnthropicUserMessage(gjson.GetBytes(body, "messages"), &parts, &images)
+		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "system"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIChat:
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
+		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIResponses:
 		collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
+		collectResponsesObservations(gjson.GetBytes(body, "input"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "instructions"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolGemini:
 		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images)
+		collectGeminiObservations(gjson.GetBytes(body, "contents"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "system_instruction"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "systemInstruction"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIImages:
 		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
+		addObservationText(&observationParts, gjson.GetBytes(body, "prompt").String())
 	default:
 		collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
 		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images)
+		collectResponsesObservations(gjson.GetBytes(body, "input"), &observationParts)
+		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
+		collectGeminiObservations(gjson.GetBytes(body, "contents"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "instructions"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "system"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "system_instruction"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "systemInstruction"), &observationParts)
+		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	}
-	out := ContentModerationInput{
+	user := ContentModerationInput{
 		Text:   normalizeContentModerationText(strings.Join(parts, "\n")),
 		Images: normalizeModerationImages(images),
 	}
-	out.Normalize()
-	return out
+	user.Normalize()
+	observation := ContentModerationInput{
+		Text: normalizeContentModerationText(strings.Join(observationParts, "\n")),
+	}
+	observation.Normalize()
+	return contentModerationExtractedInputs{User: user, Observation: observation}
 }
 
 func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string, images *[]string) {
@@ -59,6 +97,9 @@ func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string,
 	var candidate []string
 	var candidateImages []string
 	collectContentValue(last.Get("content"), &candidate, &candidateImages)
+	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+		return
+	}
 	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
 		return
 	}
@@ -81,6 +122,9 @@ func collectLastAnthropicUserMessage(messages gjson.Result, parts *[]string, ima
 	var candidate []string
 	var candidateImages []string
 	collectAnthropicUserContentValue(last.Get("content"), &candidate, &candidateImages)
+	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+		return
+	}
 	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
 		return
 	}
@@ -126,7 +170,10 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 	case !input.Exists():
 		return
 	case input.Type == gjson.String:
-		addModerationText(parts, input.String())
+		// A top-level string has no independently verifiable source boundary.
+		// Codex clients may flatten tool output, approvals, and environment data
+		// into it, so retain it for observation only.
+		return
 	case input.IsArray():
 		array := input.Array()
 		if len(array) == 0 {
@@ -136,29 +183,37 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 		if !isResponsesUserTextItem(last) {
 			return
 		}
-		collectContentValue(last.Get("content"), parts, images)
+		var candidate []string
+		var candidateImages []string
+		collectContentValue(last.Get("content"), &candidate, &candidateImages)
 		if last.Get("type").String() == "input_text" || last.Get("text").Exists() {
-			collectContentValue(last, parts, images)
+			collectContentValue(last, &candidate, &candidateImages)
 		}
+		if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+			return
+		}
+		*parts = append(*parts, candidate...)
+		*images = append(*images, candidateImages...)
 	case input.IsObject():
 		if isResponsesUserTextItem(input) {
-			collectContentValue(input.Get("content"), parts, images)
+			var candidate []string
+			var candidateImages []string
+			collectContentValue(input.Get("content"), &candidate, &candidateImages)
 			if input.Get("type").String() == "input_text" || input.Get("text").Exists() {
-				collectContentValue(input, parts, images)
+				collectContentValue(input, &candidate, &candidateImages)
 			}
+			if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+				return
+			}
+			*parts = append(*parts, candidate...)
+			*images = append(*images, candidateImages...)
 		}
 	}
 }
 
 func isResponsesUserTextItem(item gjson.Result) bool {
 	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
-	if role == "user" {
-		return responseItemHasModerationText(item)
-	}
-	if role != "" {
-		return false
-	}
-	return responseItemHasModerationText(item)
+	return role == "user" && responseItemHasModerationText(item)
 }
 
 func responseItemHasModerationText(item gjson.Result) bool {
@@ -196,8 +251,105 @@ func collectLastGeminiContent(contents gjson.Result, parts *[]string, images *[]
 	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
 		return
 	}
+	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+		return
+	}
 	*parts = append(*parts, candidate...)
 	*images = append(*images, candidateImages...)
+}
+
+func collectMessageObservations(messages gjson.Result, parts *[]string) {
+	if !messages.IsArray() {
+		return
+	}
+	messages.ForEach(func(_, message gjson.Result) bool {
+		collectObservationValue(message.Get("content"), parts)
+		return true
+	})
+}
+
+func collectResponsesObservations(input gjson.Result, parts *[]string) {
+	switch {
+	case !input.Exists():
+		return
+	case input.Type == gjson.String:
+		addObservationText(parts, input.String())
+	case input.IsArray():
+		input.ForEach(func(_, item gjson.Result) bool {
+			collectResponsesObservationItem(item, parts)
+			return true
+		})
+	case input.IsObject():
+		collectResponsesObservationItem(input, parts)
+	}
+}
+
+func collectResponsesObservationItem(item gjson.Result, parts *[]string) {
+	for _, field := range []string{"content", "text", "output", "arguments"} {
+		collectObservationValue(item.Get(field), parts)
+	}
+}
+
+func collectGeminiObservations(contents gjson.Result, parts *[]string) {
+	if !contents.IsArray() {
+		return
+	}
+	contents.ForEach(func(_, content gjson.Result) bool {
+		collectObservationValue(content.Get("parts"), parts)
+		return true
+	})
+}
+
+func collectObservationValue(value gjson.Result, parts *[]string) {
+	switch {
+	case !value.Exists():
+		return
+	case value.Type == gjson.String:
+		addObservationText(parts, value.String())
+	case value.IsArray():
+		value.ForEach(func(_, item gjson.Result) bool {
+			collectObservationValue(item, parts)
+			return true
+		})
+	case value.IsObject():
+		value.ForEach(func(key, item gjson.Result) bool {
+			switch strings.ToLower(strings.TrimSpace(key.String())) {
+			case "type", "role", "id", "call_id", "tool_call_id", "name",
+				"url", "image_url", "data", "base64", "media_type", "mediatype", "mime_type", "mimetype":
+				return true
+			default:
+				collectObservationValue(item, parts)
+				return true
+			}
+		})
+	}
+}
+
+func isSyntheticModerationUserText(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"# agents.md instructions",
+		"<environment_context>",
+		"<system-reminder>",
+		"<permissions instructions>",
+		"<collaboration_mode>",
+		"<plugins_instructions>",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func addObservationText(parts *[]string, text string) {
+	text = strings.TrimSpace(text)
+	if text != "" {
+		*parts = append(*parts, text)
+	}
 }
 
 func collectContentValue(value gjson.Result, parts *[]string, images *[]string) {

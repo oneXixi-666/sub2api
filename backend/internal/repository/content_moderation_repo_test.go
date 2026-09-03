@@ -92,14 +92,14 @@ func TestContentModerationRepositoryCreateLog_PersistsConversationEvidence(t *te
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesHashBlock(t *testing.T) {
+func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesNonCountingActions(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
 	repo := NewContentModerationRepository(db)
 	since := time.Now().Add(-time.Hour)
-	mock.ExpectQuery(regexp.QuoteMeta("AND action <> 'hash_block'")).
+	mock.ExpectQuery(regexp.QuoteMeta("AND action NOT IN ('hash_block', 'keyword_observe')")).
 		WithArgs(int64(1001), since, false).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 

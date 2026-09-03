@@ -99,7 +99,8 @@ func (r *contentModerationTestRepo) CountFlaggedByUserSince(ctx context.Context,
 	defer r.mu.Unlock()
 	count := 0
 	for _, log := range r.logs {
-		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action == ContentModerationActionHashBlock {
+		if log.UserID == nil || *log.UserID != userID || !log.Flagged ||
+			log.Action == ContentModerationActionHashBlock || log.Action == ContentModerationActionKeywordObserve {
 			continue
 		}
 		if log.Action == ContentModerationActionCyberPolicy && log.CyberPolicyMode == ContentModerationCyberModeCollect {
@@ -177,6 +178,7 @@ func requireRecordedHashCount(t *testing.T, cache *contentModerationTestHashCach
 type contentModerationTestHashCache struct {
 	mu            sync.Mutex
 	hashes        map[string]struct{}
+	events        map[string]time.Time
 	recorded      []string
 	checked       []string
 	deleted       []string
@@ -370,6 +372,20 @@ func (c *contentModerationTestHashCache) HasFlaggedInputHash(ctx context.Context
 	return ok, nil
 }
 
+func (c *contentModerationTestHashCache) AcquireEventDedupe(ctx context.Context, fingerprint string, ttl time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.events == nil {
+		c.events = map[string]time.Time{}
+	}
+	now := time.Now()
+	if expiresAt, ok := c.events[fingerprint]; ok && now.Before(expiresAt) {
+		return false, nil
+	}
+	c.events[fingerprint] = now.Add(ttl)
+	return true, nil
+}
+
 func (c *contentModerationTestHashCache) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -495,7 +511,7 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	cfg.Mode = ContentModerationModePreBlock
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
-	cfg.BlockedKeywords = []string{"secret-token"}
+	cfg.HardBlockedKeywords = []string{"secret-token"}
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
@@ -531,6 +547,94 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, contentModerationKeywordCategory, logs[0].HighestCategory)
 	require.Equal(t, "secret-token", logs[0].MatchedKeyword, "blocked log must record which keyword was hit")
+}
+
+func TestContentModerationCheck_BroadKeywordIsObservationOnly(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.BlockedKeywords = []string{"broad-policy-term"}
+	cfg.HardBlockedKeywords = []string{"broad-policy-term"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   1001,
+		APIKeyID: 2001,
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"tool output and policy description: broad-policy-term"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionKeywordObserve, logs[0].Action)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, "broad-policy-term", logs[0].MatchedKeyword)
+	require.Zero(t, logs[0].ViolationCount)
+}
+
+func TestContentModerationCheck_RetryDedupeKeepsBlockButRecordsOneEvent(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.HardBlockedKeywords = []string{"explicit-harmful-intent"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	input := ContentModerationCheckInput{
+		UserID:   1001,
+		APIKeyID: 2001,
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body: []byte(`{"input":[{"type":"message","role":"user","content":[` +
+			`{"type":"input_text","text":"explicit-harmful-intent"}]}]}`),
+	}
+
+	for range 2 {
+		decision, checkErr := svc.Check(context.Background(), input)
+		require.NoError(t, checkErr)
+		require.True(t, decision.Blocked)
+		require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	}
+	require.Eventually(t, func() bool {
+		return svc.asyncProcessed.Load() >= 2
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
+	require.Equal(t, 1, logs[0].ViolationCount)
 }
 
 func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {
@@ -591,7 +695,7 @@ func TestContentModerationCheck_KeywordOnlyStrategySkipsAPIOnMiss(t *testing.T) 
 	cfg.Mode = ContentModerationModePreBlock
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
-	cfg.BlockedKeywords = []string{"never-matches"}
+	cfg.HardBlockedKeywords = []string{"never-matches"}
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -638,7 +742,7 @@ func TestContentModerationCheck_APIOnlyStrategyIgnoresKeywordList(t *testing.T) 
 	cfg.Mode = ContentModerationModePreBlock
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
-	cfg.BlockedKeywords = []string{"secret-token"}
+	cfg.HardBlockedKeywords = []string{"secret-token"}
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -797,7 +901,7 @@ func defaultContentModerationModelFilterTestConfig() *ContentModerationConfig {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
-	cfg.BlockedKeywords = []string{"secret-token"}
+	cfg.HardBlockedKeywords = []string{"secret-token"}
 	return cfg
 }
 
@@ -1286,7 +1390,7 @@ func TestContentModerationStatusTracksPreBlockLocalBlocks(t *testing.T) {
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
-	cfg.BlockedKeywords = []string{"blocked"}
+	cfg.HardBlockedKeywords = []string{"blocked"}
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 

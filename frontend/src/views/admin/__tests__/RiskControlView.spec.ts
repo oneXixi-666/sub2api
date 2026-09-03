@@ -119,6 +119,7 @@ const baseConfig = (): ContentModerationConfig => ({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   blocked_keywords: [],
+  hard_blocked_keywords: [],
   keyword_blocking_mode: 'keyword_and_api',
   thresholds: {
     harassment: 0.98,
@@ -300,6 +301,44 @@ describe('admin RiskControlView', () => {
       }),
     }))
     expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('keeps observation and hard-block keyword libraries separate', async () => {
+    getConfig.mockResolvedValue({
+      ...baseConfig(),
+      blocked_keywords: ['broad-policy-term'],
+      hard_blocked_keywords: ['explicit-harmful-intent'],
+    })
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
+    expect(wrapper.get('[data-test="observation-keywords"]').element).toHaveProperty('value', 'broad-policy-term')
+    expect(wrapper.get('[data-test="hard-block-keywords"]').element).toHaveProperty('value', 'explicit-harmful-intent')
+
+    await wrapper.get('[data-test="observation-keywords"]').setValue('broad-one\nbroad-two')
+    await wrapper.get('[data-test="hard-block-keywords"]').setValue('hard-one\nhard-two')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      blocked_keywords: ['broad-one', 'broad-two'],
+      hard_blocked_keywords: ['hard-one', 'hard-two'],
+    }))
   })
 
   it('saves a default cyber policy and an independent group override', async () => {

@@ -3,12 +3,14 @@ package repository
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
 const contentModerationFlaggedHashSetKey = "content_moderation:flagged_hashes"
+const contentModerationEventDedupeKeyPrefix = "content_moderation:event_dedupe:"
 
 type contentModerationHashCache struct {
 	rdb *redis.Client
@@ -32,6 +34,14 @@ func (c *contentModerationHashCache) HasFlaggedInputHash(ctx context.Context, in
 		return false, nil
 	}
 	return c.rdb.SIsMember(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
+}
+
+func (c *contentModerationHashCache) AcquireEventDedupe(ctx context.Context, fingerprint string, ttl time.Duration) (bool, error) {
+	fingerprint = strings.TrimSpace(fingerprint)
+	if c == nil || c.rdb == nil || fingerprint == "" || ttl <= 0 {
+		return true, nil
+	}
+	return c.rdb.SetNX(ctx, contentModerationEventDedupeKeyPrefix+fingerprint, "1", ttl).Result()
 }
 
 func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (bool, error) {

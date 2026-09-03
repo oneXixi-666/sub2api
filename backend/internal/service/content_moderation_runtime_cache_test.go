@@ -133,7 +133,7 @@ func runtimeCacheTestConfig(t *testing.T, keywords ...string) string {
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
-	cfg.BlockedKeywords = keywords
+	cfg.HardBlockedKeywords = keywords
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	return string(raw)
@@ -186,7 +186,7 @@ func TestContentModerationRuntimeSnapshotUpdateConfigIsImmediate(t *testing.T) {
 
 	keywords := []string{"new-keyword"}
 	_, err = svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		BlockedKeywords: &keywords,
+		HardBlockedKeywords: &keywords,
 	})
 	require.NoError(t, err)
 
@@ -236,7 +236,7 @@ func TestContentModerationRuntimeSnapshotUpdateWinsOverInitialLoad(t *testing.T)
 	go func() {
 		keywords := []string{"new-keyword"}
 		_, updateErr := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-			BlockedKeywords: &keywords,
+			HardBlockedKeywords: &keywords,
 		})
 		updateDone <- updateErr
 	}()
@@ -387,7 +387,7 @@ func TestContentModerationRuntimeSnapshotUpdateWinsOverInFlightRefresh(t *testin
 	go func() {
 		keywords := []string{"new-keyword"}
 		_, updateErr := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-			BlockedKeywords: &keywords,
+			HardBlockedKeywords: &keywords,
 		})
 		updateDone <- updateErr
 	}()
@@ -439,7 +439,7 @@ func TestContentModerationRuntimeSnapshotConcurrentReadAndReplace(t *testing.T) 
 	for i := 1; i <= 20; i++ {
 		keywords := []string{"blocked-" + time.Duration(i).String()}
 		_, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-			BlockedKeywords: &keywords,
+			HardBlockedKeywords: &keywords,
 		})
 		require.NoError(t, err)
 	}
