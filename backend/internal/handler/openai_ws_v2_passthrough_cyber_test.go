@@ -27,6 +27,10 @@ type openAIWSPassthroughHandlerHarness struct {
 }
 
 func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string) *openAIWSPassthroughHandlerHarness {
+	return newOpenAIWSPassthroughHandlerHarnessWithConfig(t, upstreamURL, "")
+}
+
+func newOpenAIWSPassthroughHandlerHarnessWithConfig(t *testing.T, upstreamURL string, moderationConfig string) *openAIWSPassthroughHandlerHarness {
 	t.Helper()
 	gatewayCache := testutil.NewRedisGatewayCache(t)
 
@@ -35,6 +39,9 @@ func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string) *ope
 		service.SettingKeyCyberSessionBlockEnabled:    "true",
 		service.SettingKeyCyberSessionBlockTTLSeconds: "60",
 	}}
+	if strings.TrimSpace(moderationConfig) != "" {
+		settingRepo.values[service.SettingKeyContentModerationConfig] = moderationConfig
+	}
 	moderationRepo := &contentModerationHandlerTestRepo{}
 	moderationSvc := service.NewContentModerationService(settingRepo, moderationRepo, nil, nil, nil, nil, nil, nil)
 	settingSvc := service.NewSettingService(settingRepo, nil)
@@ -124,6 +131,113 @@ func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string) *ope
 	}
 }
 
+func TestOpenAIResponsesWebSocketV2PassthroughCyberOutsideScopeCollectsAndAllowsFollowup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamDone := make(chan struct{})
+	secondUpstreamFrame := make(chan []byte, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(upstreamDone)
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		require.NoError(t, err)
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, _, err = conn.Read(readCtx)
+		cancelRead()
+		require.NoError(t, err)
+
+		failed := []byte(`{"type":"response.failed","response":{"id":"resp_collect_only","model":"gpt-5.1","error":{"code":"cyber_policy","message":"blocked by upstream policy"},"usage":{"input_tokens":11,"output_tokens":3}}}`)
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		err = conn.Write(writeCtx, coderws.MessageText, failed)
+		cancelWrite()
+		require.NoError(t, err)
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 3*time.Second)
+		_, second, err := conn.Read(readCtx)
+		cancelRead()
+		require.NoError(t, err)
+		secondUpstreamFrame <- append([]byte(nil), second...)
+
+		completed := []byte(`{"type":"response.completed","response":{"id":"resp_collect_only_turn_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
+		writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+		err = conn.Write(writeCtx, coderws.MessageText, completed)
+		cancelWrite()
+		require.NoError(t, err)
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 3*time.Second)
+		_, _, _ = conn.Read(readCtx)
+		cancelRead()
+	}))
+	defer upstreamServer.Close()
+
+	harness := newOpenAIWSPassthroughHandlerHarnessWithConfig(t, upstreamServer.URL,
+		`{"cyber_policy_enforce_all_groups":false,"cyber_policy_enforce_group_ids":[9999]}`)
+	firstPayload := `{"type":"response.create","model":"gpt-5.1","prompt_cache_key":"collect-only-session","input":"first"}`
+	keyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	keyCtx.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(firstPayload))
+	blockKey := service.CyberSessionExplicitBlockKey(harness.apiKey.ID, keyCtx, []byte(firstPayload))
+	store, ok := harness.gatewayCache.(service.CyberSessionBlockStore)
+	require.True(t, ok)
+	require.NoError(t, store.SetCyberSessionBlocked(context.Background(), "", []string{blockKey}, time.Minute))
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err := harness.clientConn.Write(writeCtx, coderws.MessageText, []byte(firstPayload))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, firstEvent, err := harness.clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.failed", gjson.GetBytes(firstEvent, "type").String())
+
+	require.Eventually(t, func() bool {
+		logs := harness.moderationRepo.logSnapshot()
+		return len(logs) == 1 && logs[0].CyberPolicyMode == service.ContentModerationCyberModeCollect &&
+			logs[0].ViolationCount == 0 && !logs[0].AutoBanned && !logs[0].EmailSent
+	}, 3*time.Second, 10*time.Millisecond, "out-of-scope cyber hit must be persisted without enforcement side effects")
+
+	matched, findErr := store.FindCyberSessionBlocked(context.Background(), []string{blockKey})
+	require.NoError(t, findErr)
+	require.Equal(t, blockKey, matched, "pre-existing key proves the collection-only request bypassed local block lookup")
+	for _, transcriptKey := range service.CyberSessionTranscriptBlockKeys(harness.apiKey.ID, []byte(firstPayload)) {
+		matched, findErr = store.FindCyberSessionBlocked(context.Background(), []string{transcriptKey})
+		require.NoError(t, findErr)
+		require.Empty(t, matched, "collection-only hit must not write transcript session blocks")
+	}
+
+	secondPayload := `{"type":"response.create","model":"gpt-5.1","prompt_cache_key":"collect-only-session","input":"follow-up"}`
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = harness.clientConn.Write(writeCtx, coderws.MessageText, []byte(secondPayload))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, secondEvent, err := harness.clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "resp_collect_only_turn_2", gjson.GetBytes(secondEvent, "response.id").String())
+
+	select {
+	case second := <-secondUpstreamFrame:
+		require.JSONEq(t, secondPayload, string(second))
+	default:
+		t.Fatal("collection-only follow-up did not reach upstream")
+	}
+	require.NoError(t, harness.clientConn.Close(coderws.StatusNormalClosure, "done"))
+	select {
+	case <-harness.handlerDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("collection-only websocket handler did not exit")
+	}
+	select {
+	case <-upstreamDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("collection-only upstream websocket did not exit")
+	}
+}
+
 func TestOpenAIResponsesWebSocketV2PassthroughCyberMarkIsConsumedAfterTurn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -178,6 +292,7 @@ func TestOpenAIResponsesWebSocketV2PassthroughCyberMarkIsConsumedAfterTurn(t *te
 	require.Eventually(t, func() bool {
 		logs := harness.moderationRepo.logSnapshot()
 		return len(logs) == 1 && logs[0].Action == service.ContentModerationActionCyberPolicy &&
+			logs[0].CyberPolicyMode == service.ContentModerationCyberModeEnforce &&
 			strings.Contains(logs[0].Error, "upstream_usage=in:11,out:3")
 	}, 3*time.Second, 10*time.Millisecond, "handler AfterTurn must call recordCyberPolicyIfMarked and write the risk-control event")
 

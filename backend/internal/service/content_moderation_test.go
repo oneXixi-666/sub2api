@@ -102,6 +102,9 @@ func (r *contentModerationTestRepo) CountFlaggedByUserSince(ctx context.Context,
 		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action == ContentModerationActionHashBlock {
 			continue
 		}
+		if log.Action == ContentModerationActionCyberPolicy && log.CyberPolicyMode == ContentModerationCyberModeCollect {
+			continue
+		}
 		if excludeCyberPolicy && log.Action == ContentModerationActionCyberPolicy {
 			continue
 		}

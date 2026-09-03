@@ -248,11 +248,15 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}()
 			return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
 		}()
-		var cyberBlockBodyChat []byte
+		var cyberEvidenceChat cyberPolicyRequestEvidence
 		if service.GetOpsCyberPolicy(c) != nil {
-			cyberBlockBodyChat = body
+			cyberEvidenceChat = cyberPolicyRequestEvidence{
+				Body:     body,
+				Protocol: service.ContentModerationProtocolOpenAIChat,
+				Stage:    "http",
+			}
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyChat, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberEvidenceChat, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)

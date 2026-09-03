@@ -41,6 +41,8 @@ export interface ContentModerationConfig {
   blocked_keywords: string[]
   keyword_blocking_mode: KeywordBlockingMode
   model_filter: ContentModerationModelFilter
+  cyber_policy_enforce_all_groups: boolean
+  cyber_policy_enforce_group_ids: number[]
   cyber_policy_exclude_from_ban_count: boolean
 }
 
@@ -121,6 +123,8 @@ export interface UpdateContentModerationConfig {
   blocked_keywords?: string[]
   keyword_blocking_mode?: KeywordBlockingMode
   model_filter?: ContentModerationModelFilter
+  cyber_policy_enforce_all_groups?: boolean
+  cyber_policy_enforce_group_ids?: number[]
   cyber_policy_exclude_from_ban_count?: boolean
 }
 
@@ -184,6 +188,7 @@ export interface ContentModerationLog {
   model: string
   mode: string
   action: string
+  cyber_policy_mode: string
   flagged: boolean
   highest_category: string
   highest_score: number
@@ -191,6 +196,14 @@ export interface ContentModerationLog {
   category_scores: Record<string, number>
   threshold_snapshot: Record<string, number>
   input_excerpt: string
+  input_snapshot: string
+  input_hash: string
+  input_length: number
+  message_count: number
+  input_truncated: boolean
+  protocol: string
+  audit_stage: string
+  turn_number: number
   upstream_latency_ms: number | null
   error: string
   violation_count: number

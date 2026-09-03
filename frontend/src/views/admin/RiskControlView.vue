@@ -310,9 +310,19 @@
                       <div class="text-xs text-gray-400">{{ row.provider || '-' }} / {{ row.model || '-' }}</div>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4">
-                      <span class="inline-flex rounded-md px-2 py-1 text-xs font-medium" :class="resultBadgeClass(row)">
-                        {{ resultLabel(row) }}
-                      </span>
+                      <div class="flex flex-col items-start gap-1.5">
+                        <span class="inline-flex rounded-md px-2 py-1 text-xs font-medium" :class="resultBadgeClass(row)">
+                          {{ resultLabel(row) }}
+                        </span>
+                        <span
+                          v-if="cyberPolicyModeLabel(row)"
+                          class="inline-flex rounded-md px-2 py-1 text-xs font-medium"
+                          :class="cyberPolicyModeBadgeClass(row)"
+                          data-test="cyber-policy-mode"
+                        >
+                          {{ cyberPolicyModeLabel(row) }}
+                        </span>
+                      </div>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.highest_category || '-' }}</div>
@@ -701,58 +711,27 @@
           </div>
 
           <div v-else-if="activeSettingsTab === 'scope'" class="space-y-5">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.groupScope') }}</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.groupScopeHint') }}</p>
-              </div>
-              <div class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
-                <button
-                  type="button"
-                  class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                  :class="configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
-                  @click="configForm.all_groups = true"
-                >
-                  {{ t('admin.riskControl.allGroups') }}
-                </button>
-                <button
-                  type="button"
-                  class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                  :class="!configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
-                  @click="configForm.all_groups = false"
-                >
-                  {{ t('admin.riskControl.selectedGroups') }}
-                </button>
-              </div>
-            </div>
+            <GroupScopeSelector
+              v-model:all-groups="configForm.all_groups"
+              v-model:selected-ids="configForm.group_ids"
+              :groups="groups"
+              :title="t('admin.riskControl.groupScope')"
+              :hint="t('admin.riskControl.groupScopeHint')"
+              data-test="moderation-group-scope"
+            />
 
-            <div v-if="!configForm.all_groups" class="space-y-4">
-              <div class="relative">
-                <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input v-model.trim="groupSearch" type="search" class="input pl-9" :placeholder="t('admin.riskControl.searchGroups')" />
-              </div>
-              <div class="grid max-h-[420px] grid-cols-1 gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
-                <button
-                  v-for="group in filteredGroups"
-                  :key="group.id"
-                  type="button"
-                  class="flex min-h-20 items-center justify-between rounded-lg border p-4 text-left transition-colors"
-                  :class="isGroupSelected(group.id) ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20' : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
-                  @click="toggleGroup(group.id)"
-                >
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm font-semibold text-gray-900 dark:text-white">{{ group.name }}</span>
-                    <span class="mt-1 inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ group.platform }}</span>
-                  </span>
-                  <span
-                    class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border"
-                    :class="isGroupSelected(group.id) ? 'border-primary-500 bg-primary-500 text-white' : 'border-gray-300 text-transparent dark:border-dark-500'"
-                  >
-                    <Icon name="check" size="xs" :stroke-width="2" />
-                  </span>
-                </button>
-                <p v-if="filteredGroups.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noGroups') }}</p>
-              </div>
+            <GroupScopeSelector
+              v-model:all-groups="configForm.cyber_policy_enforce_all_groups"
+              v-model:selected-ids="configForm.cyber_policy_enforce_group_ids"
+              :groups="groups"
+              :title="t('admin.riskControl.cyberEnforcementScope')"
+              :hint="t('admin.riskControl.cyberEnforcementScopeHint')"
+              tone="amber"
+              data-test="cyber-enforcement-group-scope"
+            />
+
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+              {{ t('admin.riskControl.cyberEnforcementBoundary') }}
             </div>
 
             <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700">
@@ -1079,6 +1058,14 @@
               <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-medium" :class="resultBadgeClass(inputDetailRow)">
                 {{ resultLabel(inputDetailRow) }}
               </span>
+              <span
+                v-if="cyberPolicyModeLabel(inputDetailRow)"
+                class="ml-1 mt-1 inline-flex rounded-md px-2 py-1 text-xs font-medium"
+                :class="cyberPolicyModeBadgeClass(inputDetailRow)"
+                data-test="cyber-policy-detail-mode"
+              >
+                {{ cyberPolicyModeLabel(inputDetailRow) }}
+              </span>
             </div>
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/70">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.highest') }}</p>
@@ -1090,6 +1077,38 @@
               <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
               <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="inputDetailRow.matched_keyword">{{ inputDetailRow.matched_keyword }}</p>
             </div>
+          </div>
+
+          <div v-if="inputDetailRow.input_hash" class="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/60 dark:bg-amber-950/20" data-test="cyber-policy-evidence">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-amber-900 dark:text-amber-100">{{ t('admin.riskControl.cyberEvidenceTitle') }}</p>
+                <p class="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">{{ t('admin.riskControl.cyberEvidenceHint') }}</p>
+              </div>
+              <span v-if="inputDetailRow.input_truncated" class="inline-flex rounded-md bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                {{ t('admin.riskControl.evidenceTruncated') }}
+              </span>
+            </div>
+            <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <dt class="text-amber-600 dark:text-amber-400">{{ t('admin.riskControl.evidenceProtocol') }}</dt>
+                <dd class="mt-1 font-mono text-amber-950 dark:text-amber-100">{{ inputDetailRow.protocol || '-' }}</dd>
+              </div>
+              <div>
+                <dt class="text-amber-600 dark:text-amber-400">{{ t('admin.riskControl.evidenceStage') }}</dt>
+                <dd class="mt-1 font-mono text-amber-950 dark:text-amber-100">
+                  {{ inputDetailRow.audit_stage || '-' }}<template v-if="inputDetailRow.turn_number > 0"> · turn {{ inputDetailRow.turn_number }}</template>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-amber-600 dark:text-amber-400">{{ t('admin.riskControl.evidenceSize') }}</dt>
+                <dd class="mt-1 text-amber-950 dark:text-amber-100">{{ t('admin.riskControl.evidenceSizeValue', { chars: inputDetailRow.input_length, messages: inputDetailRow.message_count }) }}</dd>
+              </div>
+              <div class="min-w-0">
+                <dt class="text-amber-600 dark:text-amber-400">{{ t('admin.riskControl.evidenceHash') }}</dt>
+                <dd class="mt-1 truncate font-mono text-amber-950 dark:text-amber-100" :title="inputDetailRow.input_hash">{{ inputDetailRow.input_hash }}</dd>
+              </div>
+            </dl>
           </div>
 
           <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
@@ -1104,7 +1123,7 @@
                 {{ inputDetailRow.group_name }}
               </span>
             </div>
-            <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailText }}</pre>
+            <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50" data-test="input-detail-text">{{ inputDetailText }}</pre>
           </div>
         </div>
 
@@ -1128,6 +1147,7 @@ import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import GroupScopeSelector from '@/components/admin/risk-control/GroupScopeSelector.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
@@ -1208,7 +1228,6 @@ const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
 const settingsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
-const groupSearch = ref('')
 const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
 const proxies = ref<Proxy[]>([])
@@ -1249,6 +1268,8 @@ const configForm = reactive({
   block_message: defaultBlockMessage(),
   email_on_hit: true,
   auto_ban_enabled: true,
+  cyber_policy_enforce_all_groups: true,
+  cyber_policy_enforce_group_ids: [] as number[],
   cyber_policy_exclude_from_ban_count: false,
   ban_threshold: 10,
   violation_window_hours: 720,
@@ -1411,7 +1432,6 @@ const groupFilterOptions = computed<SelectOption[]>(() => [
 ])
 
 const selectedGroupCount = computed(() => String(configForm.group_ids.length))
-
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
 const modelFilterSummary = computed(() => {
@@ -1427,14 +1447,6 @@ const modelFilterSummary = computed(() => {
 const modelFilterPreviewModels = computed(() => configForm.model_filter_models.slice(0, 6))
 
 const hiddenModelFilterModelCount = computed(() => Math.max(0, configForm.model_filter_models.length - modelFilterPreviewModels.value.length))
-
-const filteredGroups = computed(() => {
-  const keyword = groupSearch.value.trim().toLowerCase()
-  if (!keyword) return groups.value
-  return groups.value.filter((group) => {
-    return group.name.toLowerCase().includes(keyword) || String(group.platform).toLowerCase().includes(keyword)
-  })
-})
 
 const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).length)
 
@@ -1586,7 +1598,7 @@ const riskThresholdRows = computed<RiskThresholdRow[]>(() => (
 
 const inputDetailText = computed(() => {
   if (!inputDetailRow.value) return '-'
-  return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
+  return inputDetailRow.value.input_snapshot || inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
 })
 
 const queueUsagePercent = computed(() => `${Math.min(100, Math.max(0, status.value?.queue_usage_percent ?? 0)).toFixed(1)}%`)
@@ -1727,6 +1739,10 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.block_message = config.block_message || defaultBlockMessage()
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
+  configForm.cyber_policy_enforce_all_groups = config.cyber_policy_enforce_all_groups ?? true
+  configForm.cyber_policy_enforce_group_ids = Array.isArray(config.cyber_policy_enforce_group_ids)
+    ? [...config.cyber_policy_enforce_group_ids]
+    : []
   configForm.cyber_policy_exclude_from_ban_count = config.cyber_policy_exclude_from_ban_count ?? false
   configForm.ban_threshold = config.ban_threshold || 10
   configForm.violation_window_hours = config.violation_window_hours || 720
@@ -1813,6 +1829,10 @@ async function saveConfig() {
       block_message: configForm.block_message || defaultBlockMessage(),
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
+      cyber_policy_enforce_all_groups: configForm.cyber_policy_enforce_all_groups,
+      cyber_policy_enforce_group_ids: configForm.cyber_policy_enforce_all_groups
+        ? []
+        : [...configForm.cyber_policy_enforce_group_ids],
       cyber_policy_exclude_from_ban_count: configForm.cyber_policy_exclude_from_ban_count,
       ban_threshold: Number(configForm.ban_threshold) || 10,
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
@@ -2103,19 +2123,6 @@ function fileToDataURL(file: File): Promise<string> {
   })
 }
 
-function toggleGroup(groupID: number) {
-  const index = configForm.group_ids.indexOf(groupID)
-  if (index >= 0) {
-    configForm.group_ids.splice(index, 1)
-  } else {
-    configForm.group_ids.push(groupID)
-  }
-}
-
-function isGroupSelected(groupID: number): boolean {
-  return configForm.group_ids.includes(groupID)
-}
-
 function modeLabel(mode: ModerationMode): string {
   const found = modeOptions.value.find((option) => option.value === mode)
   return found?.label ?? mode
@@ -2144,6 +2151,20 @@ function resultBadgeClass(row: ContentModerationLog): string {
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+}
+
+function cyberPolicyModeLabel(row: ContentModerationLog): string {
+  if (row.action !== 'cyber_policy') return ''
+  if (row.cyber_policy_mode === 'enforce') return t('admin.riskControl.cyberPolicyEnforceMode')
+  if (row.cyber_policy_mode === 'collect_only') return t('admin.riskControl.cyberPolicyCollectMode')
+  return ''
+}
+
+function cyberPolicyModeBadgeClass(row: ContentModerationLog): string {
+  if (row.cyber_policy_mode === 'enforce') {
+    return 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 dark:bg-red-900/20 dark:text-red-300 dark:ring-red-900/60'
+  }
+  return 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/60'
 }
 
 function workerSlotClass(state: WorkerSlotState): string {

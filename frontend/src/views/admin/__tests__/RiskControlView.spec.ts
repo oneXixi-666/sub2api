@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 import RiskControlView from '../RiskControlView.vue'
-import type { ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
+import type { ContentModerationConfig, ContentModerationLog, UpdateContentModerationConfig } from '@/api/admin/riskControl'
 
 const {
   getConfig,
@@ -67,6 +67,9 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.riskControl.preBlockAPIKeyLoadSummary') {
           return `同步并发 ${params?.active} / 可用 Key ${params?.available}，累计 ${params?.total} 次，worker：${params?.workerActive} / ${params?.workerTotal}`
         }
+        if (key === 'admin.riskControl.evidenceSizeValue') {
+          return `${params?.chars} characters / ${params?.messages} text segments`
+        }
         return key.replace(/\{(\w+)\}/g, (_, token) => String(params?.[token] ?? `{${token}}`))
       },
     }),
@@ -88,6 +91,9 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+  cyber_policy_enforce_all_groups: true,
+  cyber_policy_enforce_group_ids: [],
+  cyber_policy_exclude_from_ban_count: false,
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -285,6 +291,51 @@ describe('admin RiskControlView', () => {
     expect(showError).not.toHaveBeenCalled()
   })
 
+  it('saves an independent selected-group scope for cyber enforcement', async () => {
+    getGroups.mockResolvedValue([
+      { id: 7, name: 'Enforced', platform: 'openai' },
+      { id: 8, name: 'Collect only', platform: 'openai' },
+    ])
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+
+    const cyberScope = wrapper.get('[data-test="cyber-enforcement-group-scope"]')
+    const selectedMode = cyberScope.findAll<HTMLButtonElement>('button').find((button) => (
+      button.text().includes('admin.riskControl.selectedGroups')
+    ))
+    expect(selectedMode).toBeTruthy()
+    await selectedMode!.trigger('click')
+    const enforcedGroup = cyberScope.findAll<HTMLButtonElement>('button').find((button) => button.text().includes('Enforced'))
+    expect(enforcedGroup).toBeTruthy()
+    await enforcedGroup!.trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: true,
+      group_ids: [],
+      cyber_policy_enforce_all_groups: false,
+      cyber_policy_enforce_group_ids: [7],
+    }))
+    expect(showError).not.toHaveBeenCalled()
+  })
+
   it('describes worker runtime as async audit and pre-block record processing', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
@@ -414,5 +465,75 @@ describe('admin RiskControlView', () => {
       'max-h-[280px]',
       'overflow-y-auto',
     ]))
+  })
+
+  it('shows captured cyber conversation evidence without presenting a matched keyword', async () => {
+    const row: ContentModerationLog = {
+      id: 1,
+      request_id: 'req-cyber-1',
+      user_id: 741,
+      user_email: 'review@example.test',
+      api_key_id: 2,
+      api_key_name: 'review-key',
+      group_id: 3,
+      group_name: 'Review',
+      endpoint: '/v1/responses',
+      provider: 'openai',
+      model: 'gpt-5.6-sol',
+      mode: 'post_upstream',
+      action: 'cyber_policy',
+      cyber_policy_mode: 'collect_only',
+      flagged: true,
+      highest_category: 'cyber_policy',
+      highest_score: 1,
+      matched_keyword: '',
+      category_scores: {},
+      threshold_snapshot: {},
+      input_excerpt: '[user] captured preview',
+      input_snapshot: '[system]\npolicy\n\n[user]\ncaptured conversation evidence',
+      input_hash: 'a'.repeat(64),
+      input_length: 52,
+      message_count: 2,
+      input_truncated: false,
+      protocol: 'openai_responses',
+      audit_stage: 'http',
+      turn_number: 0,
+      upstream_latency_ms: null,
+      error: 'cyber_policy',
+      violation_count: 0,
+      auto_banned: false,
+      email_sent: false,
+      user_status: 'active',
+      queue_delay_ms: null,
+      created_at: '2026-09-03T00:00:00Z',
+    }
+    listLogs.mockResolvedValue({ items: [row], total: 1, page: 1, page_size: 20, pages: 1 })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const detailButton = wrapper.findAll<HTMLButtonElement>('button').find((button) => button.text().includes('captured preview'))
+    expect(detailButton).toBeTruthy()
+    await detailButton!.trigger('click')
+
+    expect(wrapper.get('[data-test="cyber-policy-evidence"]').text()).toContain('openai_responses')
+    expect(wrapper.get('[data-test="cyber-policy-evidence"]').text()).toContain('52')
+    expect(wrapper.get('[data-test="input-detail-text"]').text()).toContain('captured conversation evidence')
+    expect(wrapper.get('[data-test="cyber-policy-mode"]').text()).toContain('admin.riskControl.cyberPolicyCollectMode')
+    expect(wrapper.get('[data-test="cyber-policy-detail-mode"]').text()).toContain('admin.riskControl.cyberPolicyCollectMode')
+    expect(wrapper.text()).not.toContain('admin.riskControl.matchedKeyword:')
   })
 })

@@ -29,6 +29,64 @@ type promptSegment struct {
 	role string
 }
 
+// ConversationEvidence is a bounded, role-preserving snapshot used for
+// post-upstream forensic records. InputHash and InputLength describe the full
+// normalized transcript before Snapshot is truncated.
+type ConversationEvidence struct {
+	Snapshot     string
+	InputHash    string
+	InputLength  int
+	MessageCount int
+	Truncated    bool
+}
+
+const DefaultConversationEvidenceMaxRunes = 12000
+
+// ExtractConversationEvidence reuses the prompt-audit protocol parser while
+// preserving source order and role labels. It intentionally excludes binary
+// media and unrelated request JSON so the stored evidence remains reviewable.
+func ExtractConversationEvidence(protocol string, body []byte, maxRunes int) (ConversationEvidence, error) {
+	var document any
+	if err := json.Unmarshal(body, &document); err != nil {
+		return ConversationEvidence{}, errors.New("conversation evidence request JSON is invalid")
+	}
+	segments := normalizedPromptSegments(extractProtocolSegments(protocol, document))
+	if len(segments) == 0 {
+		return ConversationEvidence{}, ErrNoPromptText
+	}
+	if maxRunes <= 0 {
+		maxRunes = DefaultConversationEvidenceMaxRunes
+	}
+	var builder strings.Builder
+	for index, segment := range segments {
+		if index > 0 {
+			builder.WriteString("\n\n")
+		}
+		role := strings.ToLower(strings.TrimSpace(segment.role))
+		if role == "" {
+			if segment.user {
+				role = "user"
+			} else {
+				role = "unknown"
+			}
+		}
+		builder.WriteByte('[')
+		builder.WriteString(role)
+		builder.WriteString("]\n")
+		builder.WriteString(segment.text)
+	}
+	fullText := strings.ReplaceAll(strings.TrimSpace(builder.String()), "\x00", "")
+	digest := sha256.Sum256([]byte(fullText))
+	inputLength := utf8.RuneCountInString(fullText)
+	return ConversationEvidence{
+		Snapshot:     TrimRunes(fullText, maxRunes),
+		InputHash:    hex.EncodeToString(digest[:]),
+		InputLength:  inputLength,
+		MessageCount: len(segments),
+		Truncated:    inputLength > maxRunes,
+	}, nil
+}
+
 func ExtractPromptSnapshot(req Request) (PromptSnapshot, error) {
 	return extractPromptSnapshot(req, false)
 }

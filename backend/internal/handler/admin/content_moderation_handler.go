@@ -45,6 +45,10 @@ type contentModerationConfigRequest struct {
 	AutoBanEnabled       *bool               `json:"auto_ban_enabled"`
 	BanThreshold         *int                `json:"ban_threshold"`
 	ViolationWindowHours *int                `json:"violation_window_hours"`
+	// cyber_policy enforcement uses an independent group scope. Requests from
+	// other groups are still persisted as collection-only audit evidence.
+	CyberPolicyEnforceAllGroups *bool    `json:"cyber_policy_enforce_all_groups"`
+	CyberPolicyEnforceGroupIDs  *[]int64 `json:"cyber_policy_enforce_group_ids"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
 	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
 	CyberPolicyExcludeFromBanCount *bool                                 `json:"cyber_policy_exclude_from_ban_count"`
@@ -111,6 +115,8 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		AutoBanEnabled:                 req.AutoBanEnabled,
 		BanThreshold:                   req.BanThreshold,
 		ViolationWindowHours:           req.ViolationWindowHours,
+		CyberPolicyEnforceAllGroups:    req.CyberPolicyEnforceAllGroups,
+		CyberPolicyEnforceGroupIDs:     req.CyberPolicyEnforceGroupIDs,
 		CyberPolicyExcludeFromBanCount: req.CyberPolicyExcludeFromBanCount,
 		RetryCount:                     req.RetryCount,
 		HitRetentionDays:               req.HitRetentionDays,

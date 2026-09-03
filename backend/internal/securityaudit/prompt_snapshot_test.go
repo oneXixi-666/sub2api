@@ -37,6 +37,41 @@ func TestExtractPromptSnapshotProtocols(t *testing.T) {
 	}
 }
 
+func TestExtractConversationEvidencePreservesRolesOrderAndBounds(t *testing.T) {
+	body := []byte(`{"messages":[
+		{"role":"system","content":"policy"},
+		{"role":"user","content":"first request"},
+		{"role":"assistant","content":"prior output"},
+		{"role":"user","content":[{"type":"text","text":"latest request"},{"type":"image_url","image_url":{"url":"data:image/png;base64,IMAGE_SECRET"}}]}
+	]}`)
+
+	evidence, err := ExtractConversationEvidence("openai_chat_completions", body, 48)
+	require.NoError(t, err)
+	require.Equal(t, 4, evidence.MessageCount)
+	require.True(t, evidence.Truncated)
+	require.Greater(t, evidence.InputLength, 48)
+	require.Len(t, evidence.InputHash, sha256.Size*2)
+	require.True(t, strings.HasPrefix(evidence.Snapshot, "[system]\npolicy\n\n[user]\nfirst request"))
+	require.NotContains(t, evidence.Snapshot, "IMAGE_SECRET")
+
+	full, err := ExtractConversationEvidence("openai_chat_completions", body, 4096)
+	require.NoError(t, err)
+	require.False(t, full.Truncated)
+	require.Contains(t, full.Snapshot, "[assistant]\nprior output\n\n[user]\nlatest request")
+	require.Equal(t, evidence.InputHash, full.InputHash, "hash must describe the full normalized input, independent of storage limit")
+}
+
+func TestExtractConversationEvidenceWebSocketFrame(t *testing.T) {
+	evidence, err := ExtractConversationEvidence("responses_websocket", []byte(`{
+		"type":"response.create",
+		"response":{"input":[{"role":"user","content":[{"type":"input_text","text":"turn evidence"}]}]}
+	}`), 0)
+	require.NoError(t, err)
+	require.Equal(t, "[user]\nturn evidence", evidence.Snapshot)
+	require.Equal(t, 1, evidence.MessageCount)
+	require.False(t, evidence.Truncated)
+}
+
 func TestSnapshotRedactsCanariesAndPreservesHashOfScanText(t *testing.T) {
 	body := `{"messages":[{"role":"user","content":"PROMPT_CANARY_ABC123 email@example.com +86 138 0013 8000 Bearer AUTH_CANARY_XYZ sk-secretvalue123 password=supersecret123"}]}`
 	snapshot, err := ExtractPromptSnapshot(Request{Protocol: "openai_chat_completions", Body: []byte(body)})
