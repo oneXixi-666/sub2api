@@ -2311,7 +2311,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// The first response.create frame is available here, so explicit IDs are
 	// checked directly and body-derived sessions use the coarse scope gate.
-	if h.shouldEnforceCyberPolicyForGroup(c, apiKey) {
+	if h.shouldBlockCyberSessionForGroup(c, apiKey) {
 		if cyberBlockKey := findBlockedCyberSessionKey(c.Request.Context(), h.gatewayService, apiKey.ID, c, firstMessage); cyberBlockKey != "" {
 			writeCyberSessionBlockedWSError(c.Request.Context(), wsConn)
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "session blocked by cyber-security policy")
@@ -2798,7 +2798,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					Stage:      cyberStage,
 					TurnNumber: turn,
 				}, turnUsageFields, requestPayloadHash)
-				if service.GetOpsCyberPolicy(c) != nil && h.shouldEnforceCyberPolicyForGroup(c, apiKey) {
+				if service.GetOpsCyberPolicy(c) != nil && h.shouldBlockCyberSessionForGroup(c, apiKey) {
 					cyberBlockedThisConn = true
 				}
 				if turnErr != nil {
@@ -3872,7 +3872,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 	if h == nil || h.gatewayService == nil || apiKey == nil {
 		return false
 	}
-	if !h.shouldEnforceCyberPolicyForGroup(c, apiKey) {
+	if !h.shouldBlockCyberSessionForGroup(c, apiKey) {
 		return false
 	}
 	// 开关默认关：先走 ~ns 级缓存开关检查，再付出 key 派生(gjson+sha256)成本。
@@ -3911,10 +3911,20 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 }
 
 func (h *OpenAIGatewayHandler) shouldEnforceCyberPolicyForGroup(c *gin.Context, apiKey *service.APIKey) bool {
+	policy, enabled := h.resolveCyberPolicyForGroup(c, apiKey)
+	return enabled && policy.Enforces()
+}
+
+func (h *OpenAIGatewayHandler) shouldBlockCyberSessionForGroup(c *gin.Context, apiKey *service.APIKey) bool {
+	policy, enabled := h.resolveCyberPolicyForGroup(c, apiKey)
+	return enabled && policy.BlocksSession()
+}
+
+func (h *OpenAIGatewayHandler) resolveCyberPolicyForGroup(c *gin.Context, apiKey *service.APIKey) (service.ResolvedCyberPolicy, bool) {
 	if h == nil || h.contentModerationService == nil || c == nil || apiKey == nil || c.Request == nil {
-		return false
+		return service.ResolvedCyberPolicy{}, false
 	}
-	return h.contentModerationService.ShouldEnforceCyberPolicyForGroup(c.Request.Context(), apiKey.GroupID)
+	return h.contentModerationService.ResolveCyberPolicyForGroup(c.Request.Context(), apiKey.GroupID)
 }
 
 type cyberSessionBlockWritePlan struct {
@@ -4088,18 +4098,24 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	if auditStage == "" {
 		auditStage = "http"
 	}
-	if gwSvc != nil && apiKey != nil && h.shouldEnforceCyberPolicyForGroup(c, apiKey) {
+	resolvedPolicy, policyEnabled := h.resolveCyberPolicyForGroup(c, apiKey)
+	var policySnapshot *service.ResolvedCyberPolicy
+	if policyEnabled && resolvedPolicy.Version > 0 {
+		frozenPolicy := resolvedPolicy
+		policySnapshot = &frozenPolicy
+	}
+	if gwSvc != nil && apiKey != nil && policyEnabled && resolvedPolicy.BlocksSession() {
 		plan := buildCyberSessionBlockWritePlan(apiKey.ID, c, requestEvidence.Body)
 		if len(plan.keys) > 0 {
 			blockCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			gwSvc.MarkCyberSessionBlocked(blockCtx, plan.scopeKey, plan.keys)
+			gwSvc.MarkCyberSessionBlockedWithTTL(blockCtx, plan.scopeKey, plan.keys, time.Duration(resolvedPolicy.Policy.SessionBlockTTLSeconds)*time.Second)
 			cancel()
 		}
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if cmSvc != nil {
+		if cmSvc != nil && policyEnabled {
 			cmSvc.RecordCyberPolicyEvent(ctx, service.CyberPolicyRecordInput{
 				RequestID:       requestID,
 				UserID:          userID,
@@ -4123,6 +4139,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
+				ResolvedPolicy:  policySnapshot,
 			})
 		}
 		if forwardErrored && gwSvc != nil {

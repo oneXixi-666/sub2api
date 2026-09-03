@@ -46,7 +46,8 @@ func TestContentModerationRepositoryCreateLog_PersistsConversationEvidence(t *te
 			"{}", "{}", "[user] review exploit", nil, "blocked upstream",
 			0, false, false, nil, "",
 			"[user] review exploit in context", hash, 32, 1, true,
-			"openai_responses", "http", 0, "enforce",
+			"openai_responses", "http", 0, "enforce", "group_override",
+			`{"version":1,"source":"group_override","policy":{"mode":"enforce","session_block_enabled":true,"session_block_ttl_seconds":600,"violation_count_enabled":true,"email_on_hit":false,"auto_ban_enabled":true,"ban_threshold":3,"violation_window_hours":24}}`,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(91), createdAt))
 
@@ -71,7 +72,17 @@ func TestContentModerationRepositoryCreateLog_PersistsConversationEvidence(t *te
 		Protocol:          "openai_responses",
 		AuditStage:        "http",
 		CyberPolicyMode:   "enforce",
-		Error:             "blocked upstream",
+		CyberPolicySource: "group_override",
+		CyberPolicySnapshot: &service.ResolvedCyberPolicy{
+			Version: 1,
+			Source:  "group_override",
+			Policy: service.CyberPolicySettings{
+				Mode: "enforce", SessionBlockEnabled: true, SessionBlockTTLSeconds: 600,
+				ViolationCountEnabled: true, EmailOnHit: false, AutoBanEnabled: true,
+				BanThreshold: 3, ViolationWindowHours: 24,
+			},
+		},
+		Error: "blocked upstream",
 	}
 
 	repo := NewContentModerationRepository(db)
@@ -132,5 +143,24 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_AlwaysExcludesCollec
 
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryCountCyberPolicyByUserAndGroupSince(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	since := time.Now().Add(-24 * time.Hour)
+	groupID := int64(7)
+	mock.ExpectQuery(regexp.QuoteMeta("AND group_id IS NOT DISTINCT FROM $3::bigint")).
+		WithArgs(int64(1001), since, groupID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	count, err := repo.CountCyberPolicyByUserAndGroupSince(context.Background(), 1001, &groupID, since)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -152,6 +152,22 @@ func TestRejectIfCyberSessionBlocked_FailOpen(t *testing.T) {
 	require.False(t, h2.rejectIfCyberSessionBlocked(c, key, []byte(`{}`), "gpt-5", cyberBlockFormatResponses), "nil gateway service → pass")
 }
 
+func TestCyberSessionBlockUsesResolvedGroupPolicy(t *testing.T) {
+	group7, group8 := int64(7), int64(8)
+	settingRepo := &contentModerationHandlerSettingRepo{values: map[string]string{
+		service.SettingKeyRiskControlEnabled:      "true",
+		service.SettingKeyContentModerationConfig: `{"cyber_policy_default_policy":{"mode":"enforce","session_block_enabled":true,"session_block_ttl_seconds":3600,"violation_count_enabled":false,"email_on_hit":false,"auto_ban_enabled":false,"ban_threshold":10,"violation_window_hours":24},"cyber_policy_group_policies":[{"group_id":7,"policy":{"mode":"enforce","session_block_enabled":false,"session_block_ttl_seconds":60,"violation_count_enabled":false,"email_on_hit":true,"auto_ban_enabled":false,"ban_threshold":10,"violation_window_hours":24}}]}`,
+	}}
+	moderationService := service.NewContentModerationService(settingRepo, nil, nil, nil, nil, nil, nil, nil)
+	h := &OpenAIGatewayHandler{contentModerationService: moderationService}
+	c := newTestGinContext()
+	c.Request = httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{}`))
+
+	require.True(t, h.shouldEnforceCyberPolicyForGroup(c, &service.APIKey{GroupID: &group7}))
+	require.False(t, h.shouldBlockCyberSessionForGroup(c, &service.APIKey{GroupID: &group7}))
+	require.True(t, h.shouldBlockCyberSessionForGroup(c, &service.APIKey{GroupID: &group8}))
+}
+
 func TestBuildCyberSessionBlockWritePlanCombinesExplicitAndTranscriptKeys(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":"setup"},{"role":"assistant","content":"ready"},{"role":"user","content":"trigger"}]}`)
 	c := newTestGinContext()

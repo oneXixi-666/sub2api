@@ -94,6 +94,17 @@ const baseConfig = (): ContentModerationConfig => ({
   cyber_policy_enforce_all_groups: true,
   cyber_policy_enforce_group_ids: [],
   cyber_policy_exclude_from_ban_count: false,
+  cyber_policy_default_policy: {
+    mode: 'enforce',
+    session_block_enabled: true,
+    session_block_ttl_seconds: 3600,
+    violation_count_enabled: true,
+    email_on_hit: true,
+    auto_ban_enabled: true,
+    ban_threshold: 10,
+    violation_window_hours: 720,
+  },
+  cyber_policy_group_policies: [],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -291,11 +302,28 @@ describe('admin RiskControlView', () => {
     expect(showError).not.toHaveBeenCalled()
   })
 
-  it('saves an independent selected-group scope for cyber enforcement', async () => {
-    getGroups.mockResolvedValue([
-      { id: 7, name: 'Enforced', platform: 'openai' },
-      { id: 8, name: 'Collect only', platform: 'openai' },
-    ])
+  it('saves a default cyber policy and an independent group override', async () => {
+	getGroups.mockResolvedValue([
+	  { id: 7, name: 'Enforced', platform: 'openai' },
+	  { id: 8, name: 'Collect only', platform: 'openai' },
+	])
+	getConfig.mockResolvedValue({
+	  ...baseConfig(),
+	  cyber_policy_default_policy: {
+		...baseConfig().cyber_policy_default_policy,
+		mode: 'collect_only',
+	  },
+	  cyber_policy_group_policies: [{
+		group_id: 7,
+		policy: {
+		  ...baseConfig().cyber_policy_default_policy,
+		  session_block_enabled: false,
+		  email_on_hit: false,
+		  ban_threshold: 3,
+		  violation_window_hours: 24,
+		},
+	  }],
+	})
     const wrapper = mount(RiskControlView, {
       global: {
         stubs: {
@@ -315,23 +343,25 @@ describe('admin RiskControlView', () => {
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
     await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
 
-    const cyberScope = wrapper.get('[data-test="cyber-enforcement-group-scope"]')
-    const selectedMode = cyberScope.findAll<HTMLButtonElement>('button').find((button) => (
-      button.text().includes('admin.riskControl.selectedGroups')
-    ))
-    expect(selectedMode).toBeTruthy()
-    await selectedMode!.trigger('click')
-    const enforcedGroup = cyberScope.findAll<HTMLButtonElement>('button').find((button) => button.text().includes('Enforced'))
-    expect(enforcedGroup).toBeTruthy()
-    await enforcedGroup!.trigger('click')
-    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+	expect(wrapper.get('[data-test="cyber-policy-editor"]').text()).toContain('Enforced')
+	expect(wrapper.get('[data-test="cyber-group-policy-7"]').text()).toContain('admin.riskControl.cyberGroupOverrideHint')
+	await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
     await flushPromises()
 
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       all_groups: true,
       group_ids: [],
-      cyber_policy_enforce_all_groups: false,
-      cyber_policy_enforce_group_ids: [7],
+	  cyber_policy_default_policy: expect.objectContaining({ mode: 'collect_only' }),
+	  cyber_policy_group_policies: [{
+		group_id: 7,
+		policy: expect.objectContaining({
+		  mode: 'enforce',
+		  session_block_enabled: false,
+		  email_on_hit: false,
+		  ban_threshold: 3,
+		  violation_window_hours: 24,
+		}),
+	  }],
     }))
     expect(showError).not.toHaveBeenCalled()
   })
@@ -482,7 +512,22 @@ describe('admin RiskControlView', () => {
       model: 'gpt-5.6-sol',
       mode: 'post_upstream',
       action: 'cyber_policy',
-      cyber_policy_mode: 'collect_only',
+	  cyber_policy_mode: 'collect_only',
+	  cyber_policy_source: 'group_override',
+	  cyber_policy_snapshot: {
+		version: 1,
+		source: 'group_override',
+		policy: {
+		  mode: 'collect_only',
+		  session_block_enabled: false,
+		  session_block_ttl_seconds: 3600,
+		  violation_count_enabled: false,
+		  email_on_hit: false,
+		  auto_ban_enabled: false,
+		  ban_threshold: 10,
+		  violation_window_hours: 720,
+		},
+	  },
       flagged: true,
       highest_category: 'cyber_policy',
       highest_score: 1,
@@ -533,7 +578,8 @@ describe('admin RiskControlView', () => {
     expect(wrapper.get('[data-test="cyber-policy-evidence"]').text()).toContain('52')
     expect(wrapper.get('[data-test="input-detail-text"]').text()).toContain('captured conversation evidence')
     expect(wrapper.get('[data-test="cyber-policy-mode"]').text()).toContain('admin.riskControl.cyberPolicyCollectMode')
-    expect(wrapper.get('[data-test="cyber-policy-detail-mode"]').text()).toContain('admin.riskControl.cyberPolicyCollectMode')
+	expect(wrapper.get('[data-test="cyber-policy-detail-mode"]').text()).toContain('admin.riskControl.cyberPolicyCollectMode')
+	expect(wrapper.get('[data-test="cyber-policy-snapshot"]').text()).toContain('admin.riskControl.cyberPolicySourceGroup')
     expect(wrapper.text()).not.toContain('admin.riskControl.matchedKeyword:')
   })
 })

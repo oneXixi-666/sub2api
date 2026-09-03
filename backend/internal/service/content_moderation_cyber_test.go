@@ -45,6 +45,10 @@ func (r *cyberOrderingTestRepo) CountFlaggedByUserSince(ctx context.Context, use
 	return 0, nil
 }
 
+func (r *cyberOrderingTestRepo) CountCyberPolicyByUserAndGroupSince(ctx context.Context, userID int64, groupID *int64, since time.Time) (int, error) {
+	return 0, nil
+}
+
 func (r *cyberOrderingTestRepo) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error) {
 	return &ContentModerationCleanupResult{}, nil
 }
@@ -132,6 +136,9 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 
 	require.Equal(t, "cyber_policy", log.Action)
 	require.Equal(t, ContentModerationCyberModeEnforce, log.CyberPolicyMode)
+	require.Equal(t, ContentModerationCyberPolicySourceDefault, log.CyberPolicySource)
+	require.NotNil(t, log.CyberPolicySnapshot)
+	require.True(t, log.CyberPolicySnapshot.Policy.ViolationCountEnabled)
 	require.True(t, log.Flagged)
 	require.Equal(t, "cyber_policy", log.HighestCategory)
 	require.Contains(t, log.Error, "flagged")
@@ -177,27 +184,58 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		"Error should mention flagged or cyber_policy")
 }
 
+func TestRecordCyberPolicyEvent_UsesFrozenResolvedPolicy(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	groupID := int64(7)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "false",
+		}},
+		repo, nil, nil, nil, nil, nil, nil,
+	)
+	frozen := ResolvedCyberPolicy{
+		Version: cyberPolicySnapshotVersion,
+		Source:  ContentModerationCyberPolicySourceGroupOverride,
+		Policy: CyberPolicySettings{
+			Mode: ContentModerationCyberModeCollect,
+		},
+	}
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID:         1,
+		GroupID:        &groupID,
+		ResolvedPolicy: &frozen,
+	})
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationCyberModeCollect, logs[0].CyberPolicyMode)
+	require.Equal(t, ContentModerationCyberPolicySourceGroupOverride, logs[0].CyberPolicySource)
+	require.Equal(t, frozen, *logs[0].CyberPolicySnapshot)
+	require.Zero(t, logs[0].ViolationCount, "a frozen collect-only hit must not enter the ban counter")
+}
+
 func TestRecordCyberPolicyEvent_UsesIndependentEnforcementScope(t *testing.T) {
 	groupID := int64(7)
 	tests := []struct {
-		name       string
-		config     string
-		groupID    *int64
-		model      string
-		wantCalls  []bool
-		wantLogs   int
-		wantMode   string
-		wantBanned bool
+		name           string
+		config         string
+		groupID        *int64
+		model          string
+		wantCyberCount bool
+		wantLogs       int
+		wantMode       string
+		wantBanned     bool
 	}{
 		{
-			name:       "ordinary moderation group scope does not limit cyber enforcement",
-			config:     `{"all_groups":false,"group_ids":[8],"ban_threshold":1}`,
-			groupID:    &groupID,
-			model:      "gpt-5",
-			wantCalls:  []bool{false},
-			wantLogs:   1,
-			wantMode:   ContentModerationCyberModeEnforce,
-			wantBanned: true,
+			name:           "ordinary moderation group scope does not limit cyber enforcement",
+			config:         `{"all_groups":false,"group_ids":[8],"ban_threshold":1}`,
+			groupID:        &groupID,
+			model:          "gpt-5",
+			wantCyberCount: true,
+			wantLogs:       1,
+			wantMode:       ContentModerationCyberModeEnforce,
+			wantBanned:     true,
 		},
 		{
 			name:     "group outside cyber scope is collected without enforcement",
@@ -216,21 +254,24 @@ func TestRecordCyberPolicyEvent_UsesIndependentEnforcementScope(t *testing.T) {
 			wantMode: ContentModerationCyberModeCollect,
 		},
 		{
-			name:     "excluded model",
-			config:   `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-4o"]},"ban_threshold":1}`,
-			groupID:  &groupID,
-			model:    "gpt-5",
-			wantLogs: 0,
+			name:           "proactive model filter does not limit cyber collection",
+			config:         `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-4o"]},"ban_threshold":1}`,
+			groupID:        &groupID,
+			model:          "gpt-5",
+			wantCyberCount: true,
+			wantLogs:       1,
+			wantMode:       ContentModerationCyberModeEnforce,
+			wantBanned:     true,
 		},
 		{
-			name:       "group inside selected cyber scope is enforced",
-			config:     `{"enabled":false,"mode":"off","sample_rate":0,"cyber_policy_enforce_all_groups":false,"cyber_policy_enforce_group_ids":[7],"model_filter":{"type":"include","models":["gpt-5"]},"ban_threshold":1}`,
-			groupID:    &groupID,
-			model:      "gpt-5",
-			wantCalls:  []bool{false},
-			wantLogs:   1,
-			wantMode:   ContentModerationCyberModeEnforce,
-			wantBanned: true,
+			name:           "group inside selected cyber scope is enforced",
+			config:         `{"enabled":false,"mode":"off","sample_rate":0,"cyber_policy_enforce_all_groups":false,"cyber_policy_enforce_group_ids":[7],"model_filter":{"type":"include","models":["gpt-5"]},"ban_threshold":1}`,
+			groupID:        &groupID,
+			model:          "gpt-5",
+			wantCyberCount: true,
+			wantLogs:       1,
+			wantMode:       ContentModerationCyberModeEnforce,
+			wantBanned:     true,
 		},
 	}
 
@@ -252,11 +293,7 @@ func TestRecordCyberPolicyEvent_UsesIndependentEnforcementScope(t *testing.T) {
 				Model:   tt.model,
 			})
 
-			if tt.wantCalls == nil {
-				require.Empty(t, repo.snapshotCountCalls())
-			} else {
-				require.Equal(t, tt.wantCalls, repo.snapshotCountCalls())
-			}
+			require.Equal(t, tt.wantCyberCount, len(repo.snapshotCyberCountCalls()) > 0)
 			logs := repo.snapshotLogs()
 			require.Len(t, logs, tt.wantLogs)
 			if tt.wantLogs > 0 {
@@ -276,12 +313,17 @@ func TestCyberPolicyEnforcementScopeDefaultsAndNormalizes(t *testing.T) {
 	legacy, err := parseContentModerationConfig(`{"all_groups":false,"group_ids":[7]}`)
 	require.NoError(t, err)
 	require.True(t, legacy.CyberPolicyEnforceAllGroups, "legacy configuration must preserve all-group enforcement")
+	require.Equal(t, ContentModerationCyberModeEnforce, legacy.CyberPolicyDefaultPolicy.Mode)
 	require.Empty(t, legacy.CyberPolicyEnforceGroupIDs)
 
 	selected, err := parseContentModerationConfig(`{"cyber_policy_enforce_all_groups":false,"cyber_policy_enforce_group_ids":[9,7,9,0,-1]}`)
 	require.NoError(t, err)
 	require.False(t, selected.CyberPolicyEnforceAllGroups)
 	require.Equal(t, []int64{7, 9}, selected.CyberPolicyEnforceGroupIDs)
+	require.Equal(t, ContentModerationCyberModeCollect, selected.CyberPolicyDefaultPolicy.Mode)
+	require.Len(t, selected.CyberPolicyGroupPolicies, 2)
+	require.Equal(t, int64(7), selected.CyberPolicyGroupPolicies[0].GroupID)
+	require.Equal(t, ContentModerationCyberModeEnforce, selected.CyberPolicyGroupPolicies[0].Policy.Mode)
 }
 
 func TestShouldEnforceCyberPolicyForGroup(t *testing.T) {
@@ -318,21 +360,31 @@ func TestUpdateConfigPersistsCyberPolicyEnforcementScope(t *testing.T) {
 		SettingKeyRiskControlEnabled: "true",
 	}}
 	svc := NewContentModerationService(settingRepo, &contentModerationTestRepo{}, nil, nil, nil, nil, nil, nil)
-	allGroups := false
-	groupIDs := []int64{9, 7, 9, 0}
+	defaultPolicy := defaultCyberPolicySettings()
+	defaultPolicy.Mode = ContentModerationCyberModeCollect
+	groupPolicies := []CyberPolicyGroupPolicy{{
+		GroupID: 7,
+		Policy: CyberPolicySettings{
+			Mode: ContentModerationCyberModeEnforce, SessionBlockEnabled: false,
+			SessionBlockTTLSeconds: 900, ViolationCountEnabled: true, EmailOnHit: false,
+			AutoBanEnabled: true, BanThreshold: 3, ViolationWindowHours: 24,
+		},
+	}}
 
 	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
-		CyberPolicyEnforceAllGroups: &allGroups,
-		CyberPolicyEnforceGroupIDs:  &groupIDs,
+		CyberPolicyDefaultPolicy: &defaultPolicy,
+		CyberPolicyGroupPolicies: &groupPolicies,
 	})
 	require.NoError(t, err)
 	require.False(t, view.CyberPolicyEnforceAllGroups)
-	require.Equal(t, []int64{7, 9}, view.CyberPolicyEnforceGroupIDs)
+	require.Equal(t, []int64{7}, view.CyberPolicyEnforceGroupIDs)
+	require.Len(t, view.CyberPolicyGroupPolicies, 1)
+	require.Equal(t, 3, view.CyberPolicyGroupPolicies[0].Policy.BanThreshold)
 
 	saved, err := parseContentModerationConfig(settingRepo.values[SettingKeyContentModerationConfig])
 	require.NoError(t, err)
 	require.False(t, saved.CyberPolicyEnforceAllGroups)
-	require.Equal(t, []int64{7, 9}, saved.CyberPolicyEnforceGroupIDs)
+	require.Equal(t, []int64{7}, saved.CyberPolicyEnforceGroupIDs)
 	group7, group8 := int64(7), int64(8)
 	require.True(t, svc.ShouldEnforceCyberPolicyForGroup(context.Background(), &group7), "saved runtime snapshot must take effect immediately")
 	require.False(t, svc.ShouldEnforceCyberPolicyForGroup(context.Background(), &group8))
@@ -448,8 +500,22 @@ func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 // CountFlaggedByUserSince 收到的 excludeCyberPolicy 参数，供透传断言。
 type banCountArgsTestRepo struct {
 	contentModerationTestRepo
-	argsMu     sync.Mutex
-	countCalls []bool
+	argsMu          sync.Mutex
+	countCalls      []bool
+	cyberCountCalls []struct {
+		userID  int64
+		groupID *int64
+	}
+}
+
+func (r *banCountArgsTestRepo) CountCyberPolicyByUserAndGroupSince(ctx context.Context, userID int64, groupID *int64, since time.Time) (int, error) {
+	r.argsMu.Lock()
+	r.cyberCountCalls = append(r.cyberCountCalls, struct {
+		userID  int64
+		groupID *int64
+	}{userID: userID, groupID: cloneInt64Ptr(groupID)})
+	r.argsMu.Unlock()
+	return r.contentModerationTestRepo.CountCyberPolicyByUserAndGroupSince(ctx, userID, groupID, since)
 }
 
 func (r *banCountArgsTestRepo) CountFlaggedByUserSince(ctx context.Context, userID int64, since time.Time, excludeCyberPolicy bool) (int, error) {
@@ -467,7 +533,21 @@ func (r *banCountArgsTestRepo) snapshotCountCalls() []bool {
 	return out
 }
 
-func TestApplyFlaggedAccountSideEffects_PassesExcludeCyberFlag(t *testing.T) {
+func (r *banCountArgsTestRepo) snapshotCyberCountCalls() []struct {
+	userID  int64
+	groupID *int64
+} {
+	r.argsMu.Lock()
+	defer r.argsMu.Unlock()
+	out := make([]struct {
+		userID  int64
+		groupID *int64
+	}, len(r.cyberCountCalls))
+	copy(out, r.cyberCountCalls)
+	return out
+}
+
+func TestApplyFlaggedAccountSideEffects_AlwaysExcludesCyberPolicy(t *testing.T) {
 	repo := &banCountArgsTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{}},
@@ -482,8 +562,8 @@ func TestApplyFlaggedAccountSideEffects_PassesExcludeCyberFlag(t *testing.T) {
 	cfgDefault := defaultContentModerationConfig() // 默认 false
 	svc.applyFlaggedAccountSideEffects(context.Background(), cfgDefault, &ContentModerationLog{Flagged: true, UserID: &userID})
 
-	require.Equal(t, []bool{true, false}, repo.snapshotCountCalls(),
-		"applyFlaggedAccountSideEffects 必须把 cfg.CyberPolicyExcludeFromBanCount 透传给 COUNT 查询")
+	require.Equal(t, []bool{true, true}, repo.snapshotCountCalls(),
+		"普通内容审核必须始终排除由分组策略独立计数的 Cyber 行")
 }
 
 func TestRecordCyberPolicyEvent_ExcludeFromBanCount_SkipsBanJudgment(t *testing.T) {
@@ -506,6 +586,7 @@ func TestRecordCyberPolicyEvent_ExcludeFromBanCount_SkipsBanJudgment(t *testing.
 	})
 
 	require.Empty(t, repo.snapshotCountCalls(), "开关开时不得执行封号计数查询")
+	require.Empty(t, repo.snapshotCyberCountCalls(), "开关开时不得执行 Cyber 分组计数查询")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1, "风控日志必须照记")
 	require.True(t, logs[0].Flagged, "日志仍标记 Flagged=true（列表可见可筛）")
@@ -533,12 +614,57 @@ func TestRecordCyberPolicyEvent_DefaultCountsTowardBan(t *testing.T) {
 		UpstreamStatus:  400,
 	})
 
-	require.Equal(t, []bool{false}, repo.snapshotCountCalls(),
-		"默认配置必须执行计数查询且不排除 cyber 行")
+	require.Empty(t, repo.snapshotCountCalls(), "Cyber 不再复用普通违规总计数")
+	require.Len(t, repo.snapshotCyberCountCalls(), 1, "默认配置必须执行 Cyber 分组计数")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Equal(t, ContentModerationCyberModeEnforce, logs[0].CyberPolicyMode)
 	require.GreaterOrEqual(t, logs[0].ViolationCount, 1, "默认路径行为不变（现状回归）")
+}
+
+func TestRecordCyberPolicyEvent_CounterIsolatedByGroup(t *testing.T) {
+	group7, group8 := int64(7), int64(8)
+	config := `{"cyber_policy_default_policy":{"mode":"enforce","session_block_enabled":false,"session_block_ttl_seconds":3600,"violation_count_enabled":true,"email_on_hit":false,"auto_ban_enabled":true,"ban_threshold":2,"violation_window_hours":24},"cyber_policy_group_policies":[]}`
+
+	t.Run("another group does not reach threshold", func(t *testing.T) {
+		userID := int64(1)
+		repo := &contentModerationTestRepo{logs: []ContentModerationLog{{
+			UserID: &userID, GroupID: &group8, Action: ContentModerationActionCyberPolicy,
+			CyberPolicyMode: ContentModerationCyberModeEnforce, Flagged: true, CreatedAt: time.Now(),
+		}}}
+		userRepo := &contentModerationTestUserRepo{user: &User{ID: userID, Role: RoleUser, Status: StatusActive}}
+		svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: config,
+		}}, repo, nil, nil, userRepo, nil, nil, nil)
+
+		svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{UserID: userID, GroupID: &group7})
+
+		logs := repo.snapshotLogs()
+		require.Len(t, logs, 2)
+		require.Equal(t, 1, logs[1].ViolationCount)
+		require.Equal(t, StatusActive, userRepo.user.Status)
+	})
+
+	t.Run("same group reaches threshold and disables account", func(t *testing.T) {
+		userID := int64(1)
+		repo := &contentModerationTestRepo{logs: []ContentModerationLog{{
+			UserID: &userID, GroupID: &group7, Action: ContentModerationActionCyberPolicy,
+			CyberPolicyMode: ContentModerationCyberModeEnforce, Flagged: true, CreatedAt: time.Now(),
+		}}}
+		userRepo := &contentModerationTestUserRepo{user: &User{ID: userID, Role: RoleUser, Status: StatusActive}}
+		svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: config,
+		}}, repo, nil, nil, userRepo, nil, nil, nil)
+
+		svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{UserID: userID, GroupID: &group7})
+
+		logs := repo.snapshotLogs()
+		require.Len(t, logs, 2)
+		require.Equal(t, 2, logs[1].ViolationCount)
+		require.True(t, logs[1].AutoBanned)
+		require.Equal(t, StatusDisabled, userRepo.user.Status)
+		require.Len(t, userRepo.updated, 1)
+	})
 }
 
 func TestCollectOnlyCyberHistoryDoesNotContributeToLaterBan(t *testing.T) {

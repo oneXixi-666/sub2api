@@ -1341,6 +1341,10 @@ func (r *contentModerationHandlerTestRepo) CountFlaggedByUserSince(ctx context.C
 	return 0, nil
 }
 
+func (r *contentModerationHandlerTestRepo) CountCyberPolicyByUserAndGroupSince(ctx context.Context, userID int64, groupID *int64, since time.Time) (int, error) {
+	return 0, nil
+}
+
 func (r *contentModerationHandlerTestRepo) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*service.ContentModerationCleanupResult, error) {
 	return &service.ContentModerationCleanupResult{}, nil
 }

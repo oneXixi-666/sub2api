@@ -720,14 +720,11 @@
               data-test="moderation-group-scope"
             />
 
-            <GroupScopeSelector
-              v-model:all-groups="configForm.cyber_policy_enforce_all_groups"
-              v-model:selected-ids="configForm.cyber_policy_enforce_group_ids"
+
+            <CyberPolicyEditor
+              v-model:default-policy="configForm.cyber_policy_default_policy"
+              v-model:group-policies="configForm.cyber_policy_group_policies"
               :groups="groups"
-              :title="t('admin.riskControl.cyberEnforcementScope')"
-              :hint="t('admin.riskControl.cyberEnforcementScopeHint')"
-              tone="amber"
-              data-test="cyber-enforcement-group-scope"
             />
 
             <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
@@ -867,13 +864,6 @@
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.autoBanHint') }}</p>
                 </div>
                 <Toggle v-model="configForm.auto_ban_enabled" />
-              </div>
-              <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
-                <div>
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.cyberPolicyExcludeBan') }}</p>
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.cyberPolicyExcludeBanHint') }}</p>
-                </div>
-                <Toggle v-model="configForm.cyber_policy_exclude_from_ban_count" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.banThreshold') }}</label>
@@ -1111,6 +1101,36 @@
             </dl>
           </div>
 
+          <div v-if="inputDetailRow.cyber_policy_snapshot" class="rounded-xl border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-900/60 dark:bg-sky-950/20" data-test="cyber-policy-snapshot">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-sky-900 dark:text-sky-100">{{ t('admin.riskControl.cyberPolicySnapshotTitle') }}</p>
+                <p class="mt-1 text-xs leading-5 text-sky-700 dark:text-sky-300">{{ t('admin.riskControl.cyberPolicySnapshotHint') }}</p>
+              </div>
+              <span class="inline-flex rounded-md bg-white px-2.5 py-1 text-xs font-medium text-sky-700 shadow-sm dark:bg-dark-800 dark:text-sky-300">
+                {{ inputDetailRow.cyber_policy_snapshot.source === 'group_override' ? t('admin.riskControl.cyberPolicySourceGroup') : t('admin.riskControl.cyberPolicySourceDefault') }}
+              </span>
+            </div>
+            <dl class="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              <div>
+                <dt class="text-sky-600 dark:text-sky-400">{{ t('admin.riskControl.cyberSessionBlock') }}</dt>
+                <dd class="mt-1 font-semibold text-sky-950 dark:text-sky-100">{{ yesNo(inputDetailRow.cyber_policy_snapshot.policy.session_block_enabled) }}</dd>
+              </div>
+              <div>
+                <dt class="text-sky-600 dark:text-sky-400">{{ t('admin.riskControl.cyberViolationCount') }}</dt>
+                <dd class="mt-1 font-semibold text-sky-950 dark:text-sky-100">{{ yesNo(inputDetailRow.cyber_policy_snapshot.policy.violation_count_enabled) }}</dd>
+              </div>
+              <div>
+                <dt class="text-sky-600 dark:text-sky-400">{{ t('admin.riskControl.cyberEmailNotice') }}</dt>
+                <dd class="mt-1 font-semibold text-sky-950 dark:text-sky-100">{{ yesNo(inputDetailRow.cyber_policy_snapshot.policy.email_on_hit) }}</dd>
+              </div>
+              <div>
+                <dt class="text-sky-600 dark:text-sky-400">{{ t('admin.riskControl.cyberAutoBanAccount') }}</dt>
+                <dd class="mt-1 font-semibold text-sky-950 dark:text-sky-100">{{ yesNo(inputDetailRow.cyber_policy_snapshot.policy.auto_ban_enabled) }}</dd>
+              </div>
+            </dl>
+          </div>
+
           <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1148,6 +1168,7 @@ import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import GroupScopeSelector from '@/components/admin/risk-control/GroupScopeSelector.vue'
+import CyberPolicyEditor from '@/components/admin/risk-control/CyberPolicyEditor.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
@@ -1159,6 +1180,8 @@ import type {
   ContentModerationModelFilterType,
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
+  CyberPolicyGroupPolicy,
+  CyberPolicySettings,
   KeywordBlockingMode,
   ModerationMode,
   UpdateContentModerationConfig,
@@ -1218,6 +1241,16 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 const { t } = useI18n()
 const appStore = useAppStore()
 const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
+const defaultCyberPolicy = (): CyberPolicySettings => ({
+  mode: 'enforce',
+  session_block_enabled: true,
+  session_block_ttl_seconds: 3600,
+  violation_count_enabled: true,
+  email_on_hit: true,
+  auto_ban_enabled: true,
+  ban_threshold: 10,
+  violation_window_hours: 720,
+})
 
 const loading = ref(true)
 const saving = ref(false)
@@ -1268,9 +1301,8 @@ const configForm = reactive({
   block_message: defaultBlockMessage(),
   email_on_hit: true,
   auto_ban_enabled: true,
-  cyber_policy_enforce_all_groups: true,
-  cyber_policy_enforce_group_ids: [] as number[],
-  cyber_policy_exclude_from_ban_count: false,
+  cyber_policy_default_policy: defaultCyberPolicy(),
+  cyber_policy_group_policies: [] as CyberPolicyGroupPolicy[],
   ban_threshold: 10,
   violation_window_hours: 720,
   hit_retention_days: 180,
@@ -1739,11 +1771,13 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.block_message = config.block_message || defaultBlockMessage()
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
-  configForm.cyber_policy_enforce_all_groups = config.cyber_policy_enforce_all_groups ?? true
-  configForm.cyber_policy_enforce_group_ids = Array.isArray(config.cyber_policy_enforce_group_ids)
-    ? [...config.cyber_policy_enforce_group_ids]
+  configForm.cyber_policy_default_policy = normalizeCyberPolicy(config.cyber_policy_default_policy)
+  configForm.cyber_policy_group_policies = Array.isArray(config.cyber_policy_group_policies)
+    ? config.cyber_policy_group_policies.map((item) => ({
+      group_id: item.group_id,
+      policy: normalizeCyberPolicy(item.policy),
+    }))
     : []
-  configForm.cyber_policy_exclude_from_ban_count = config.cyber_policy_exclude_from_ban_count ?? false
   configForm.ban_threshold = config.ban_threshold || 10
   configForm.violation_window_hours = config.violation_window_hours || 720
   configForm.hit_retention_days = config.hit_retention_days || 180
@@ -1829,11 +1863,11 @@ async function saveConfig() {
       block_message: configForm.block_message || defaultBlockMessage(),
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
-      cyber_policy_enforce_all_groups: configForm.cyber_policy_enforce_all_groups,
-      cyber_policy_enforce_group_ids: configForm.cyber_policy_enforce_all_groups
-        ? []
-        : [...configForm.cyber_policy_enforce_group_ids],
-      cyber_policy_exclude_from_ban_count: configForm.cyber_policy_exclude_from_ban_count,
+      cyber_policy_default_policy: normalizeCyberPolicy(configForm.cyber_policy_default_policy),
+      cyber_policy_group_policies: configForm.cyber_policy_group_policies.map((item) => ({
+        group_id: item.group_id,
+        policy: normalizeCyberPolicy(item.policy),
+      })),
       ban_threshold: Number(configForm.ban_threshold) || 10,
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
       hit_retention_days: Number(configForm.hit_retention_days) || 180,
@@ -2263,6 +2297,33 @@ function normalizeKeywordBlockingMode(value: unknown): KeywordBlockingMode {
     return value
   }
   return 'keyword_and_api'
+}
+
+function normalizeCyberPolicy(value: unknown): CyberPolicySettings {
+  const fallback = defaultCyberPolicy()
+  if (!value || typeof value !== 'object') return fallback
+  const raw = value as Partial<CyberPolicySettings>
+  const violationCountEnabled = raw.violation_count_enabled ?? fallback.violation_count_enabled
+  return {
+    mode: raw.mode === 'collect_only' ? 'collect_only' : 'enforce',
+    session_block_enabled: raw.session_block_enabled ?? fallback.session_block_enabled,
+    session_block_ttl_seconds: positiveInteger(raw.session_block_ttl_seconds, fallback.session_block_ttl_seconds, 2592000),
+    violation_count_enabled: violationCountEnabled,
+    email_on_hit: raw.email_on_hit ?? fallback.email_on_hit,
+    auto_ban_enabled: violationCountEnabled && (raw.auto_ban_enabled ?? fallback.auto_ban_enabled),
+    ban_threshold: positiveInteger(raw.ban_threshold, fallback.ban_threshold, 1000),
+    violation_window_hours: positiveInteger(raw.violation_window_hours, fallback.violation_window_hours, 8760),
+  }
+}
+
+function positiveInteger(value: unknown, fallback: number, maximum: number): number {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return fallback
+  return Math.min(Math.trunc(numberValue), maximum)
+}
+
+function yesNo(value: boolean): string {
+  return value ? t('common.yes') : t('common.no')
 }
 
 function normalizeModelFilter(value: unknown): ContentModerationModelFilter {

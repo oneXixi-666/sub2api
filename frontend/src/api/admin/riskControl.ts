@@ -9,6 +9,30 @@ export interface ContentModerationModelFilter {
   models: string[]
 }
 
+export type CyberPolicyMode = 'collect_only' | 'enforce'
+
+export interface CyberPolicySettings {
+  mode: CyberPolicyMode
+  session_block_enabled: boolean
+  session_block_ttl_seconds: number
+  violation_count_enabled: boolean
+  email_on_hit: boolean
+  auto_ban_enabled: boolean
+  ban_threshold: number
+  violation_window_hours: number
+}
+
+export interface CyberPolicyGroupPolicy {
+  group_id: number
+  policy: CyberPolicySettings
+}
+
+export interface ResolvedCyberPolicy {
+  version: number
+  source: 'default' | 'group_override'
+  policy: CyberPolicySettings
+}
+
 export interface ContentModerationConfig {
   enabled: boolean
   mode: ModerationMode
@@ -44,6 +68,8 @@ export interface ContentModerationConfig {
   cyber_policy_enforce_all_groups: boolean
   cyber_policy_enforce_group_ids: number[]
   cyber_policy_exclude_from_ban_count: boolean
+  cyber_policy_default_policy: CyberPolicySettings
+  cyber_policy_group_policies: CyberPolicyGroupPolicy[]
 }
 
 export type ContentModerationAPIKeyStatusValue = 'unknown' | 'ok' | 'error' | 'frozen'
@@ -126,6 +152,8 @@ export interface UpdateContentModerationConfig {
   cyber_policy_enforce_all_groups?: boolean
   cyber_policy_enforce_group_ids?: number[]
   cyber_policy_exclude_from_ban_count?: boolean
+  cyber_policy_default_policy?: CyberPolicySettings
+  cyber_policy_group_policies?: CyberPolicyGroupPolicy[]
 }
 
 export interface ContentModerationRuntimeStatus {
@@ -189,6 +217,8 @@ export interface ContentModerationLog {
   mode: string
   action: string
   cyber_policy_mode: string
+  cyber_policy_source: string
+  cyber_policy_snapshot?: ResolvedCyberPolicy
   flagged: boolean
   highest_category: string
   highest_score: number

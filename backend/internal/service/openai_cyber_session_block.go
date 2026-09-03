@@ -98,12 +98,22 @@ func (s *OpenAIGatewayService) CyberSessionBlockRuntime(ctx context.Context) (bo
 // MarkCyberSessionBlocked 把会话写入屏蔽表（写入点：cyber 命中后）。
 // 开关关闭、key 为空或存储不可用时静默跳过。
 func (s *OpenAIGatewayService) MarkCyberSessionBlocked(ctx context.Context, scopeKey string, keys []string) {
+	s.MarkCyberSessionBlockedWithTTL(ctx, scopeKey, keys, 0)
+}
+
+// MarkCyberSessionBlockedWithTTL uses a policy-specific TTL while retaining the
+// existing system setting as the global session-block master switch. A zero TTL
+// inherits the system TTL for backward compatibility.
+func (s *OpenAIGatewayService) MarkCyberSessionBlockedWithTTL(ctx context.Context, scopeKey string, keys []string, policyTTL time.Duration) {
 	if s == nil || len(keys) == 0 {
 		return
 	}
 	enabled, ttl := s.CyberSessionBlockRuntime(ctx)
 	if !enabled {
 		return
+	}
+	if policyTTL > 0 {
+		ttl = policyTTL
 	}
 	store := s.cyberSessionBlockStore()
 	if store == nil {

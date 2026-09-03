@@ -34,14 +34,16 @@ const (
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
 
-	ContentModerationActionAllow        = "allow"
-	ContentModerationActionBlock        = "block"
-	ContentModerationActionHashBlock    = "hash_block"
-	ContentModerationActionKeywordBlock = "keyword_block"
-	ContentModerationActionError        = "error"
-	ContentModerationActionCyberPolicy  = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
-	ContentModerationCyberModeEnforce   = "enforce"
-	ContentModerationCyberModeCollect   = "collect_only"
+	ContentModerationActionAllow                    = "allow"
+	ContentModerationActionBlock                    = "block"
+	ContentModerationActionHashBlock                = "hash_block"
+	ContentModerationActionKeywordBlock             = "keyword_block"
+	ContentModerationActionError                    = "error"
+	ContentModerationActionCyberPolicy              = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
+	ContentModerationCyberModeEnforce               = "enforce"
+	ContentModerationCyberModeCollect               = "collect_only"
+	ContentModerationCyberPolicySourceDefault       = "default"
+	ContentModerationCyberPolicySourceGroupOverride = "group_override"
 
 	contentModerationKeywordCategory = "keyword"
 
@@ -92,6 +94,7 @@ const (
 	maxContentModerationBlockedKeywordRunes      = 200
 	maxContentModerationModelFilterModels        = 1000
 	maxContentModerationModelFilterRunes         = 200
+	maxCyberPolicySessionBlockTTLSeconds         = 30 * 24 * 60 * 60
 
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute
@@ -179,6 +182,10 @@ type ContentModerationConfig struct {
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
 	CyberPolicyExcludeFromBanCount bool `json:"cyber_policy_exclude_from_ban_count"`
+	// CyberPolicyDefaultPolicy applies to groups without an explicit override.
+	// CyberPolicyGroupPolicies replace the default policy for their group.
+	CyberPolicyDefaultPolicy CyberPolicySettings      `json:"cyber_policy_default_policy"`
+	CyberPolicyGroupPolicies []CyberPolicyGroupPolicy `json:"cyber_policy_group_policies"`
 }
 
 type ContentModerationConfigView struct {
@@ -216,6 +223,8 @@ type ContentModerationConfigView struct {
 	CyberPolicyEnforceAllGroups    bool                            `json:"cyber_policy_enforce_all_groups"`
 	CyberPolicyEnforceGroupIDs     []int64                         `json:"cyber_policy_enforce_group_ids"`
 	CyberPolicyExcludeFromBanCount bool                            `json:"cyber_policy_exclude_from_ban_count"`
+	CyberPolicyDefaultPolicy       CyberPolicySettings             `json:"cyber_policy_default_policy"`
+	CyberPolicyGroupPolicies       []CyberPolicyGroupPolicy        `json:"cyber_policy_group_policies"`
 }
 
 type ContentModerationAPIKeyStatus struct {
@@ -310,6 +319,8 @@ type UpdateContentModerationConfigInput struct {
 	CyberPolicyEnforceAllGroups    *bool                         `json:"cyber_policy_enforce_all_groups"`
 	CyberPolicyEnforceGroupIDs     *[]int64                      `json:"cyber_policy_enforce_group_ids"`
 	CyberPolicyExcludeFromBanCount *bool                         `json:"cyber_policy_exclude_from_ban_count"`
+	CyberPolicyDefaultPolicy       *CyberPolicySettings          `json:"cyber_policy_default_policy"`
+	CyberPolicyGroupPolicies       *[]CyberPolicyGroupPolicy     `json:"cyber_policy_group_policies"`
 }
 
 type ContentModerationModelFilter struct {
@@ -397,43 +408,45 @@ type ContentModerationDecision struct {
 }
 
 type ContentModerationLog struct {
-	ID                int64              `json:"id"`
-	RequestID         string             `json:"request_id"`
-	UserID            *int64             `json:"user_id,omitempty"`
-	UserEmail         string             `json:"user_email"`
-	APIKeyID          *int64             `json:"api_key_id,omitempty"`
-	APIKeyName        string             `json:"api_key_name"`
-	GroupID           *int64             `json:"group_id,omitempty"`
-	GroupName         string             `json:"group_name"`
-	Endpoint          string             `json:"endpoint"`
-	Provider          string             `json:"provider"`
-	Model             string             `json:"model"`
-	Mode              string             `json:"mode"`
-	Action            string             `json:"action"`
-	CyberPolicyMode   string             `json:"cyber_policy_mode"`
-	Flagged           bool               `json:"flagged"`
-	HighestCategory   string             `json:"highest_category"`
-	HighestScore      float64            `json:"highest_score"`
-	MatchedKeyword    string             `json:"matched_keyword"`
-	CategoryScores    map[string]float64 `json:"category_scores"`
-	ThresholdSnapshot map[string]float64 `json:"threshold_snapshot"`
-	InputExcerpt      string             `json:"input_excerpt"`
-	InputSnapshot     string             `json:"input_snapshot"`
-	InputHash         string             `json:"input_hash"`
-	InputLength       int                `json:"input_length"`
-	MessageCount      int                `json:"message_count"`
-	InputTruncated    bool               `json:"input_truncated"`
-	Protocol          string             `json:"protocol"`
-	AuditStage        string             `json:"audit_stage"`
-	TurnNumber        int                `json:"turn_number"`
-	UpstreamLatencyMS *int               `json:"upstream_latency_ms,omitempty"`
-	Error             string             `json:"error"`
-	ViolationCount    int                `json:"violation_count"`
-	AutoBanned        bool               `json:"auto_banned"`
-	EmailSent         bool               `json:"email_sent"`
-	UserStatus        string             `json:"user_status"`
-	QueueDelayMS      *int               `json:"queue_delay_ms,omitempty"`
-	CreatedAt         time.Time          `json:"created_at"`
+	ID                  int64                `json:"id"`
+	RequestID           string               `json:"request_id"`
+	UserID              *int64               `json:"user_id,omitempty"`
+	UserEmail           string               `json:"user_email"`
+	APIKeyID            *int64               `json:"api_key_id,omitempty"`
+	APIKeyName          string               `json:"api_key_name"`
+	GroupID             *int64               `json:"group_id,omitempty"`
+	GroupName           string               `json:"group_name"`
+	Endpoint            string               `json:"endpoint"`
+	Provider            string               `json:"provider"`
+	Model               string               `json:"model"`
+	Mode                string               `json:"mode"`
+	Action              string               `json:"action"`
+	CyberPolicyMode     string               `json:"cyber_policy_mode"`
+	CyberPolicySource   string               `json:"cyber_policy_source"`
+	CyberPolicySnapshot *ResolvedCyberPolicy `json:"cyber_policy_snapshot,omitempty"`
+	Flagged             bool                 `json:"flagged"`
+	HighestCategory     string               `json:"highest_category"`
+	HighestScore        float64              `json:"highest_score"`
+	MatchedKeyword      string               `json:"matched_keyword"`
+	CategoryScores      map[string]float64   `json:"category_scores"`
+	ThresholdSnapshot   map[string]float64   `json:"threshold_snapshot"`
+	InputExcerpt        string               `json:"input_excerpt"`
+	InputSnapshot       string               `json:"input_snapshot"`
+	InputHash           string               `json:"input_hash"`
+	InputLength         int                  `json:"input_length"`
+	MessageCount        int                  `json:"message_count"`
+	InputTruncated      bool                 `json:"input_truncated"`
+	Protocol            string               `json:"protocol"`
+	AuditStage          string               `json:"audit_stage"`
+	TurnNumber          int                  `json:"turn_number"`
+	UpstreamLatencyMS   *int                 `json:"upstream_latency_ms,omitempty"`
+	Error               string               `json:"error"`
+	ViolationCount      int                  `json:"violation_count"`
+	AutoBanned          bool                 `json:"auto_banned"`
+	EmailSent           bool                 `json:"email_sent"`
+	UserStatus          string               `json:"user_status"`
+	QueueDelayMS        *int                 `json:"queue_delay_ms,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
 }
 
 type ContentModerationLogFilter struct {
@@ -501,9 +514,11 @@ type ContentModerationClearHashesResult struct {
 type ContentModerationRepository interface {
 	CreateLog(ctx context.Context, log *ContentModerationLog) error
 	ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error)
-	// CountFlaggedByUserSince 统计窗口内计入封号的违规次数（排除 hash_block；
-	// excludeCyberPolicy 为 true 时额外排除 cyber_policy 行）。
+	// CountFlaggedByUserSince 统计窗口内计入封号的普通违规次数（排除 hash_block；
+	// excludeCyberPolicy 为 true 时额外排除 cyber_policy 行）。Cyber 使用独立分组计数。
 	CountFlaggedByUserSince(ctx context.Context, userID int64, since time.Time, excludeCyberPolicy bool) (int, error)
+	// CountCyberPolicyByUserAndGroupSince isolates cyber counters by group policy.
+	CountCyberPolicyByUserAndGroupSince(ctx context.Context, userID int64, groupID *int64, since time.Time) (int, error)
 	CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error)
 	// UpdateLogEmailSent 回写邮件发送结果（F7：CreateLog 先行后补 EmailSent）。
 	UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error
@@ -724,6 +739,18 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if input.CyberPolicyExcludeFromBanCount != nil {
 		cfg.CyberPolicyExcludeFromBanCount = *input.CyberPolicyExcludeFromBanCount
+	}
+	if input.CyberPolicyDefaultPolicy != nil {
+		cfg.CyberPolicyDefaultPolicy = *input.CyberPolicyDefaultPolicy
+	}
+	if input.CyberPolicyGroupPolicies != nil {
+		cfg.CyberPolicyGroupPolicies = cloneCyberPolicyGroupPolicies(*input.CyberPolicyGroupPolicies)
+	}
+	// Backward compatibility for v0.2.2 clients. The new policy fields are
+	// authoritative whenever they are present in the same update.
+	if input.CyberPolicyDefaultPolicy == nil && input.CyberPolicyGroupPolicies == nil &&
+		(input.CyberPolicyEnforceAllGroups != nil || input.CyberPolicyEnforceGroupIDs != nil || input.CyberPolicyExcludeFromBanCount != nil) {
+		applyLegacyCyberPolicyScope(cfg)
 	}
 	if input.Thresholds != nil {
 		cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), *input.Thresholds)
@@ -1531,6 +1558,12 @@ func parseContentModerationConfig(raw string) (*ContentModerationConfig, error) 
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不是有效 JSON")
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err == nil {
+		if _, ok := fields["cyber_policy_default_policy"]; !ok {
+			applyLegacyCyberPolicyScope(cfg)
+		}
+	}
 	cfg.normalize()
 	return cfg, nil
 }
@@ -1560,15 +1593,23 @@ func (s *ContentModerationService) loadRuntimeSnapshot(ctx context.Context) (*co
 // evidence collection. Configuration failures fail open so a stale or invalid
 // group selector cannot reject otherwise valid traffic.
 func (s *ContentModerationService) ShouldEnforceCyberPolicyForGroup(ctx context.Context, groupID *int64) bool {
+	policy, ok := s.ResolveCyberPolicyForGroup(ctx, groupID)
+	return ok && policy.Enforces()
+}
+
+// ResolveCyberPolicyForGroup returns the effective policy and whether the
+// risk-control master switch permits local action. Snapshot load failures fail
+// open for enforcement and do not reject traffic.
+func (s *ContentModerationService) ResolveCyberPolicyForGroup(ctx context.Context, groupID *int64) (ResolvedCyberPolicy, bool) {
 	if s == nil {
-		return false
+		return ResolvedCyberPolicy{}, false
 	}
 	snapshot, err := s.loadRuntimeSnapshot(ctx)
 	if err != nil {
 		slog.Warn("content_moderation.cyber_enforcement_scope_load_failed", "error", err)
-		return false
+		return ResolvedCyberPolicy{}, false
 	}
-	return snapshot.riskControlEnabled && snapshot.config.enforcesCyberPolicyForGroup(groupID)
+	return snapshot.config.resolvedCyberPolicyForGroup(groupID), snapshot.riskControlEnabled
 }
 
 func (s *ContentModerationService) runtimeSnapshotTTL() time.Duration {
@@ -1717,6 +1758,13 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 		for _, groupID := range cfg.GroupIDs {
 			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
 				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
+			}
+		}
+	}
+	if s.groupRepo != nil {
+		for _, item := range cfg.CyberPolicyGroupPolicies {
+			if _, err := s.groupRepo.GetByIDLite(ctx, item.GroupID); err != nil {
+				return infraerrors.BadRequest("INVALID_CYBER_POLICY_GROUP", fmt.Sprintf("Cyber 策略分组不存在: %d", item.GroupID))
 			}
 		}
 	}
@@ -1956,20 +2004,29 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 	count := 1
 	if s.repo != nil && cfg.ViolationWindowHours > 0 {
 		since := time.Now().Add(-time.Duration(cfg.ViolationWindowHours) * time.Hour)
-		if n, err := s.repo.CountFlaggedByUserSince(ctx, *log.UserID, since, cfg.CyberPolicyExcludeFromBanCount); err == nil {
+		// Cyber has its own per-group policy counter and must not leak into the
+		// proactive moderation threshold.
+		if n, err := s.repo.CountFlaggedByUserSince(ctx, *log.UserID, since, true); err == nil {
 			count = n + 1
 		}
 	}
 	log.ViolationCount = count
+	return s.applyAccountAutoBan(ctx, log, count, cfg.AutoBanEnabled, cfg.BanThreshold)
+}
+
+func (s *ContentModerationService) applyAccountAutoBan(ctx context.Context, log *ContentModerationLog, count int, enabled bool, threshold int) bool {
+	if s == nil || log == nil || log.UserID == nil || *log.UserID <= 0 || !enabled || threshold <= 0 || count < threshold || s.userRepo == nil {
+		return false
+	}
 	autoBanJustApplied := false
-	if cfg.AutoBanEnabled && cfg.BanThreshold > 0 && count >= cfg.BanThreshold && s.userRepo != nil {
+	if enabled && count >= threshold {
 		user, err := s.userRepo.GetByID(ctx, *log.UserID)
 		if err != nil {
 			slog.Warn("content_moderation.ban_get_user_failed", "user_id", *log.UserID, "error", err)
 			return false
 		}
 		if user.IsAdmin() {
-			slog.Warn("content_moderation.autoban_skipped_admin", "user_id", *log.UserID, "role", user.Role, "count", count, "threshold", cfg.BanThreshold)
+			slog.Warn("content_moderation.autoban_skipped_admin", "user_id", *log.UserID, "role", user.Role, "count", count, "threshold", threshold)
 			// TODO: Disable the triggering API key instead when API key mutation is available here.
 			return false
 		}
@@ -2118,7 +2175,7 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 }
 
 func defaultContentModerationConfig() *ContentModerationConfig {
-	return &ContentModerationConfig{
+	cfg := &ContentModerationConfig{
 		Enabled:              false,
 		Mode:                 ContentModerationModePreBlock,
 		BaseURL:              defaultContentModerationBaseURL,
@@ -2151,6 +2208,9 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		CyberPolicyEnforceGroupIDs:     []int64{},
 		CyberPolicyExcludeFromBanCount: false,
 	}
+	cfg.CyberPolicyDefaultPolicy = defaultCyberPolicySettings()
+	cfg.CyberPolicyGroupPolicies = []CyberPolicyGroupPolicy{}
+	return cfg
 }
 
 func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerationConfig {
@@ -2162,6 +2222,8 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
 	clone.CyberPolicyEnforceGroupIDs = append([]int64(nil), cfg.CyberPolicyEnforceGroupIDs...)
+	clone.CyberPolicyDefaultPolicy = cloneCyberPolicySettings(cfg.CyberPolicyDefaultPolicy)
+	clone.CyberPolicyGroupPolicies = cloneCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -2249,6 +2311,9 @@ func (cfg *ContentModerationConfig) normalize() {
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
 	cfg.CyberPolicyEnforceGroupIDs = normalizeInt64IDs(cfg.CyberPolicyEnforceGroupIDs)
+	cfg.CyberPolicyDefaultPolicy.normalize()
+	cfg.CyberPolicyGroupPolicies = normalizeCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
+	syncLegacyCyberPolicyFields(cfg)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
@@ -2271,18 +2336,7 @@ func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
 }
 
 func (cfg *ContentModerationConfig) enforcesCyberPolicyForGroup(groupID *int64) bool {
-	if cfg == nil || cfg.CyberPolicyEnforceAllGroups {
-		return true
-	}
-	if groupID == nil {
-		return false
-	}
-	for _, id := range cfg.CyberPolicyEnforceGroupIDs {
-		if id == *groupID {
-			return true
-		}
-	}
-	return false
+	return cfg.resolvedCyberPolicyForGroup(groupID).Enforces()
 }
 
 func (cfg *ContentModerationConfig) includesModel(model string) bool {
@@ -2501,6 +2555,8 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		CyberPolicyEnforceAllGroups:    cfg.CyberPolicyEnforceAllGroups,
 		CyberPolicyEnforceGroupIDs:     append([]int64(nil), cfg.CyberPolicyEnforceGroupIDs...),
 		CyberPolicyExcludeFromBanCount: cfg.CyberPolicyExcludeFromBanCount,
+		CyberPolicyDefaultPolicy:       cloneCyberPolicySettings(cfg.CyberPolicyDefaultPolicy),
+		CyberPolicyGroupPolicies:       cloneCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies),
 	}
 }
 
@@ -3053,12 +3109,15 @@ type CyberPolicyRecordInput struct {
 	UpstreamStatus  int
 	UpstreamInTok   int
 	UpstreamOutTok  int
+	// ResolvedPolicy freezes the policy selected on the request path. Direct
+	// callers may omit it and let the service resolve from the runtime snapshot.
+	ResolvedPolicy *ResolvedCyberPolicy
 }
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志。当前请求已由
-// gateway 透传给用户；本方法仅做事后记录。所有分组都采集，只有 cyber 执行范围内
-// 的分组才继续通知/违规处置。受 risk_control_enabled 总开关和 model scope 约束，
-// 不受内容审核 Enabled/Mode/sample/普通 group scope 约束。
+// gateway 透传给用户；本方法仅做事后记录。所有分组都采集，再按请求命中时解析并
+// 冻结的 cyber 策略执行通知/违规处置。受 risk_control_enabled 总开关约束，不受
+// 内容审核 Enabled/Mode/sample/普通 group scope/model scope 约束。
 func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, in CyberPolicyRecordInput) {
 	if s == nil || s.repo == nil {
 		return
@@ -3068,18 +3127,19 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		slog.Warn("content_moderation.cyber_runtime_snapshot_load_failed", "error", err)
 		return
 	}
-	if !runtimeSnapshot.riskControlEnabled {
+	hasFrozenPolicy := in.ResolvedPolicy != nil && in.ResolvedPolicy.Version > 0
+	// Gateway callers freeze the policy only when risk control was enabled at
+	// hit time. Let an already accepted asynchronous audit finish even if an
+	// administrator switches the master off before this goroutine runs.
+	if !runtimeSnapshot.riskControlEnabled && !hasFrozenPolicy {
 		return
 	}
 	cfg := runtimeSnapshot.config
-	if !cfg.includesModel(in.Model) {
-		return
+	resolvedPolicy := cfg.resolvedCyberPolicyForGroup(in.GroupID)
+	if hasFrozenPolicy {
+		resolvedPolicy = *in.ResolvedPolicy
 	}
-	enforced := cfg.enforcesCyberPolicyForGroup(in.GroupID)
-	cyberPolicyMode := ContentModerationCyberModeCollect
-	if enforced {
-		cyberPolicyMode = ContentModerationCyberModeEnforce
-	}
+	policy := resolvedPolicy.Policy
 	var userID *int64
 	if in.UserID > 0 {
 		userID = &in.UserID
@@ -3098,39 +3158,49 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	}
 	inputSnapshot := trimRunes(redactContentModerationSecrets(in.InputSnapshot), maxModerationInputRunes)
 	log := &ContentModerationLog{
-		RequestID:       in.RequestID,
-		UserID:          userID,
-		UserEmail:       in.UserEmail,
-		APIKeyID:        apiKeyID,
-		APIKeyName:      in.APIKeyName,
-		GroupID:         cloneInt64Ptr(in.GroupID),
-		GroupName:       in.GroupName,
-		Endpoint:        in.Endpoint,
-		Provider:        "openai",
-		Model:           in.Model,
-		Mode:            "post_upstream",
-		Action:          ContentModerationActionCyberPolicy,
-		CyberPolicyMode: cyberPolicyMode,
-		Flagged:         true,
-		HighestCategory: "cyber_policy",
-		HighestScore:    1.0,
-		InputExcerpt:    trimRunes(inputSnapshot, maxModerationExcerptRunes),
-		InputSnapshot:   inputSnapshot,
-		InputHash:       normalizeContentModerationHash(in.InputHash),
-		InputLength:     max(0, in.InputLength),
-		MessageCount:    max(0, in.MessageCount),
-		InputTruncated:  in.InputTruncated,
-		Protocol:        trimRunes(strings.TrimSpace(in.Protocol), 64),
-		AuditStage:      trimRunes(strings.TrimSpace(in.AuditStage), 32),
-		TurnNumber:      max(0, in.TurnNumber),
-		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
-		CreatedAt:       time.Now(),
+		RequestID:           in.RequestID,
+		UserID:              userID,
+		UserEmail:           in.UserEmail,
+		APIKeyID:            apiKeyID,
+		APIKeyName:          in.APIKeyName,
+		GroupID:             cloneInt64Ptr(in.GroupID),
+		GroupName:           in.GroupName,
+		Endpoint:            in.Endpoint,
+		Provider:            "openai",
+		Model:               in.Model,
+		Mode:                "post_upstream",
+		Action:              ContentModerationActionCyberPolicy,
+		CyberPolicyMode:     policy.Mode,
+		CyberPolicySource:   resolvedPolicy.Source,
+		CyberPolicySnapshot: &resolvedPolicy,
+		Flagged:             true,
+		HighestCategory:     "cyber_policy",
+		HighestScore:        1.0,
+		InputExcerpt:        trimRunes(inputSnapshot, maxModerationExcerptRunes),
+		InputSnapshot:       inputSnapshot,
+		InputHash:           normalizeContentModerationHash(in.InputHash),
+		InputLength:         max(0, in.InputLength),
+		MessageCount:        max(0, in.MessageCount),
+		InputTruncated:      in.InputTruncated,
+		Protocol:            trimRunes(strings.TrimSpace(in.Protocol), 64),
+		AuditStage:          trimRunes(strings.TrimSpace(in.AuditStage), 32),
+		TurnNumber:          max(0, in.TurnNumber),
+		Error:               trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
+		CreatedAt:           time.Now(),
 	}
-	// 开关开时 cyber_policy 不参与封号计数：当次不判定（此处跳过），
-	// 历史行由 CountFlaggedByUserSince 的 excludeCyberPolicy 排除。
 	autoBanned := false
-	if enforced && !cfg.CyberPolicyExcludeFromBanCount {
-		autoBanned = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
+	if resolvedPolicy.Enforces() && policy.ViolationCountEnabled && log.UserID != nil && *log.UserID > 0 {
+		count := 1
+		if s.repo != nil && policy.ViolationWindowHours > 0 {
+			since := time.Now().Add(-time.Duration(policy.ViolationWindowHours) * time.Hour)
+			if n, countErr := s.repo.CountCyberPolicyByUserAndGroupSince(ctx, *log.UserID, log.GroupID, since); countErr == nil {
+				count = n + 1
+			} else {
+				slog.Warn("content_moderation.cyber_count_failed", "user_id", *log.UserID, "group_id", contentModerationLogGroupID(log.GroupID), "error", countErr)
+			}
+		}
+		log.ViolationCount = count
+		autoBanned = s.applyAccountAutoBan(ctx, log, count, policy.AutoBanEnabled, policy.BanThreshold)
 	}
 	log.EmailSent = false
 	logPersisted := true
@@ -3139,14 +3209,18 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
 	}
 	emailSent := false
-	if enforced && s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
-		if err := s.sendCyberPolicyEmail(ctx, log); err != nil {
-			slog.Warn("content_moderation.cyber_email_failed", "user_id", in.UserID, "error", err)
-		} else {
-			emailSent = true
+	if resolvedPolicy.Enforces() && s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
+		if policy.EmailOnHit {
+			if err := s.sendCyberPolicyEmail(ctx, log); err != nil {
+				slog.Warn("content_moderation.cyber_email_failed", "user_id", in.UserID, "error", err)
+			} else {
+				emailSent = true
+			}
 		}
 		if autoBanned {
-			if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
+			cyberCfg := *cfg
+			cyberCfg.BanThreshold = policy.BanThreshold
+			if err := s.sendAccountDisabledEmail(ctx, &cyberCfg, log); err != nil {
 				slog.Warn("content_moderation.cyber_ban_email_failed", "user_id", in.UserID, "error", err)
 			} else {
 				emailSent = true

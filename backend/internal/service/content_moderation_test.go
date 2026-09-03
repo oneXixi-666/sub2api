@@ -116,6 +116,28 @@ func (r *contentModerationTestRepo) CountFlaggedByUserSince(ctx context.Context,
 	return count, nil
 }
 
+func (r *contentModerationTestRepo) CountCyberPolicyByUserAndGroupSince(ctx context.Context, userID int64, groupID *int64, since time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := 0
+	for _, log := range r.logs {
+		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action != ContentModerationActionCyberPolicy || log.CyberPolicyMode != ContentModerationCyberModeEnforce {
+			continue
+		}
+		if (log.GroupID == nil) != (groupID == nil) || (log.GroupID != nil && groupID != nil && *log.GroupID != *groupID) {
+			continue
+		}
+		if log.CyberPolicySnapshot != nil && !log.CyberPolicySnapshot.Policy.ViolationCountEnabled {
+			continue
+		}
+		if log.CreatedAt.IsZero() || log.CreatedAt.Before(since) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (r *contentModerationTestRepo) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error) {
 	return &ContentModerationCleanupResult{}, nil
 }
