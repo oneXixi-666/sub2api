@@ -712,12 +712,31 @@
 
           <div v-else-if="activeSettingsTab === 'scope'" class="space-y-5">
             <GroupScopeSelector
-              v-model:all-groups="configForm.all_groups"
-              v-model:selected-ids="configForm.group_ids"
+              v-model:all-groups="configForm.hard_block_all_groups"
+              v-model:selected-ids="configForm.hard_block_group_ids"
               :groups="groups"
-              :title="t('admin.riskControl.groupScope')"
-              :hint="t('admin.riskControl.groupScopeHint')"
+              :title="t('admin.riskControl.hardBlockGroupScope')"
+              :hint="t('admin.riskControl.hardBlockGroupScopeHint')"
+              tone="amber"
               data-test="moderation-group-scope"
+            />
+
+            <GroupScopeSelector
+              v-model:all-groups="configForm.user_observation_all_groups"
+              v-model:selected-ids="configForm.user_observation_group_ids"
+              :groups="groups"
+              :title="t('admin.riskControl.userObservationGroupScope')"
+              :hint="t('admin.riskControl.userObservationGroupScopeHint')"
+              data-test="user-observation-group-scope"
+            />
+
+            <GroupScopeSelector
+              v-model:all-groups="configForm.context_observation_all_groups"
+              v-model:selected-ids="configForm.context_observation_group_ids"
+              :groups="groups"
+              :title="t('admin.riskControl.contextObservationGroupScope')"
+              :hint="t('admin.riskControl.contextObservationGroupScopeHint')"
+              data-test="context-observation-group-scope"
             />
 
 
@@ -1337,6 +1356,12 @@ const configForm = reactive({
   sample_rate: 100,
   all_groups: true,
   group_ids: [] as number[],
+  hard_block_all_groups: true,
+  hard_block_group_ids: [] as number[],
+  user_observation_all_groups: true,
+  user_observation_group_ids: [] as number[],
+  context_observation_all_groups: true,
+  context_observation_group_ids: [] as number[],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -1509,7 +1534,7 @@ const groupFilterOptions = computed<SelectOption[]>(() => [
   })),
 ])
 
-const selectedGroupCount = computed(() => String(configForm.group_ids.length))
+const selectedGroupCount = computed(() => String(configForm.hard_block_group_ids.length))
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
 const modelFilterSummary = computed(() => {
@@ -1643,7 +1668,7 @@ const overviewItems = computed<OverviewItem[]>(() => [
   {
     key: 'scope',
     label: t('admin.riskControl.overview.groupScope'),
-    value: configForm.all_groups ? t('admin.riskControl.allGroups') : selectedGroupCount.value,
+    value: configForm.hard_block_all_groups ? t('admin.riskControl.allGroups') : selectedGroupCount.value,
     meta: modelFilterSummary.value,
     icon: 'users',
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
@@ -1818,6 +1843,18 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
+  configForm.hard_block_all_groups = config.hard_block_all_groups ?? config.all_groups
+  configForm.hard_block_group_ids = Array.isArray(config.hard_block_group_ids)
+    ? [...config.hard_block_group_ids]
+    : [...configForm.group_ids]
+  configForm.user_observation_all_groups = config.user_observation_all_groups ?? true
+  configForm.user_observation_group_ids = Array.isArray(config.user_observation_group_ids)
+    ? [...config.user_observation_group_ids]
+    : []
+  configForm.context_observation_all_groups = config.context_observation_all_groups ?? true
+  configForm.context_observation_group_ids = Array.isArray(config.context_observation_group_ids)
+    ? [...config.context_observation_group_ids]
+    : []
   configForm.record_non_hits = config.record_non_hits
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
@@ -1914,8 +1951,14 @@ async function saveConfig() {
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
       sample_rate: Number(configForm.sample_rate) || 0,
-      all_groups: configForm.all_groups,
-      group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
+      all_groups: configForm.hard_block_all_groups,
+      group_ids: configForm.hard_block_all_groups ? [] : [...configForm.hard_block_group_ids],
+      hard_block_all_groups: configForm.hard_block_all_groups,
+      hard_block_group_ids: configForm.hard_block_all_groups ? [] : [...configForm.hard_block_group_ids],
+      user_observation_all_groups: configForm.user_observation_all_groups,
+      user_observation_group_ids: configForm.user_observation_all_groups ? [] : [...configForm.user_observation_group_ids],
+      context_observation_all_groups: configForm.context_observation_all_groups,
+      context_observation_group_ids: configForm.context_observation_all_groups ? [] : [...configForm.context_observation_group_ids],
       record_non_hits: configForm.record_non_hits,
       clear_api_key: configForm.clear_api_key,
       worker_count: Number(configForm.worker_count) || 4,

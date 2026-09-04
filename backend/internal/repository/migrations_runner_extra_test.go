@@ -32,6 +32,16 @@ func TestMigration236AddsKeywordMatchProvenance(t *testing.T) {
 	require.Contains(t, sql, "action = 'keyword_observe'")
 }
 
+func TestMigration237SynchronizesLegacyObservationKeywords(t *testing.T) {
+	content, err := migrations.FS.ReadFile("237_content_moderation_group_scopes.sql")
+	require.NoError(t, err)
+	sql := string(content)
+	require.Contains(t, sql, "user_observation_keywords")
+	require.Contains(t, sql, "blocked_keywords")
+	require.Contains(t, sql, "content_moderation_config")
+	require.Contains(t, sql, "jsonb_set")
+}
+
 func TestApplyMigrations_DelegatesToApplyMigrationsFS(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

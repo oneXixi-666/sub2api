@@ -499,6 +499,44 @@ func TestContentModerationConfigMigratesLegacyObservationLibrary(t *testing.T) {
 	require.Empty(t, cfg.HardBlockedKeywords)
 }
 
+func TestContentModerationGroupScopesAreIndependent(t *testing.T) {
+	cfg, err := parseContentModerationConfig(`{
+		"all_groups":false,
+		"group_ids":[77],
+		"hard_block_all_groups":false,
+		"hard_block_group_ids":[77],
+		"user_observation_all_groups":true,
+		"user_observation_group_ids":[],
+		"context_observation_all_groups":false,
+		"context_observation_group_ids":[77]
+	}`)
+	require.NoError(t, err)
+
+	group77, group88 := int64(77), int64(88)
+	require.False(t, scopeAllGroups(cfg.HardBlockAllGroups))
+	require.True(t, cfg.includesHardBlockGroup(&group77))
+	require.False(t, cfg.includesHardBlockGroup(&group88))
+	require.True(t, cfg.includesUserObservationGroup(&group88))
+	require.True(t, cfg.includesContextObservationGroup(&group77))
+	require.False(t, cfg.includesContextObservationGroup(&group88))
+}
+
+func TestContentModerationLegacyGroupScopeOnlyLimitsHardBlock(t *testing.T) {
+	cfg, err := parseContentModerationConfig(`{"all_groups":false,"group_ids":[77]}`)
+	require.NoError(t, err)
+
+	group77, group88 := int64(77), int64(88)
+	require.True(t, cfg.includesHardBlockGroup(&group77))
+	require.False(t, cfg.includesHardBlockGroup(&group88))
+	require.True(t, cfg.includesUserObservationGroup(&group88), "legacy configs must keep user observation enabled")
+	require.True(t, cfg.includesContextObservationGroup(&group88), "legacy configs must keep context observation enabled")
+}
+
+func TestTrustedContentModerationSourceIsOutOfBand(t *testing.T) {
+	require.False(t, TrustedContentModerationSource(context.Background()))
+	require.True(t, TrustedContentModerationSource(WithTrustedContentModerationSource(context.Background())))
+}
+
 func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"})
 	require.True(t, hit)
@@ -572,6 +610,40 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, contentModerationKeywordCategory, logs[0].HighestCategory)
 	require.Equal(t, "secret-token", logs[0].MatchedKeyword, "blocked log must record which keyword was hit")
+}
+
+func TestContentModerationCheck_UntrustedEnvelopeStillHardBlocksUserText(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.HardBlockedKeywords = []string{"internal hard-term"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body: []byte(`{"input":[{"type":"message","role":"user","content":"<environment_context>\n` +
+			`internal hard-term\n</environment_context>"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Blocked, "a user-supplied envelope must not downgrade its contents to environment")
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
 }
 
 func TestContentModerationCheck_BroadKeywordIsObservationOnly(t *testing.T) {
@@ -652,6 +724,69 @@ func TestContentModerationCheck_KeywordOnlyStillAuditsResponsesString(t *testing
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
 	require.True(t, upstreamCalled, "ambiguous Responses input must not bypass the moderation API")
+}
+
+func TestContentModerationCheck_ObservationRunsOutsideHardBlockScope(t *testing.T) {
+	upstreamCalled := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case upstreamCalled <- struct{}{}:
+		default:
+		}
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{
+			CategoryScores: map[string]float64{"sexual": 0.95},
+		}}})
+	}))
+	defer server.Close()
+
+	group77, group88 := int64(77), int64(88)
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
+	cfg.HardBlockAllGroups = boolPtr(false)
+	cfg.HardBlockGroupIDs = []int64{group77}
+	cfg.UserObservationAllGroups = boolPtr(true)
+	cfg.ContextObservationAllGroups = boolPtr(true)
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}, repo, hashCache, nil, nil, nil, nil, nil)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID: 1001, GroupID: &group88,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"review this request"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.True(t, decision.Flagged, "API evidence remains visible outside hard-block scope")
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	select {
+	case <-upstreamCalled:
+	default:
+		t.Fatal("out-of-scope hard block group must still reach the observation API")
+	}
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionAllow, logs[0].Action)
+	require.Empty(t, hashCache.snapshotRecorded(), "observe-only API hits must not seed the hard-block hash cache")
+
+	// A selected hard-block group remains enforceable with the same config.
+	decision, err = svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID: 1001, GroupID: &group77,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"review this request"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
 }
 
 func TestContentModerationCheck_ObservationLibrariesRespectSource(t *testing.T) {
@@ -1154,7 +1289,7 @@ func TestExtractContentModerationInput_AnthropicStripsOnlyCompleteSystemReminder
 		]
 	}`)
 
-	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+	input := extractContentModerationInputsWithTrust(ContentModerationProtocolAnthropicMessages, body, true).User
 
 	require.Equal(t, "<system-reminder>Ainder> hid", input.Text)
 	require.Empty(t, input.Images)

@@ -153,27 +153,35 @@ type ContentModerationConfig struct {
 	BaseURL string `json:"base_url"`
 	Model   string `json:"model"`
 	// ProxyID 指定审计请求使用的代理服务器（IP管理-代理服务器），nil 表示直连。
-	ProxyID              *int64             `json:"proxy_id,omitempty"`
-	APIKey               string             `json:"api_key,omitempty"`
-	APIKeys              []string           `json:"api_keys,omitempty"`
-	TimeoutMS            int                `json:"timeout_ms"`
-	SampleRate           int                `json:"sample_rate"`
-	AllGroups            bool               `json:"all_groups"`
-	GroupIDs             []int64            `json:"group_ids"`
-	RecordNonHits        bool               `json:"record_non_hits"`
-	Thresholds           map[string]float64 `json:"thresholds"`
-	WorkerCount          int                `json:"worker_count"`
-	QueueSize            int                `json:"queue_size"`
-	BlockStatus          int                `json:"block_status"`
-	BlockMessage         string             `json:"block_message"`
-	EmailOnHit           bool               `json:"email_on_hit"`
-	AutoBanEnabled       bool               `json:"auto_ban_enabled"`
-	BanThreshold         int                `json:"ban_threshold"`
-	ViolationWindowHours int                `json:"violation_window_hours"`
-	RetryCount           int                `json:"retry_count"`
-	HitRetentionDays     int                `json:"hit_retention_days"`
-	NonHitRetentionDays  int                `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  bool               `json:"pre_hash_check_enabled"`
+	ProxyID    *int64   `json:"proxy_id,omitempty"`
+	APIKey     string   `json:"api_key,omitempty"`
+	APIKeys    []string `json:"api_keys,omitempty"`
+	TimeoutMS  int      `json:"timeout_ms"`
+	SampleRate int      `json:"sample_rate"`
+	// The legacy all_groups/group_ids fields are retained as aliases for the
+	// hard-block scope. Each moderation activity now has an independent scope.
+	AllGroups                   bool               `json:"all_groups"`
+	GroupIDs                    []int64            `json:"group_ids"`
+	HardBlockAllGroups          *bool              `json:"hard_block_all_groups,omitempty"`
+	HardBlockGroupIDs           []int64            `json:"hard_block_group_ids"`
+	UserObservationAllGroups    *bool              `json:"user_observation_all_groups,omitempty"`
+	UserObservationGroupIDs     []int64            `json:"user_observation_group_ids"`
+	ContextObservationAllGroups *bool              `json:"context_observation_all_groups,omitempty"`
+	ContextObservationGroupIDs  []int64            `json:"context_observation_group_ids"`
+	RecordNonHits               bool               `json:"record_non_hits"`
+	Thresholds                  map[string]float64 `json:"thresholds"`
+	WorkerCount                 int                `json:"worker_count"`
+	QueueSize                   int                `json:"queue_size"`
+	BlockStatus                 int                `json:"block_status"`
+	BlockMessage                string             `json:"block_message"`
+	EmailOnHit                  bool               `json:"email_on_hit"`
+	AutoBanEnabled              bool               `json:"auto_ban_enabled"`
+	BanThreshold                int                `json:"ban_threshold"`
+	ViolationWindowHours        int                `json:"violation_window_hours"`
+	RetryCount                  int                `json:"retry_count"`
+	HitRetentionDays            int                `json:"hit_retention_days"`
+	NonHitRetentionDays         int                `json:"non_hit_retention_days"`
+	PreHashCheckEnabled         bool               `json:"pre_hash_check_enabled"`
 	// BlockedKeywords is retained as a compatibility alias for the user
 	// observation library. New clients should use the two source-specific keys.
 	BlockedKeywords            []string                     `json:"blocked_keywords,omitempty"`
@@ -209,6 +217,12 @@ type ContentModerationConfigView struct {
 	APIKeyStatuses                 []ContentModerationAPIKeyStatus `json:"api_key_statuses"`
 	TimeoutMS                      int                             `json:"timeout_ms"`
 	SampleRate                     int                             `json:"sample_rate"`
+	HardBlockAllGroups             bool                            `json:"hard_block_all_groups"`
+	HardBlockGroupIDs              []int64                         `json:"hard_block_group_ids"`
+	UserObservationAllGroups       bool                            `json:"user_observation_all_groups"`
+	UserObservationGroupIDs        []int64                         `json:"user_observation_group_ids"`
+	ContextObservationAllGroups    bool                            `json:"context_observation_all_groups"`
+	ContextObservationGroupIDs     []int64                         `json:"context_observation_group_ids"`
 	AllGroups                      bool                            `json:"all_groups"`
 	GroupIDs                       []int64                         `json:"group_ids"`
 	RecordNonHits                  bool                            `json:"record_non_hits"`
@@ -310,6 +324,12 @@ type UpdateContentModerationConfigInput struct {
 	SampleRate                     *int                          `json:"sample_rate"`
 	AllGroups                      *bool                         `json:"all_groups"`
 	GroupIDs                       *[]int64                      `json:"group_ids"`
+	HardBlockAllGroups             *bool                         `json:"hard_block_all_groups"`
+	HardBlockGroupIDs              *[]int64                      `json:"hard_block_group_ids"`
+	UserObservationAllGroups       *bool                         `json:"user_observation_all_groups"`
+	UserObservationGroupIDs        *[]int64                      `json:"user_observation_group_ids"`
+	ContextObservationAllGroups    *bool                         `json:"context_observation_all_groups"`
+	ContextObservationGroupIDs     *[]int64                      `json:"context_observation_group_ids"`
 	RecordNonHits                  *bool                         `json:"record_non_hits"`
 	Thresholds                     *map[string]float64           `json:"thresholds"`
 	WorkerCount                    *int                          `json:"worker_count"`
@@ -355,6 +375,9 @@ type ContentModerationCheckInput struct {
 	Model      string
 	Protocol   string
 	Body       []byte
+	// TrustedInternalSource is set out-of-band by server-owned callers only.
+	// Request text and envelope markers must never be allowed to set it.
+	TrustedInternalSource bool
 }
 
 type ContentModerationInput struct {
@@ -761,6 +784,31 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.GroupIDs != nil {
 		cfg.GroupIDs = normalizeInt64IDs(*input.GroupIDs)
 	}
+	if input.HardBlockAllGroups != nil {
+		cfg.HardBlockAllGroups = boolPtr(*input.HardBlockAllGroups)
+	}
+	if input.HardBlockGroupIDs != nil {
+		cfg.HardBlockGroupIDs = normalizeInt64IDs(*input.HardBlockGroupIDs)
+	}
+	if input.UserObservationAllGroups != nil {
+		cfg.UserObservationAllGroups = boolPtr(*input.UserObservationAllGroups)
+	}
+	if input.UserObservationGroupIDs != nil {
+		cfg.UserObservationGroupIDs = normalizeInt64IDs(*input.UserObservationGroupIDs)
+	}
+	if input.ContextObservationAllGroups != nil {
+		cfg.ContextObservationAllGroups = boolPtr(*input.ContextObservationAllGroups)
+	}
+	if input.ContextObservationGroupIDs != nil {
+		cfg.ContextObservationGroupIDs = normalizeInt64IDs(*input.ContextObservationGroupIDs)
+	}
+	if input.HardBlockAllGroups == nil && input.HardBlockGroupIDs == nil &&
+		(input.AllGroups != nil || input.GroupIDs != nil) {
+		// Legacy clients only know all_groups/group_ids; interpret those fields
+		// as the hard-block scope while leaving observations independently scoped.
+		cfg.HardBlockAllGroups = boolPtr(cfg.AllGroups)
+		cfg.HardBlockGroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	}
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
@@ -929,7 +977,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	cfg := runtimeSnapshot.config
-	inGroupScope := cfg.includesGroup(input.GroupID)
 	inModelScope := cfg.includesModel(input.Model)
 	slog.Info("content_moderation.config_loaded",
 		"user_id", input.UserID,
@@ -944,7 +991,12 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"mode", cfg.Mode,
 		"all_groups", cfg.AllGroups,
 		"configured_group_ids", cfg.GroupIDs,
-		"in_group_scope", inGroupScope,
+		"hard_block_all_groups", scopeAllGroups(cfg.HardBlockAllGroups),
+		"hard_block_group_ids", cfg.HardBlockGroupIDs,
+		"user_observation_all_groups", scopeAllGroups(cfg.UserObservationAllGroups),
+		"user_observation_group_ids", cfg.UserObservationGroupIDs,
+		"context_observation_all_groups", scopeAllGroups(cfg.ContextObservationAllGroups),
+		"context_observation_group_ids", cfg.ContextObservationGroupIDs,
 		"model_filter_type", cfg.ModelFilter.Type,
 		"configured_models", cfg.ModelFilter.Models,
 		"in_model_scope", inModelScope,
@@ -973,18 +1025,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return allow, nil
 	}
-	if !inGroupScope {
-		slog.Info("content_moderation.skip_group_out_of_scope",
-			"user_id", input.UserID,
-			"api_key_id", input.APIKeyID,
-			"group_id", contentModerationLogGroupID(input.GroupID),
-			"group_name", input.GroupName,
-			"endpoint", input.Endpoint,
-			"protocol", input.Protocol,
-			"all_groups", cfg.AllGroups,
-			"configured_group_ids", cfg.GroupIDs)
-		return allow, nil
-	}
 	if !inModelScope {
 		slog.Info("content_moderation.skip_model_out_of_scope",
 			"user_id", input.UserID,
@@ -998,8 +1038,16 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"configured_models", cfg.ModelFilter.Models)
 		return allow, nil
 	}
-	extracted := extractContentModerationInputs(input.Protocol, input.Body)
-	if match, segment, hit := runtimeSnapshot.matchObservationSegments(extracted.Segments); hit {
+	hardBlockInScope := cfg.includesHardBlockGroup(input.GroupID)
+	userObservationInScope := cfg.includesUserObservationGroup(input.GroupID)
+	contextObservationInScope := cfg.includesContextObservationGroup(input.GroupID)
+	slog.Info("content_moderation.group_scopes_resolved",
+		"group_id", contentModerationLogGroupID(input.GroupID),
+		"hard_block_in_scope", hardBlockInScope,
+		"user_observation_in_scope", userObservationInScope,
+		"context_observation_in_scope", contextObservationInScope)
+	extracted := extractContentModerationInputsWithTrust(input.Protocol, input.Body, input.TrustedInternalSource)
+	if match, segment, hit := runtimeSnapshot.matchObservationSegments(extracted.Segments, userObservationInScope, contextObservationInScope); hit {
 		observation := ContentModerationInput{Text: segment.Text}
 		observation.Normalize()
 		if !observation.IsEmpty() {
@@ -1043,7 +1091,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	hashText := content.Hash()
 	enforceableHash := enforceable.Hash()
 	if cfg.Mode == ContentModerationModePreBlock {
-		if !enforceable.IsEmpty() && cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
+		if hardBlockInScope && !enforceable.IsEmpty() && cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
 			if match, segment, hit := runtimeSnapshot.matchEnforceableKeyword(extracted.Segments); hit {
 				s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 				slog.Info("content_moderation.keyword_block",
@@ -1083,7 +1131,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			return allow, nil
 		}
 	}
-	if !enforceable.IsEmpty() && cfg.PreHashCheckEnabled && s.hashCache != nil {
+	if hardBlockInScope && !enforceable.IsEmpty() && cfg.PreHashCheckEnabled && s.hashCache != nil {
 		matched, err := s.hashCache.HasFlaggedInputHash(ctx, enforceableHash)
 		if err != nil {
 			slog.Warn("content_moderation.hash_check_failed", "user_id", input.UserID, "endpoint", input.Endpoint, "error", err)
@@ -1116,6 +1164,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				Action:     ContentModerationActionHashBlock,
 			}, nil
 		}
+	}
+	if !userObservationInScope {
+		slog.Info("content_moderation.skip_user_observation_out_of_scope",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID))
+		return allow, nil
 	}
 	if !cfg.shouldSample(hashText) {
 		if cfg.Mode == ContentModerationModePreBlock {
@@ -1154,7 +1209,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 
-	return s.checkSync(ctx, input, cfg, content, hashText, nil, true), nil
+	return s.checkSync(ctx, input, cfg, content, hashText, nil, hardBlockInScope), nil
 }
 
 func (s *ContentModerationService) checkSync(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, queueDelay *int, allowBlock bool) *ContentModerationDecision {
@@ -1221,7 +1276,9 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	if flagged || cfg.RecordNonHits {
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, "")
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
-			s.enqueueRecord(input, cfg, log, hashText, flagged, flagged)
+			// An out-of-hard-block group may still be API-flagged for observation;
+			// persist that evidence without hash insertion or account side effects.
+			s.enqueueRecord(input, cfg, log, hashText, flagged && allowBlock, flagged && allowBlock)
 		} else {
 			s.persistContentModerationLog(ctx, cfg, log, hashText, flagged, flagged)
 		}
@@ -1373,7 +1430,7 @@ func (s *ContentModerationService) worker(id int) {
 			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
 				return
 			}
-			if !cfg.includesGroup(task.input.GroupID) {
+			if !cfg.includesUserObservationGroup(task.input.GroupID) {
 				return
 			}
 			if !cfg.includesModel(task.input.Model) {
@@ -1620,12 +1677,45 @@ func parseContentModerationConfig(raw string) (*ContentModerationConfig, error) 
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &fields); err == nil {
+		applyContentModerationGroupScopeCompatibility(cfg, fields)
 		if _, ok := fields["cyber_policy_default_policy"]; !ok {
 			applyLegacyCyberPolicyScope(cfg)
 		}
 	}
 	cfg.normalize()
 	return cfg, nil
+}
+
+func applyContentModerationGroupScopeCompatibility(cfg *ContentModerationConfig, fields map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+	_, hardScopePresent := fields["hard_block_all_groups"]
+	if _, ok := fields["hard_block_group_ids"]; ok {
+		hardScopePresent = true
+	}
+	if !hardScopePresent {
+		cfg.HardBlockAllGroups = boolPtr(cfg.AllGroups)
+		cfg.HardBlockGroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	}
+	_, userScopePresent := fields["user_observation_all_groups"]
+	if _, ok := fields["user_observation_group_ids"]; ok {
+		userScopePresent = true
+	}
+	if !userScopePresent {
+		// Legacy all_groups/group_ids accidentally disabled all moderation for
+		// other groups. New defaults observe user input across every group.
+		cfg.UserObservationAllGroups = boolPtr(true)
+		cfg.UserObservationGroupIDs = []int64{}
+	}
+	_, contextScopePresent := fields["context_observation_all_groups"]
+	if _, ok := fields["context_observation_group_ids"]; ok {
+		contextScopePresent = true
+	}
+	if !contextScopePresent {
+		cfg.ContextObservationAllGroups = boolPtr(true)
+		cfg.ContextObservationGroupIDs = []int64{}
+	}
 }
 
 func (s *ContentModerationService) loadRuntimeSnapshot(ctx context.Context) (*contentModerationRuntimeSnapshot, error) {
@@ -1786,21 +1876,31 @@ func (s *contentModerationRuntimeSnapshot) matchEnforceableKeyword(segments []Mo
 	})
 }
 
-func (s *contentModerationRuntimeSnapshot) matchObservationSegments(segments []ModerationSegment) (KeywordMatch, ModerationSegment, bool) {
+func (s *contentModerationRuntimeSnapshot) matchObservationSegments(segments []ModerationSegment, userObservationInScope, contextObservationInScope bool) (KeywordMatch, ModerationSegment, bool) {
 	if s == nil || s.config == nil {
 		return KeywordMatch{}, ModerationSegment{}, false
 	}
-	userMatch, userSegment, userHit := strongestSegmentKeywordMatch(segments, s.userObservationKeywordMatcher, func(segment ModerationSegment) bool {
-		return segment.Enforceable || segment.Role == moderationRoleAmbiguous
-	})
-	contextMatch, contextSegment, contextHit := strongestSegmentKeywordMatch(segments, s.contextObservationKeywordMatcher, func(segment ModerationSegment) bool {
-		switch segment.Role {
-		case moderationRoleAssistant, moderationRoleTool, moderationRoleEnvironment:
-			return true
-		default:
-			return false
-		}
-	})
+	var userMatch KeywordMatch
+	var userSegment ModerationSegment
+	var userHit bool
+	if userObservationInScope {
+		userMatch, userSegment, userHit = strongestSegmentKeywordMatch(segments, s.userObservationKeywordMatcher, func(segment ModerationSegment) bool {
+			return segment.Enforceable || segment.Role == moderationRoleAmbiguous
+		})
+	}
+	var contextMatch KeywordMatch
+	var contextSegment ModerationSegment
+	var contextHit bool
+	if contextObservationInScope {
+		contextMatch, contextSegment, contextHit = strongestSegmentKeywordMatch(segments, s.contextObservationKeywordMatcher, func(segment ModerationSegment) bool {
+			switch segment.Role {
+			case moderationRoleAssistant, moderationRoleTool, moderationRoleEnvironment:
+				return true
+			default:
+				return false
+			}
+		})
+	}
 	if !contextHit || (userHit && keywordMatchStronger(userMatch, contextMatch)) {
 		return userMatch, userSegment, userHit
 	}
@@ -2341,33 +2441,39 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	cfg := &ContentModerationConfig{
-		Enabled:                    false,
-		Mode:                       ContentModerationModePreBlock,
-		BaseURL:                    defaultContentModerationBaseURL,
-		Model:                      defaultContentModerationModel,
-		TimeoutMS:                  defaultContentModerationTimeoutMS,
-		SampleRate:                 100,
-		AllGroups:                  true,
-		GroupIDs:                   []int64{},
-		RecordNonHits:              false,
-		Thresholds:                 ContentModerationDefaultThresholds(),
-		WorkerCount:                defaultContentModerationWorkerCount,
-		QueueSize:                  defaultContentModerationQueueSize,
-		BlockStatus:                defaultContentModerationBlockHTTPStatus,
-		BlockMessage:               defaultContentModerationBlockMessage,
-		EmailOnHit:                 true,
-		AutoBanEnabled:             true,
-		BanThreshold:               defaultContentModerationBanThreshold,
-		ViolationWindowHours:       defaultContentModerationViolationWindowHours,
-		RetryCount:                 defaultContentModerationRetryCount,
-		HitRetentionDays:           defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:        defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:        false,
-		BlockedKeywords:            []string{},
-		UserObservationKeywords:    []string{},
-		ContextObservationKeywords: []string{},
-		HardBlockedKeywords:        []string{},
-		KeywordBlockingMode:        ContentModerationKeywordModeKeywordAndAPI,
+		Enabled:                     false,
+		Mode:                        ContentModerationModePreBlock,
+		BaseURL:                     defaultContentModerationBaseURL,
+		Model:                       defaultContentModerationModel,
+		TimeoutMS:                   defaultContentModerationTimeoutMS,
+		SampleRate:                  100,
+		AllGroups:                   true,
+		GroupIDs:                    []int64{},
+		HardBlockAllGroups:          boolPtr(true),
+		HardBlockGroupIDs:           []int64{},
+		UserObservationAllGroups:    boolPtr(true),
+		UserObservationGroupIDs:     []int64{},
+		ContextObservationAllGroups: boolPtr(true),
+		ContextObservationGroupIDs:  []int64{},
+		RecordNonHits:               false,
+		Thresholds:                  ContentModerationDefaultThresholds(),
+		WorkerCount:                 defaultContentModerationWorkerCount,
+		QueueSize:                   defaultContentModerationQueueSize,
+		BlockStatus:                 defaultContentModerationBlockHTTPStatus,
+		BlockMessage:                defaultContentModerationBlockMessage,
+		EmailOnHit:                  true,
+		AutoBanEnabled:              true,
+		BanThreshold:                defaultContentModerationBanThreshold,
+		ViolationWindowHours:        defaultContentModerationViolationWindowHours,
+		RetryCount:                  defaultContentModerationRetryCount,
+		HitRetentionDays:            defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:         defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:         false,
+		BlockedKeywords:             []string{},
+		UserObservationKeywords:     []string{},
+		ContextObservationKeywords:  []string{},
+		HardBlockedKeywords:         []string{},
+		KeywordBlockingMode:         ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2389,6 +2495,12 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.ProxyID = cloneInt64Ptr(cfg.ProxyID)
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	clone.HardBlockAllGroups = cloneBoolPtr(cfg.HardBlockAllGroups)
+	clone.HardBlockGroupIDs = append([]int64(nil), cfg.HardBlockGroupIDs...)
+	clone.UserObservationAllGroups = cloneBoolPtr(cfg.UserObservationAllGroups)
+	clone.UserObservationGroupIDs = append([]int64(nil), cfg.UserObservationGroupIDs...)
+	clone.ContextObservationAllGroups = cloneBoolPtr(cfg.ContextObservationAllGroups)
+	clone.ContextObservationGroupIDs = append([]int64(nil), cfg.ContextObservationGroupIDs...)
 	clone.CyberPolicyEnforceGroupIDs = append([]int64(nil), cfg.CyberPolicyEnforceGroupIDs...)
 	clone.CyberPolicyDefaultPolicy = cloneCyberPolicySettings(cfg.CyberPolicyDefaultPolicy)
 	clone.CyberPolicyGroupPolicies = cloneCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
@@ -2481,6 +2593,21 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	if cfg.HardBlockAllGroups == nil {
+		cfg.HardBlockAllGroups = boolPtr(cfg.AllGroups)
+	}
+	cfg.HardBlockGroupIDs = normalizeInt64IDs(cfg.HardBlockGroupIDs)
+	if cfg.UserObservationAllGroups == nil {
+		cfg.UserObservationAllGroups = boolPtr(true)
+	}
+	cfg.UserObservationGroupIDs = normalizeInt64IDs(cfg.UserObservationGroupIDs)
+	if cfg.ContextObservationAllGroups == nil {
+		cfg.ContextObservationAllGroups = boolPtr(true)
+	}
+	cfg.ContextObservationGroupIDs = normalizeInt64IDs(cfg.ContextObservationGroupIDs)
+	// Keep legacy fields as a read-compatible view of the hard-block scope.
+	cfg.AllGroups = scopeAllGroups(cfg.HardBlockAllGroups)
+	cfg.GroupIDs = append([]int64(nil), cfg.HardBlockGroupIDs...)
 	cfg.CyberPolicyEnforceGroupIDs = normalizeInt64IDs(cfg.CyberPolicyEnforceGroupIDs)
 	cfg.CyberPolicyDefaultPolicy.normalize()
 	cfg.CyberPolicyGroupPolicies = normalizeCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
@@ -2500,18 +2627,47 @@ func (cfg *ContentModerationConfig) normalize() {
 }
 
 func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
-	if cfg.AllGroups {
+	return cfg.includesHardBlockGroup(groupID)
+}
+
+func scopeAllGroups(allGroups *bool) bool {
+	return allGroups == nil || *allGroups
+}
+
+func includesGroupByScope(allGroups *bool, groupIDs []int64, groupID *int64) bool {
+	if scopeAllGroups(allGroups) {
 		return true
 	}
 	if groupID == nil {
 		return false
 	}
-	for _, id := range cfg.GroupIDs {
+	for _, id := range groupIDs {
 		if id == *groupID {
 			return true
 		}
 	}
 	return false
+}
+
+func (cfg *ContentModerationConfig) includesHardBlockGroup(groupID *int64) bool {
+	if cfg == nil {
+		return false
+	}
+	return includesGroupByScope(cfg.HardBlockAllGroups, cfg.HardBlockGroupIDs, groupID)
+}
+
+func (cfg *ContentModerationConfig) includesUserObservationGroup(groupID *int64) bool {
+	if cfg == nil {
+		return false
+	}
+	return includesGroupByScope(cfg.UserObservationAllGroups, cfg.UserObservationGroupIDs, groupID)
+}
+
+func (cfg *ContentModerationConfig) includesContextObservationGroup(groupID *int64) bool {
+	if cfg == nil {
+		return false
+	}
+	return includesGroupByScope(cfg.ContextObservationAllGroups, cfg.ContextObservationGroupIDs, groupID)
 }
 
 func (cfg *ContentModerationConfig) enforcesCyberPolicyForGroup(groupID *int64) bool {
@@ -2714,6 +2870,12 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		SampleRate:                     cfg.SampleRate,
 		AllGroups:                      cfg.AllGroups,
 		GroupIDs:                       append([]int64(nil), cfg.GroupIDs...),
+		HardBlockAllGroups:             scopeAllGroups(cfg.HardBlockAllGroups),
+		HardBlockGroupIDs:              append([]int64(nil), cfg.HardBlockGroupIDs...),
+		UserObservationAllGroups:       scopeAllGroups(cfg.UserObservationAllGroups),
+		UserObservationGroupIDs:        append([]int64(nil), cfg.UserObservationGroupIDs...),
+		ContextObservationAllGroups:    scopeAllGroups(cfg.ContextObservationAllGroups),
+		ContextObservationGroupIDs:     append([]int64(nil), cfg.ContextObservationGroupIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
 		Thresholds:                     cloneFloatMap(cfg.Thresholds),
 		WorkerCount:                    cfg.WorkerCount,
@@ -3322,6 +3484,14 @@ func cloneFloatMap(in map[string]float64) map[string]float64 {
 }
 
 func cloneInt64Ptr(in *int64) *int64 {
+	if in == nil {
+		return nil
+	}
+	v := *in
+	return &v
+}
+
+func cloneBoolPtr(in *bool) *bool {
 	if in == nil {
 		return nil
 	}

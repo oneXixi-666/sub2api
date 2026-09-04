@@ -48,6 +48,12 @@ export interface ContentModerationConfig {
   sample_rate: number
   all_groups: boolean
   group_ids: number[]
+  hard_block_all_groups: boolean
+  hard_block_group_ids: number[]
+  user_observation_all_groups: boolean
+  user_observation_group_ids: number[]
+  context_observation_all_groups: boolean
+  context_observation_group_ids: number[]
   record_non_hits: boolean
   thresholds: Record<string, number>
   worker_count: number
@@ -135,6 +141,12 @@ export interface UpdateContentModerationConfig {
   sample_rate?: number
   all_groups?: boolean
   group_ids?: number[]
+  hard_block_all_groups?: boolean
+  hard_block_group_ids?: number[]
+  user_observation_all_groups?: boolean
+  user_observation_group_ids?: number[]
+  context_observation_all_groups?: boolean
+  context_observation_group_ids?: number[]
   record_non_hits?: boolean
   thresholds?: Record<string, number>
   worker_count?: number

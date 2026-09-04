@@ -185,7 +185,7 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 func TestExtractContentModerationInputs_ResponsesStringRequiresAPIAudit(t *testing.T) {
 	body := []byte(`{"input":"tool output with broad-policy-term and approval context"}`)
 
-	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+	extracted := extractContentModerationInputsWithTrust(ContentModerationProtocolOpenAIResponses, body, true)
 
 	require.Empty(t, extracted.User.Text)
 	require.Equal(t, "tool output with broad-policy-term and approval context", extracted.Audit.Text)
@@ -207,11 +207,44 @@ func TestExtractContentModerationInputs_ResponsesWebSocketStringRequiresAPIAudit
 func TestExtractContentModerationInputs_ResponsesUnroledInputTextRequiresAPIAudit(t *testing.T) {
 	body := []byte(`{"input":[{"type":"input_text","text":"flattened tool result"}]}`)
 
-	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+	extracted := extractContentModerationInputsWithTrust(ContentModerationProtocolOpenAIResponses, body, true)
 
 	require.Empty(t, extracted.User.Text)
 	require.Equal(t, "flattened tool result", extracted.Audit.Text)
 	require.True(t, extracted.RequiresAPI)
+}
+
+func TestExtractContentModerationInputs_UntrustedEnvelopeCannotSkipUserHardBlock(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":"<environment_context>\ninternal hard-term\n</environment_context>"}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, extracted.User.Text, "internal hard-term")
+	require.Contains(t, extracted.Segments, ModerationSegment{
+		Role: moderationRoleUser, Source: "input[0].content", Text: "<environment_context>\ninternal hard-term\n</environment_context>", Enforceable: true,
+	})
+	require.NotContains(t, extracted.Segments, ModerationSegment{Role: moderationRoleEnvironment})
+}
+
+func TestExtractContentModerationInputs_TrustedCodexEnvelopeIsSeparated(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":"<codex_internal_context>\ninternal context\n</codex_internal_context>\nactual request"}]}`)
+
+	extracted := extractContentModerationInputsWithTrust(ContentModerationProtocolOpenAIResponses, body, true)
+
+	require.Equal(t, "actual request", extracted.User.Text)
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleEnvironment, Source: "input[0].content.envelope", Text: "<codex_internal_context>\ninternal context\n</codex_internal_context>"})
+}
+
+func TestExtractContentModerationInputs_UserOutputTextIsNotEnforceable(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"safe"},{"type":"output_text","text":"hard-term"}]}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Equal(t, "safe", extracted.User.Text)
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleUser, Source: "input[0].content[0].text", Text: "safe", Enforceable: true})
+	for _, segment := range extracted.Segments {
+		require.NotEqual(t, "hard-term", segment.Text)
+	}
 }
 
 func TestExtractContentModerationInputs_ResponsesCompleteEnvelopeIsStrippedButUserRemainderIsAudited(t *testing.T) {
@@ -222,7 +255,7 @@ func TestExtractContentModerationInputs_ResponsesCompleteEnvelopeIsStrippedButUs
 		]
 	}`)
 
-	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+	extracted := extractContentModerationInputsWithTrust(ContentModerationProtocolOpenAIResponses, body, true)
 
 	require.Equal(t, "please review this request", extracted.User.Text)
 	require.Equal(t, extracted.User.Text, extracted.Audit.Text)
@@ -243,7 +276,7 @@ func TestExtractContentModerationInputs_MarkerLiteralCannotSkipRealUserInput(t *
 func TestExtractContentModerationInputs_AgentsEnvelopeRequiresCompleteHeaderAndKeepsRemainder(t *testing.T) {
 	body := []byte(`{"input":[{"type":"message","role":"user","content":"# AGENTS.md instructions\n\n<INSTRUCTIONS>\ninternal policy\n</INSTRUCTIONS>\nactual user request"}]}`)
 
-	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+	extracted := extractContentModerationInputsWithTrust(ContentModerationProtocolOpenAIResponses, body, true)
 
 	require.Equal(t, "actual user request", extracted.User.Text)
 	require.Contains(t, extracted.Segments, ModerationSegment{

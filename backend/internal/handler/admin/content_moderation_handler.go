@@ -25,26 +25,32 @@ type contentModerationConfigRequest struct {
 	BaseURL *string `json:"base_url"`
 	Model   *string `json:"model"`
 	// 审计请求使用的代理服务器：null 不修改；0 清除（直连）；>0 指定代理。
-	ProxyID              *int64              `json:"proxy_id"`
-	APIKey               *string             `json:"api_key"`
-	APIKeys              *[]string           `json:"api_keys"`
-	APIKeysMode          string              `json:"api_keys_mode"`
-	DeleteAPIKeyHashes   *[]string           `json:"delete_api_key_hashes"`
-	ClearAPIKey          bool                `json:"clear_api_key"`
-	TimeoutMS            *int                `json:"timeout_ms"`
-	SampleRate           *int                `json:"sample_rate"`
-	AllGroups            *bool               `json:"all_groups"`
-	GroupIDs             *[]int64            `json:"group_ids"`
-	RecordNonHits        *bool               `json:"record_non_hits"`
-	Thresholds           *map[string]float64 `json:"thresholds"`
-	WorkerCount          *int                `json:"worker_count"`
-	QueueSize            *int                `json:"queue_size"`
-	BlockStatus          *int                `json:"block_status"`
-	BlockMessage         *string             `json:"block_message"`
-	EmailOnHit           *bool               `json:"email_on_hit"`
-	AutoBanEnabled       *bool               `json:"auto_ban_enabled"`
-	BanThreshold         *int                `json:"ban_threshold"`
-	ViolationWindowHours *int                `json:"violation_window_hours"`
+	ProxyID                     *int64              `json:"proxy_id"`
+	APIKey                      *string             `json:"api_key"`
+	APIKeys                     *[]string           `json:"api_keys"`
+	APIKeysMode                 string              `json:"api_keys_mode"`
+	DeleteAPIKeyHashes          *[]string           `json:"delete_api_key_hashes"`
+	ClearAPIKey                 bool                `json:"clear_api_key"`
+	TimeoutMS                   *int                `json:"timeout_ms"`
+	SampleRate                  *int                `json:"sample_rate"`
+	AllGroups                   *bool               `json:"all_groups"`
+	GroupIDs                    *[]int64            `json:"group_ids"`
+	HardBlockAllGroups          *bool               `json:"hard_block_all_groups"`
+	HardBlockGroupIDs           *[]int64            `json:"hard_block_group_ids"`
+	UserObservationAllGroups    *bool               `json:"user_observation_all_groups"`
+	UserObservationGroupIDs     *[]int64            `json:"user_observation_group_ids"`
+	ContextObservationAllGroups *bool               `json:"context_observation_all_groups"`
+	ContextObservationGroupIDs  *[]int64            `json:"context_observation_group_ids"`
+	RecordNonHits               *bool               `json:"record_non_hits"`
+	Thresholds                  *map[string]float64 `json:"thresholds"`
+	WorkerCount                 *int                `json:"worker_count"`
+	QueueSize                   *int                `json:"queue_size"`
+	BlockStatus                 *int                `json:"block_status"`
+	BlockMessage                *string             `json:"block_message"`
+	EmailOnHit                  *bool               `json:"email_on_hit"`
+	AutoBanEnabled              *bool               `json:"auto_ban_enabled"`
+	BanThreshold                *int                `json:"ban_threshold"`
+	ViolationWindowHours        *int                `json:"violation_window_hours"`
 	// cyber_policy enforcement uses an independent group scope. Requests from
 	// other groups are still persisted as collection-only audit evidence.
 	CyberPolicyEnforceAllGroups *bool    `json:"cyber_policy_enforce_all_groups"`
@@ -108,6 +114,12 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		SampleRate:                     req.SampleRate,
 		AllGroups:                      req.AllGroups,
 		GroupIDs:                       req.GroupIDs,
+		HardBlockAllGroups:             req.HardBlockAllGroups,
+		HardBlockGroupIDs:              req.HardBlockGroupIDs,
+		UserObservationAllGroups:       req.UserObservationAllGroups,
+		UserObservationGroupIDs:        req.UserObservationGroupIDs,
+		ContextObservationAllGroups:    req.ContextObservationAllGroups,
+		ContextObservationGroupIDs:     req.ContextObservationGroupIDs,
 		RecordNonHits:                  req.RecordNonHits,
 		Thresholds:                     req.Thresholds,
 		WorkerCount:                    req.WorkerCount,
