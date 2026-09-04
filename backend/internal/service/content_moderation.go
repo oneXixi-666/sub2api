@@ -375,9 +375,6 @@ type ContentModerationCheckInput struct {
 	Model      string
 	Protocol   string
 	Body       []byte
-	// TrustedInternalSource is set out-of-band by server-owned callers only.
-	// Request text and envelope markers must never be allowed to set it.
-	TrustedInternalSource bool
 }
 
 type ContentModerationInput struct {
@@ -1046,7 +1043,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"hard_block_in_scope", hardBlockInScope,
 		"user_observation_in_scope", userObservationInScope,
 		"context_observation_in_scope", contextObservationInScope)
-	extracted := extractContentModerationInputsWithTrust(input.Protocol, input.Body, input.TrustedInternalSource)
+	// Trust is deliberately read from the request context instead of a public
+	// input field. Only server-owned wrappers may attach this marker; request
+	// JSON, headers, and model/user-agent values are never sufficient.
+	extracted := extractContentModerationInputsWithTrust(input.Protocol, input.Body, TrustedContentModerationSource(ctx))
 	if match, segment, hit := runtimeSnapshot.matchObservationSegments(extracted.Segments, userObservationInScope, contextObservationInScope); hit {
 		observation := ContentModerationInput{Text: segment.Text}
 		observation.Normalize()
@@ -1080,6 +1080,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	content.Normalize()
 	enforceable := extracted.User
 	enforceable.Normalize()
+	hasEnforceableUser := hasEnforceableUserSegment(extracted.Segments)
 	slog.Info("content_moderation.input_extracted",
 		"user_id", input.UserID,
 		"api_key_id", input.APIKeyID,
@@ -1091,7 +1092,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	hashText := content.Hash()
 	enforceableHash := enforceable.Hash()
 	if cfg.Mode == ContentModerationModePreBlock {
-		if hardBlockInScope && !enforceable.IsEmpty() && cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
+		if hardBlockInScope && hasEnforceableUser && cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
 			if match, segment, hit := runtimeSnapshot.matchEnforceableKeyword(extracted.Segments); hit {
 				s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 				slog.Info("content_moderation.keyword_block",
@@ -1131,7 +1132,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			return allow, nil
 		}
 	}
-	if hardBlockInScope && !enforceable.IsEmpty() && cfg.PreHashCheckEnabled && s.hashCache != nil {
+	if hardBlockInScope && hasEnforceableUser && cfg.PreHashCheckEnabled && s.hashCache != nil {
 		matched, err := s.hashCache.HasFlaggedInputHash(ctx, enforceableHash)
 		if err != nil {
 			slog.Warn("content_moderation.hash_check_failed", "user_id", input.UserID, "endpoint", input.Endpoint, "error", err)
@@ -1165,7 +1166,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			}, nil
 		}
 	}
-	if !userObservationInScope {
+	// Responses string/ambiguous inputs have no trustworthy local user segment,
+	// but the protocol still requires an API audit. Keep that mandatory audit
+	// independent of the optional user-observation group scope.
+	if !userObservationInScope && !extracted.RequiresAPI {
 		slog.Info("content_moderation.skip_user_observation_out_of_scope",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -1209,7 +1213,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 
-	return s.checkSync(ctx, input, cfg, content, hashText, nil, hardBlockInScope), nil
+	allowBlock := hardBlockInScope && hasEnforceableUser
+	return s.checkSync(ctx, input, cfg, content, hashText, nil, allowBlock), nil
 }
 
 func (s *ContentModerationService) checkSync(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, queueDelay *int, allowBlock bool) *ContentModerationDecision {
@@ -1242,7 +1247,10 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		}
 		if cfg.RecordNonHits {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
-			_ = s.repo.CreateLog(ctx, log)
+			// Error retries are request duplicates too. Route them through the
+			// same dedupe path as flagged events, while keeping the event
+			// non-flagged and side-effect free.
+			s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 		}
 		return allow
 	}
@@ -1876,6 +1884,15 @@ func (s *contentModerationRuntimeSnapshot) matchEnforceableKeyword(segments []Mo
 	})
 }
 
+func hasEnforceableUserSegment(segments []ModerationSegment) bool {
+	for _, segment := range segments {
+		if segment.Enforceable && segment.Role == moderationRoleUser {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *contentModerationRuntimeSnapshot) matchObservationSegments(segments []ModerationSegment, userObservationInScope, contextObservationInScope bool) (KeywordMatch, ModerationSegment, bool) {
 	if s == nil || s.config == nil {
 		return KeywordMatch{}, ModerationSegment{}, false
@@ -1939,18 +1956,32 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if cfg.ModelFilter.Type != ContentModerationModelFilterAll && len(cfg.ModelFilter.Models) == 0 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODEL_FILTER", "指定或排除模型时至少需要配置 1 个模型")
 	}
-	if !cfg.AllGroups && len(cfg.GroupIDs) > 0 && s.groupRepo != nil {
-		for _, groupID := range cfg.GroupIDs {
-			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
-				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
-			}
-		}
+	if err := s.validateModerationGroupScope(ctx, "硬拦截", cfg.HardBlockAllGroups, cfg.HardBlockGroupIDs); err != nil {
+		return err
+	}
+	if err := s.validateModerationGroupScope(ctx, "用户观察", cfg.UserObservationAllGroups, cfg.UserObservationGroupIDs); err != nil {
+		return err
+	}
+	if err := s.validateModerationGroupScope(ctx, "上下文观察", cfg.ContextObservationAllGroups, cfg.ContextObservationGroupIDs); err != nil {
+		return err
 	}
 	if s.groupRepo != nil {
 		for _, item := range cfg.CyberPolicyGroupPolicies {
 			if _, err := s.groupRepo.GetByIDLite(ctx, item.GroupID); err != nil {
 				return infraerrors.BadRequest("INVALID_CYBER_POLICY_GROUP", fmt.Sprintf("Cyber 策略分组不存在: %d", item.GroupID))
 			}
+		}
+	}
+	return nil
+}
+
+func (s *ContentModerationService) validateModerationGroupScope(ctx context.Context, label string, allGroups *bool, groupIDs []int64) error {
+	if s == nil || s.groupRepo == nil || scopeAllGroups(allGroups) {
+		return nil
+	}
+	for _, groupID := range groupIDs {
+		if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
+			return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("%s分组不存在: %d", label, groupID))
 		}
 	}
 	return nil
@@ -2200,6 +2231,8 @@ func (s *ContentModerationService) acquireContentModerationEvent(ctx context.Con
 	switch {
 	case log.Action == ContentModerationActionKeywordObserve:
 		eventClass = "observe"
+	case log.Action == ContentModerationActionError:
+		eventClass = "error"
 	case log.Flagged:
 		eventClass = "violation"
 	default:
@@ -2213,7 +2246,7 @@ func (s *ContentModerationService) acquireContentModerationEvent(ctx context.Con
 	} else {
 		return true
 	}
-	fingerprintBytes := sha256.Sum256([]byte(eventClass + "\n" + identity + "\n" + log.InputHash))
+	fingerprintBytes := sha256.Sum256([]byte(eventClass + "\n" + identity + "\ngroup:" + fmt.Sprint(contentModerationLogGroupID(log.GroupID)) + "\n" + log.InputHash))
 	fingerprint := hex.EncodeToString(fingerprintBytes[:])
 	acquired, err := s.hashCache.AcquireEventDedupe(ctx, fingerprint, contentModerationRetryDedupeWindow)
 	if err != nil {

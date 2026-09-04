@@ -1806,6 +1806,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if err != nil {
 		return nil, err
 	}
+	if s.shouldBypassOpenAIPromptInjection(c) {
+		responsesBody, err = sjson.SetBytes(responsesBody, "instructions", "")
+		if err != nil {
+			return nil, fmt.Errorf("clear gateway image instructions: %w", err)
+		}
+	}
 	upstreamCtx = withOpenAIImagesSelfBuiltRequest(upstreamCtx)
 	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, parsed.StickySessionSeed(), false)
 	if err != nil {

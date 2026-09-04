@@ -84,6 +84,7 @@ type codexOAuthTransformOptions struct {
 	IsCodexCLI                          bool
 	IsCompact                           bool
 	SkipDefaultInstructions             bool
+	SkipInjectedInstructions            bool
 	PreserveToolCallIDs                 bool
 	OmitPromotedSystemMessagesFromInput bool
 }
@@ -293,12 +294,14 @@ func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuth
 		result.Modified = true
 	}
 
-	// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
-	if !opts.SkipDefaultInstructions && applyInstructions(reqBody, opts.IsCodexCLI) {
-		result.Modified = true
-	}
-	if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
-		result.Modified = true
+	if !opts.SkipInjectedInstructions {
+		// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
+		if !opts.SkipDefaultInstructions && applyInstructions(reqBody, opts.IsCodexCLI) {
+			result.Modified = true
+		}
+		if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
+			result.Modified = true
+		}
 	}
 	// gpt-5.3-codex-spark rejects the image_generation tool upstream (HTTP 400,
 	// param=tools); Codex CLI advertises it by default, so strip it for spark.

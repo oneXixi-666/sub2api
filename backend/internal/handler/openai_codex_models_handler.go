@@ -33,10 +33,16 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	}
 
 	ifNoneMatch := c.GetHeader("If-None-Match")
+	bypassPromptInjection := h.gatewayService.ShouldBypassOpenAIPromptInjection(apiKey.ID)
+	manifestIfNoneMatch := ifNoneMatch
+	if bypassPromptInjection {
+		// Prompt-suppressed manifests have their own representation and ETag.
+		manifestIfNoneMatch = ""
+	}
 	configuredManifest, configured, err := h.gatewayService.BuildGroupConfiguredCodexModelsManifest(
 		c.Request.Context(),
 		apiKey.Group,
-		ifNoneMatch,
+		manifestIfNoneMatch,
 	)
 	if err != nil {
 		if c.Request.Context().Err() != nil {
@@ -46,6 +52,12 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		return
 	}
 	if configured {
+		if bypassPromptInjection {
+			if err := service.SuppressCodexModelsManifestPromptInjection(configuredManifest, ifNoneMatch); err != nil {
+				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to suppress Codex model prompts")
+				return
+			}
+		}
 		writeCodexModelsManifestResponse(c, configuredManifest)
 		return
 	}
@@ -94,9 +106,15 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to complete Codex models manifest")
 			return
 		}
-		if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, manifest, ifNoneMatch); err != nil {
+		if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, manifest, manifestIfNoneMatch); err != nil {
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
 			return
+		}
+		if bypassPromptInjection {
+			if err := service.SuppressCodexModelsManifestPromptInjection(manifest, ifNoneMatch); err != nil {
+				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to suppress Codex model prompts")
+				return
+			}
 		}
 		if c.Request.Context().Err() != nil {
 			return

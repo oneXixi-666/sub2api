@@ -366,7 +366,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if normalizeOpenAIResponsesImageGenerationTools(payloadMap) {
 				bridgeModified = true
 			}
-			if applyCodexImageGenerationBridgeInstructions(payloadMap) {
+			if !s.shouldBypassOpenAIPromptInjection(c) && applyCodexImageGenerationBridgeInstructions(payloadMap) {
 				bridgeModified = true
 				logOpenAIWSModeInfo("ingress_ws_codex_image_bridge_instructions_added account_id=%d", account.ID)
 			}

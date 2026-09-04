@@ -28,6 +28,57 @@ func TestMarkAndGetOpsCyberPolicy(t *testing.T) {
 	require.Equal(t, 400, got.UpstreamStatus)
 }
 
+func TestMarkOpsCyberPolicyExtractsInputOffset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	MarkOpsCyberPolicy(c, CyberPolicyMark{
+		Body: `{"error":{"code":"cyber_policy","input_offset":{"start":123,"end":137}}}`,
+	})
+
+	mark := GetOpsCyberPolicy(c)
+	require.NotNil(t, mark.InputOffset)
+	require.Equal(t, CyberPolicyInputOffset{Start: 123, End: 137}, *mark.InputOffset)
+}
+
+func TestMarkOpsCyberPolicyExtractsOffsetShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want CyberPolicyInputOffset
+	}{
+		{
+			name: "response range array",
+			body: `{"response":{"error":{"code":"cyber_policy","input_range":[7,19]}}}`,
+			want: CyberPolicyInputOffset{Start: 7, End: 19},
+		},
+		{
+			name: "top level offset",
+			body: `{"error":{"code":"cyber_policy"},"input_offset":{"start":21,"length":4}}`,
+			want: CyberPolicyInputOffset{Start: 21, End: 25},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			MarkOpsCyberPolicy(c, CyberPolicyMark{Body: tc.body})
+			mark := GetOpsCyberPolicy(c)
+			require.NotNil(t, mark.InputOffset)
+			require.Equal(t, tc.want, *mark.InputOffset)
+		})
+	}
+}
+
+func TestMarkOpsCyberPolicyRejectsInvalidInputOffset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	MarkOpsCyberPolicy(c, CyberPolicyMark{
+		InputOffset: &CyberPolicyInputOffset{Start: 5, End: 5},
+	})
+
+	require.Nil(t, GetOpsCyberPolicy(c).InputOffset)
+}
+
 func TestMarkOpsCyberPolicyFirstWins(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

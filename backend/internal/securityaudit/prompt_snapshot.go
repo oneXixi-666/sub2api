@@ -48,20 +48,20 @@ const (
 	conversationAdjacentRunes   = 5000
 	conversationSystemRunes     = 2000
 	conversationMetadataRunes   = 1000
-	conversationExcerptRunes    = 240
+	// DefaultConversationEvidenceExcerptMaxRunes is shared by Cyber evidence
+	// extraction and the handler so offset-based excerpts are bounded exactly
+	// like the legacy fallback excerpt.
+	DefaultConversationEvidenceExcerptMaxRunes = 240
+	conversationExcerptRunes                   = DefaultConversationEvidenceExcerptMaxRunes
 )
 
 // ExtractConversationEvidence reuses the prompt-audit protocol parser while
 // preserving source order and role labels. It intentionally excludes binary
 // media and unrelated request JSON so the stored evidence remains reviewable.
 func ExtractConversationEvidence(protocol string, body []byte, maxRunes int) (ConversationEvidence, error) {
-	var document any
-	if err := json.Unmarshal(body, &document); err != nil {
-		return ConversationEvidence{}, errors.New("conversation evidence request JSON is invalid")
-	}
-	segments := normalizedPromptSegments(extractProtocolSegments(protocol, document))
-	if len(segments) == 0 {
-		return ConversationEvidence{}, ErrNoPromptText
+	segments, err := extractConversationEvidenceSegments(protocol, body)
+	if err != nil {
+		return ConversationEvidence{}, err
 	}
 	if maxRunes <= 0 {
 		maxRunes = DefaultConversationEvidenceMaxRunes
@@ -78,12 +78,94 @@ func ExtractConversationEvidence(protocol string, body []byte, maxRunes int) (Co
 	latestUser := latestConversationUserText(segments)
 	return ConversationEvidence{
 		Snapshot:     snapshot,
-		Excerpt:      TrimRunes(latestUser, conversationExcerptRunes),
+		Excerpt:      TrimRunes(latestConversationEvidenceText(segments, latestUser), conversationExcerptRunes),
 		InputHash:    hex.EncodeToString(digest[:]),
 		InputLength:  inputLength,
 		MessageCount: len(segments),
 		Truncated:    truncated,
 	}, nil
+}
+
+// ExtractConversationEvidenceExcerptAtOffset returns a bounded excerpt around
+// an upstream-reported match range. Offsets are rune positions in the
+// normalized, role-free conversation text (segments joined in source order),
+// which is the closest representation to the text evaluated upstream. The
+// caller can fall back to ConversationEvidence.Excerpt when an older upstream
+// response does not provide a valid range.
+func ExtractConversationEvidenceExcerptAtOffset(protocol string, body []byte, start, end, maxRunes int) (string, error) {
+	segments, err := extractConversationEvidenceSegments(protocol, body)
+	if err != nil {
+		return "", err
+	}
+	if maxRunes <= 0 {
+		maxRunes = conversationExcerptRunes
+	}
+	text := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		text = append(text, segment.text)
+	}
+	return excerptAroundConversationOffset(strings.Join(text, "\n\n"), start, end, maxRunes), nil
+}
+
+func extractConversationEvidenceSegments(protocol string, body []byte) ([]promptSegment, error) {
+	var document any
+	if err := json.Unmarshal(body, &document); err != nil {
+		return nil, errors.New("conversation evidence request JSON is invalid")
+	}
+	segments := normalizedPromptSegments(extractProtocolSegments(protocol, document))
+	if len(segments) == 0 {
+		return nil, ErrNoPromptText
+	}
+	return segments, nil
+}
+
+func excerptAroundConversationOffset(text string, start, end, maxRunes int) string {
+	if text == "" || start < 0 || end <= start || maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if start >= len(runes) {
+		return ""
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	if end <= start {
+		return ""
+	}
+	if len(runes) <= maxRunes {
+		return text
+	}
+	matchRunes := end - start
+	if matchRunes >= maxRunes {
+		center := start + matchRunes/2
+		windowStart := max(0, min(len(runes)-maxRunes, center-maxRunes/2))
+		return string(runes[windowStart : windowStart+maxRunes])
+	}
+	leftBudget := max(0, (maxRunes-matchRunes)/2)
+	windowStart := max(0, start-leftBudget)
+	windowEnd := min(len(runes), windowStart+maxRunes)
+	if windowEnd-windowStart < maxRunes {
+		windowStart = max(0, windowEnd-maxRunes)
+	}
+	return string(runes[windowStart:windowEnd])
+}
+
+// latestConversationEvidenceText prefers the last client-controlled non-system
+// segment. A Cyber rejection may be caused by a tool result or assistant turn
+// rather than the latest user text; using the final relevant segment gives the
+// operator a useful local excerpt when the upstream response has no offsets.
+func latestConversationEvidenceText(segments []promptSegment, fallback string) string {
+	for index := len(segments) - 1; index >= 0; index-- {
+		role := strings.ToLower(strings.TrimSpace(segments[index].role))
+		if role == "system" || role == "developer" {
+			continue
+		}
+		if text := strings.TrimSpace(segments[index].text); text != "" {
+			return text
+		}
+	}
+	return fallback
 }
 
 func formatConversationSegments(segments []promptSegment) string {
@@ -356,14 +438,13 @@ func extractResponses(value any) []promptSegment {
 				result = append(result, promptSegment{text: entry, user: true, role: "user"})
 			case map[string]any:
 				role := strings.ToLower(stringValue(entry["role"]))
+				if role == "" {
+					role = inferredResponsesItemRole(strings.ToLower(stringValue(entry["type"])))
+				}
 				if role != "" && !isClientInstructionRole(role) {
 					continue
 				}
-				if content, exists := entry["content"]; exists {
-					for _, text := range contentTexts(content) {
-						result = append(result, promptSegment{text: text, user: role == "" || role == "user", role: role})
-					}
-				} else if text := stringValue(entry["text"]); text != "" {
+				for _, text := range responseItemPromptTexts(entry) {
 					result = append(result, promptSegment{text: text, user: role == "" || role == "user", role: role})
 				}
 			}
@@ -371,13 +452,77 @@ func extractResponses(value any) []promptSegment {
 		return result
 	case map[string]any:
 		role := strings.ToLower(stringValue(typed["role"]))
+		if role == "" {
+			role = inferredResponsesItemRole(strings.ToLower(stringValue(typed["type"])))
+		}
 		if role != "" && !isClientInstructionRole(role) {
 			return nil
 		}
-		return promptSegmentsForRole(contentTexts(typed["content"]), role)
+		texts := responseItemPromptTexts(typed)
+		return promptSegmentsForRole(texts, role)
 	default:
 		return nil
 	}
+}
+
+func inferredResponsesItemRole(typeName string) string {
+	switch strings.ToLower(strings.TrimSpace(typeName)) {
+	case "function_call_output", "custom_tool_call_output", "computer_call_output", "tool_result":
+		return "tool"
+	case "function_call", "custom_tool_call", "computer_call", "web_search_call":
+		return "assistant"
+	default:
+		return ""
+	}
+}
+
+// responseItemPromptTexts covers the text-bearing fields used by Responses
+// tool calls. Keeping these fields in the role-preserving snapshot prevents a
+// cyber event from losing the actual tool output or call arguments merely
+// because the item has no content/text property.
+func responseItemPromptTexts(entry map[string]any) []string {
+	texts := make([]string, 0, 3)
+	if content, exists := entry["content"]; exists {
+		texts = append(texts, contentTexts(content)...)
+	}
+	if text := stringValue(entry["text"]); text != "" {
+		texts = append(texts, text)
+	}
+	for _, field := range []string{"output", "arguments"} {
+		texts = append(texts, responseItemValueTexts(entry[field])...)
+	}
+	return texts
+}
+
+func responseItemValueTexts(value any) []string {
+	switch typed := value.(type) {
+	case string:
+		if text := strings.TrimSpace(typed); text != "" {
+			return []string{typed}
+		}
+	case []any:
+		texts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			texts = append(texts, responseItemValueTexts(item)...)
+		}
+		return texts
+	case map[string]any:
+		if text := stringValue(typed["text"]); text != "" {
+			return []string{text}
+		}
+		if content, exists := typed["content"]; exists {
+			if texts := responseItemValueTexts(content); len(texts) > 0 {
+				return texts
+			}
+		}
+		// Structured arguments/results are valid Responses payloads even when
+		// they do not have a text/content field. Canonical JSON keeps the
+		// evidence deterministic while retaining the actual tool data.
+		if encoded, err := json.Marshal(typed); err == nil {
+			return []string{string(encoded)}
+		}
+	}
+	return nil
 }
 
 func isClientInstructionRole(role string) bool {

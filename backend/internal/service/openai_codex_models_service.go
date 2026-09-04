@@ -102,6 +102,57 @@ type CodexModelsManifest struct {
 	NotModified                  bool
 }
 
+// SuppressCodexModelsManifestPromptInjection removes model-catalog prompt
+// templates for callers that opted out of gateway-generated prompt text. It
+// keeps the complete model_messages shape so Codex clients can still decode the
+// manifest, and recalculates the downstream ETag from the filtered body.
+func SuppressCodexModelsManifestPromptInjection(manifest *CodexModelsManifest, ifNoneMatch string) error {
+	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 {
+		return nil
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal(manifest.Body, &envelope); err != nil {
+		return fmt.Errorf("decode Codex models manifest for prompt suppression: %w", err)
+	}
+	models, ok := envelope["models"].([]any)
+	if !ok {
+		return errors.New("decode Codex models manifest for prompt suppression: models must be an array")
+	}
+	for _, rawModel := range models {
+		model, ok := rawModel.(map[string]any)
+		if !ok {
+			continue
+		}
+		model["model_messages"] = map[string]any{
+			"instructions_template":  "",
+			"instructions_variables": nil,
+			"approvals":              nil,
+			"collaboration_modes":    nil,
+			"auto_review":            nil,
+			"permissions":            nil,
+			"multi_agent":            nil,
+			"token_budget":           nil,
+			"guardian_v2":            nil,
+		}
+		model["include_skills_usage_instructions"] = false
+		model["include_plugin_usage_instructions"] = false
+		model["include_apps_usage_instructions"] = false
+	}
+
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		return fmt.Errorf("encode Codex models manifest after prompt suppression: %w", err)
+	}
+	manifest.Body = body
+	manifest.ETag = codexModelsManifestBodyETag(body)
+	manifest.NotModified = codexModelsManifestETagMatches(ifNoneMatch, manifest.ETag)
+	if manifest.NotModified {
+		manifest.Body = nil
+	}
+	return nil
+}
+
 // BuildGroupConfiguredCodexModelsManifest builds a Codex catalog exclusively
 // from the public model names configured on accounts in an OpenAI group. The
 // boolean result distinguishes "no explicit configuration" from a configured

@@ -21,12 +21,21 @@ var errOpenAICyberPolicyForwarded = errors.New("openai cyber_policy forwarded to
 
 // CyberPolicyMark 记录一次 cyber_policy 硬阻断的上游证据。
 type CyberPolicyMark struct {
-	Code           string // 固定 "cyber_policy"
-	Message        string // 上游 error.message
-	Body           string // 上游 response.failed / 400 原始 body（已截断；未脱敏，ops_error 落库由 sanitizeErrorBodyForStorage、风控日志由 redactContentModerationSecrets 统一脱敏）
-	UpstreamStatus int    // 上游 HTTP 状态（流式=200，非流式=400）
-	UpstreamInTok  int    // 上游已报 input tokens（如有）
-	UpstreamOutTok int    // 上游已报 output tokens（如有）
+	Code           string                  // 固定 "cyber_policy"
+	Message        string                  // 上游 error.message
+	Body           string                  // 上游 response.failed / 400 原始 body（已截断；未脱敏，ops_error 落库由 sanitizeErrorBodyForStorage、风控日志由 redactContentModerationSecrets 统一脱敏）
+	UpstreamStatus int                     // 上游 HTTP 状态（流式=200，非流式=400）
+	UpstreamInTok  int                     // 上游已报 input tokens（如有）
+	UpstreamOutTok int                     // 上游已报 output tokens（如有）
+	InputOffset    *CyberPolicyInputOffset // 上游提供的归一化输入命中范围（可选）
+}
+
+// CyberPolicyInputOffset identifies the upstream-reported match range in the
+// normalized conversation text (rune offsets, end exclusive). It is optional:
+// older upstream responses expose only the cyber_policy code/message.
+type CyberPolicyInputOffset struct {
+	Start int
+	End   int
 }
 
 // MarkOpsCyberPolicy 记录 cyber 标记；首个写入生效，后续忽略（同一 turn 只记一次）。
@@ -41,6 +50,18 @@ func MarkOpsCyberPolicy(c *gin.Context, mark CyberPolicyMark) {
 	mark.Code = "cyber_policy"
 	mark.Message = strings.TrimSpace(mark.Message)
 	mark.Body = strings.TrimSpace(mark.Body)
+	if mark.InputOffset == nil {
+		if offset, ok := extractOpenAICyberPolicyInputOffset([]byte(mark.Body)); ok {
+			mark.InputOffset = &offset
+		}
+	} else {
+		offset := *mark.InputOffset
+		if normalized, ok := normalizeCyberPolicyInputOffset(offset.Start, offset.End); ok {
+			mark.InputOffset = &normalized
+		} else {
+			mark.InputOffset = nil
+		}
+	}
 	c.Set(opsCyberPolicyKey, &mark)
 }
 
@@ -85,4 +106,80 @@ func detectOpenAICyberPolicy(payload []byte) (bool, string, string) {
 		msg = gjson.GetBytes(payload, "response.error.message").String()
 	}
 	return true, "cyber_policy", strings.TrimSpace(msg)
+}
+
+func extractOpenAICyberPolicyInputOffset(payload []byte) (CyberPolicyInputOffset, bool) {
+	if len(payload) == 0 {
+		return CyberPolicyInputOffset{}, false
+	}
+	paths := []string{
+		"error", "response.error",
+		"error.input_offset", "error.input_range", "error.offset", "error.details.input_offset", "error.details.input_range", "error.details.offset", "error.metadata.input_offset", "error.metadata.input_range", "error.metadata.offset",
+		"response.error.input_offset", "response.error.input_range", "response.error.offset", "response.error.details.input_offset", "response.error.details.input_range", "response.error.details.offset", "response.error.metadata.input_offset", "response.error.metadata.input_range", "response.error.metadata.offset",
+		"error.inputOffset", "error.inputRange", "error.match_range", "error.matchRange", "response.error.inputOffset", "response.error.inputRange", "response.error.match_range", "response.error.matchRange",
+		// A few gateways lift the range alongside the error object instead of
+		// nesting it. These paths are considered only after the cyber code has
+		// already been identified by detectOpenAICyberPolicy.
+		"input_offset", "input_range", "inputOffset", "inputRange", "match_range", "matchRange",
+	}
+	for _, path := range paths {
+		if result := gjson.GetBytes(payload, path); result.Exists() {
+			if offset, ok := parseCyberPolicyInputOffsetResult(result); ok {
+				return offset, true
+			}
+		}
+	}
+	return CyberPolicyInputOffset{}, false
+}
+
+func parseCyberPolicyInputOffsetResult(result gjson.Result) (CyberPolicyInputOffset, bool) {
+	if result.IsArray() {
+		values := result.Array()
+		if len(values) >= 2 && values[0].Type == gjson.Number && values[1].Type == gjson.Number {
+			return normalizeCyberPolicyInputOffset(int(values[0].Int()), int(values[1].Int()))
+		}
+		if len(values) == 1 && values[0].Type == gjson.Number {
+			start := int(values[0].Int())
+			return normalizeCyberPolicyInputOffset(start, start+1)
+		}
+		return CyberPolicyInputOffset{}, false
+	}
+	if result.Type == gjson.Number {
+		start := int(result.Int())
+		return normalizeCyberPolicyInputOffset(start, start+1)
+	}
+	if !result.IsObject() {
+		return CyberPolicyInputOffset{}, false
+	}
+	start := firstCyberPolicyOffsetNumber(result, "start", "start_offset", "begin", "from", "offset", "index", "position")
+	end := firstCyberPolicyOffsetNumber(result, "end", "end_offset", "stop", "to")
+	if start < 0 {
+		return CyberPolicyInputOffset{}, false
+	}
+	if end < 0 {
+		length := firstCyberPolicyOffsetNumber(result, "length", "count", "size")
+		if length > 0 {
+			end = start + length
+		} else {
+			end = start + 1
+		}
+	}
+	return normalizeCyberPolicyInputOffset(start, end)
+}
+
+func firstCyberPolicyOffsetNumber(result gjson.Result, keys ...string) int {
+	for _, key := range keys {
+		value := result.Get(key)
+		if value.Exists() && value.Type == gjson.Number {
+			return int(value.Int())
+		}
+	}
+	return -1
+}
+
+func normalizeCyberPolicyInputOffset(start, end int) (CyberPolicyInputOffset, bool) {
+	if start < 0 || end <= start {
+		return CyberPolicyInputOffset{}, false
+	}
+	return CyberPolicyInputOffset{Start: start, End: end}, true
 }

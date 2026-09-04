@@ -93,6 +93,48 @@ func TestExtractConversationEvidenceWebSocketFrame(t *testing.T) {
 	require.False(t, evidence.Truncated)
 }
 
+func TestExtractConversationEvidenceExcerptAtOffsetCentersMatch(t *testing.T) {
+	prefix := strings.Repeat("前", 300)
+	match := "命中😀范围"
+	suffix := strings.Repeat("后", 300)
+	body, err := json.Marshal(map[string]any{
+		"input": []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": prefix + match + suffix}}}},
+	})
+	require.NoError(t, err)
+
+	start := utf8.RuneCountInString(prefix)
+	excerpt, err := ExtractConversationEvidenceExcerptAtOffset(
+		"openai_responses",
+		body,
+		start,
+		start+utf8.RuneCountInString(match),
+		80,
+	)
+	require.NoError(t, err)
+	require.LessOrEqual(t, utf8.RuneCountInString(excerpt), 80)
+	require.Contains(t, excerpt, match)
+	require.Contains(t, excerpt, "前")
+	require.Contains(t, excerpt, "后")
+}
+
+func TestExtractConversationEvidenceExcerptAtOffsetRejectsInvalidRange(t *testing.T) {
+	body := []byte(`{"input":"short"}`)
+	for _, tc := range []struct {
+		name       string
+		start, end int
+	}{
+		{name: "negative", start: -1, end: 2},
+		{name: "empty", start: 2, end: 2},
+		{name: "outside", start: 100, end: 101},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			excerpt, err := ExtractConversationEvidenceExcerptAtOffset("openai_responses", body, tc.start, tc.end, 80)
+			require.NoError(t, err)
+			require.Empty(t, excerpt)
+		})
+	}
+}
+
 func TestSnapshotRedactsCanariesAndPreservesHashOfScanText(t *testing.T) {
 	body := `{"messages":[{"role":"user","content":"PROMPT_CANARY_ABC123 email@example.com +86 138 0013 8000 Bearer AUTH_CANARY_XYZ sk-secretvalue123 password=supersecret123"}]}`
 	snapshot, err := ExtractPromptSnapshot(Request{Protocol: "openai_chat_completions", Body: []byte(body)})
@@ -225,6 +267,34 @@ func TestPromptSnapshotResponsesShapes(t *testing.T) {
 			require.Equal(t, tt.want, metadataTextForTest(snapshot.ScanText))
 		})
 	}
+}
+
+func TestPromptSnapshotResponsesPreservesToolOutputAndArguments(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"latest request"}]},
+		{"type":"function_call","call_id":"call_1","name":"exec","arguments":"{\"command\":\"risk command\"}"},
+		{"type":"function_call_output","call_id":"call_1","output":"tool risk output"}
+	]}`)
+
+	evidence, err := ExtractConversationEvidence("openai_responses", body, 4096)
+	require.NoError(t, err)
+	require.Contains(t, evidence.Snapshot, "[user]\nlatest request")
+	require.Contains(t, evidence.Snapshot, "[assistant]\n{\"command\":\"risk command\"}")
+	require.Contains(t, evidence.Snapshot, "[tool]\ntool risk output")
+	require.Equal(t, "tool risk output", evidence.Excerpt)
+}
+
+func TestPromptSnapshotResponsesPreservesStructuredToolValues(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"function_call","arguments":{"command":"risk command","path":"/tmp"}},
+		{"type":"function_call_output","output":[{"type":"text","text":"tool risk output"},{"type":"text","text":"second line"}]}
+	]}`)
+
+	evidence, err := ExtractConversationEvidence("openai_responses", body, 4096)
+	require.NoError(t, err)
+	require.Contains(t, evidence.Snapshot, "[assistant]\n{\"command\":\"risk command\",\"path\":\"/tmp\"}")
+	require.Contains(t, evidence.Snapshot, "[tool]\ntool risk output")
+	require.Contains(t, evidence.Snapshot, "[tool]\nsecond line")
 }
 
 func TestPromptSnapshotGeminiBatchShapesAndMediaExclusion(t *testing.T) {

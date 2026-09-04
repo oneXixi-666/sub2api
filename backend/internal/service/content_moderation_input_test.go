@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -244,6 +245,48 @@ func TestExtractContentModerationInputs_UserOutputTextIsNotEnforceable(t *testin
 	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleUser, Source: "input[0].content[0].text", Text: "safe", Enforceable: true})
 	for _, segment := range extracted.Segments {
 		require.NotEqual(t, "hard-term", segment.Text)
+	}
+}
+
+func TestExtractContentModerationInputs_ResponsesOutputTextParentCannotBecomeEnforceable(t *testing.T) {
+	body := []byte(`{"input":[{"type":"output_text","role":"user","content":"hard-term"}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	for _, segment := range extracted.Segments {
+		require.False(t, segment.Enforceable, "output_text parent must never be hard-blockable")
+	}
+}
+
+func TestExtractContentModerationInputs_ResponsesNonUserTypesCannotBecomeEnforceable(t *testing.T) {
+	for _, typ := range []string{"refusal", "tool_result", "function_call_output"} {
+		t.Run(typ, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"input":[{"type":%q,"role":"user","content":"hard-term","output":"hard-term","arguments":"hard-term"}]}`, typ))
+
+			extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+			for _, segment := range extracted.Segments {
+				require.False(t, segment.Enforceable, "%s parent must never be hard-blockable", typ)
+			}
+		})
+	}
+}
+
+func TestExtractContentModerationInputs_ResponsesUnsupportedUserTypeStillRequiresAPIAudit(t *testing.T) {
+	for _, typ := range []string{"output_text", "refusal", "tool_result", "function_call_output"} {
+		t.Run(typ, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"input":[{"type":%q,"role":"user","content":"risk text","output":"tool output"}]}`, typ))
+
+			extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+			require.Empty(t, extracted.User.Text, "unsupported user item types must not become enforceable input")
+			require.Contains(t, extracted.Audit.Text, "risk text")
+			require.Contains(t, extracted.Audit.Text, "tool output")
+			require.True(t, extracted.RequiresAPI)
+			for _, segment := range extracted.Segments {
+				require.False(t, segment.Enforceable, "%s item must remain non-enforceable", typ)
+			}
+		})
 	}
 }
 

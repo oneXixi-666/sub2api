@@ -3742,6 +3742,27 @@ func extractCyberPolicyConversationEvidence(requestEvidence cyberPolicyRequestEv
 	return evidence
 }
 
+// extractCyberPolicyInputExcerpt prefers the range reported by the upstream
+// cyber policy service. The range is interpreted by securityaudit against the
+// normalized, role-free conversation text; older upstream responses without a
+// range retain the bounded last-relevant-segment fallback.
+func extractCyberPolicyInputExcerpt(requestEvidence cyberPolicyRequestEvidence, mark *service.CyberPolicyMark, fallback string) string {
+	if mark == nil || mark.InputOffset == nil || len(requestEvidence.Body) == 0 || strings.TrimSpace(requestEvidence.Protocol) == "" {
+		return fallback
+	}
+	excerpt, err := securityaudit.ExtractConversationEvidenceExcerptAtOffset(
+		requestEvidence.Protocol,
+		requestEvidence.Body,
+		mark.InputOffset.Start,
+		mark.InputOffset.End,
+		securityaudit.DefaultConversationEvidenceExcerptMaxRunes,
+	)
+	if err != nil || strings.TrimSpace(excerpt) == "" {
+		return fallback
+	}
+	return excerpt
+}
+
 // cyberPolicyOpsErrorMeta carries request-scoped fields captured outside the
 // async goroutine for building the cyber ops_error_logs entry.
 type cyberPolicyOpsErrorMeta struct {
@@ -4094,6 +4115,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		CreatedAt:       time.Now(),
 	}
 	conversationEvidence := extractCyberPolicyConversationEvidence(requestEvidence)
+	inputExcerpt := extractCyberPolicyInputExcerpt(requestEvidence, mark, conversationEvidence.Excerpt)
 	auditStage := strings.TrimSpace(requestEvidence.Stage)
 	if auditStage == "" {
 		auditStage = "http"
@@ -4130,7 +4152,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				AuditStage:      auditStage,
 				TurnNumber:      requestEvidence.TurnNumber,
 				InputSnapshot:   conversationEvidence.Snapshot,
-				InputExcerpt:    conversationEvidence.Excerpt,
+				InputExcerpt:    inputExcerpt,
 				InputHash:       conversationEvidence.InputHash,
 				InputLength:     conversationEvidence.InputLength,
 				MessageCount:    conversationEvidence.MessageCount,

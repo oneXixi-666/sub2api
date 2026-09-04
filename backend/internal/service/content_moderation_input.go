@@ -232,7 +232,8 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 
 func isResponsesUserTextItem(item gjson.Result) bool {
 	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
-	return role == "user" && responseItemHasModerationText(item)
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	return role == "user" && isEnforceableResponsesItemType(typ) && responseItemHasModerationText(item)
 }
 
 func responseItemHasModerationText(item gjson.Result) bool {
@@ -286,11 +287,26 @@ func collectAmbiguousModerationInput(protocol string, body []byte, trustedIntern
 		candidate = input
 	case input.IsArray():
 		items := input.Array()
-		if len(items) == 0 || strings.TrimSpace(items[len(items)-1].Get("role").String()) != "" {
+		if len(items) == 0 {
 			return ContentModerationInput{}, false
 		}
-		candidate = items[len(items)-1]
+		last := items[len(items)-1]
+		role := strings.ToLower(strings.TrimSpace(last.Get("role").String()))
+		typ := strings.ToLower(strings.TrimSpace(last.Get("type").String()))
+		if role == "" && isResponsesContextOnlyItemType(typ) {
+			return ContentModerationInput{}, false
+		}
+		if role != "" && !(role == moderationRoleUser && !isEnforceableResponsesItemType(typ)) {
+			return ContentModerationInput{}, false
+		}
+		candidate = last
+	case input.IsObject() && strings.TrimSpace(input.Get("role").String()) == "" &&
+		isResponsesContextOnlyItemType(strings.ToLower(strings.TrimSpace(input.Get("type").String()))):
+		return ContentModerationInput{}, false
 	case input.IsObject() && strings.TrimSpace(input.Get("role").String()) == "":
+		candidate = input
+	case input.IsObject() && strings.EqualFold(strings.TrimSpace(input.Get("role").String()), moderationRoleUser) &&
+		!isEnforceableResponsesItemType(strings.ToLower(strings.TrimSpace(input.Get("type").String()))):
 		candidate = input
 	default:
 		return ContentModerationInput{}, false
@@ -300,14 +316,32 @@ func collectAmbiguousModerationInput(protocol string, body []byte, trustedIntern
 	if candidate.Type == gjson.String {
 		addModerationText(&parts, candidate.String())
 	} else {
-		collectContentValue(candidate.Get("content"), &parts, &images)
-		if candidate.Get("type").String() == "input_text" || candidate.Get("text").Exists() {
-			collectContentValue(candidate, &parts, &images)
-		}
+		collectAmbiguousResponsesItemValue(candidate, &parts, &images)
 	}
 	out := ContentModerationInput{Text: normalizeContentModerationText(strings.Join(parts, "\n")), Images: normalizeModerationImages(images)}
 	out.Normalize()
 	return out, !out.IsEmpty()
+}
+
+// collectAmbiguousResponsesItemValue keeps unsupported/contradictory response
+// item types out of the locally enforceable user input while still sending
+// their textual payload to the moderation API. The item type and role are
+// client-controlled, so a user must not be able to turn an unrecognized shape
+// into a silent moderation bypass.
+func collectAmbiguousResponsesItemValue(item gjson.Result, parts *[]string, images *[]string) {
+	collectContentValue(item.Get("content"), parts, images)
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	if typ == "input_text" || typ == "text" || item.Get("text").Exists() {
+		collectContentValue(item, parts, images)
+	}
+	for _, field := range []string{"output", "arguments"} {
+		value := item.Get(field)
+		if value.Type == gjson.String {
+			addModerationText(parts, value.String())
+		} else if value.IsArray() {
+			collectContentValue(value, parts, images)
+		}
+	}
 }
 
 func collectModerationSegments(protocol string, body []byte, trustedInternalSource bool) []ModerationSegment {
@@ -417,7 +451,10 @@ func appendResponsesItemSegments(segments *[]ModerationSegment, item gjson.Resul
 	if role == "" {
 		role = moderationRoleAmbiguous
 	}
-	enforceable := last && role == moderationRoleUser
+	// Only structured user message/text items can be promoted to a local
+	// hard-block segment. A user-supplied output_text/refusal/tool item must
+	// never become enforceable merely because it carries role=user or content.
+	enforceable := last && role == moderationRoleUser && isEnforceableResponsesItemType(typ)
 	if enforceable {
 		if typ == "message" {
 			appendEnforceableUserValueSegments(segments, item, source, trustedInternalSource)
@@ -432,6 +469,26 @@ func appendResponsesItemSegments(segments *[]ModerationSegment, item gjson.Resul
 	}
 	for _, field := range []string{"content", "text", "output", "arguments"} {
 		appendValueSegments(segments, item.Get(field), role, source+"."+field, enforceable)
+	}
+}
+
+func isEnforceableResponsesItemType(typ string) bool {
+	switch typ {
+	case "", "message", "text", "input_text":
+		return true
+	default:
+		return false
+	}
+}
+
+func isResponsesContextOnlyItemType(typ string) bool {
+	switch typ {
+	case "output_text", "refusal", "function_call", "custom_tool_call", "computer_call", "web_search_call",
+		"function_call_output", "custom_tool_call_output", "computer_call_output", "tool_result",
+		"mcp_approval_request", "mcp_approval_response":
+		return true
+	default:
+		return false
 	}
 }
 

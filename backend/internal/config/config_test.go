@@ -799,6 +799,17 @@ func TestLoadForcedCodexInstructionsTemplate(t *testing.T) {
 	require.Equal(t, "server-prefix\n\n{{ .ExistingInstructions }}", cfg.Gateway.ForcedCodexInstructionsTemplate)
 }
 
+func TestLoadOpenAIPromptInjectionBypassAPIKeyIDs(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("gateway:\n  openai_prompt_injection_bypass_api_key_ids: [101, 202]\n"), 0o600))
+	t.Setenv("CONFIG_FILE", configPath)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []int64{101, 202}, cfg.Gateway.OpenAIPromptInjectionBypassAPIKeyIDs)
+}
+
 func TestLoadDefaultSecurityToggles(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

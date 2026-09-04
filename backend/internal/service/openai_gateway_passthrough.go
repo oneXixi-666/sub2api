@@ -151,24 +151,26 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
-			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
-			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
-			logOpenAIPassthroughInstructionsRejected(ctx, c, account, reqModel, rejectReason, body)
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": gin.H{
-					"type":    "forbidden_error",
-					"message": rejectMsg,
-				},
-			})
-			return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
-		}
-		if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
-			nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
-			if setErr != nil {
-				return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
+		if !s.shouldBypassOpenAIPromptInjection(c) {
+			if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
+				rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
+				MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+				logOpenAIPassthroughInstructionsRejected(ctx, c, account, reqModel, rejectReason, body)
+				c.JSON(http.StatusForbidden, gin.H{
+					"error": gin.H{
+						"type":    "forbidden_error",
+						"message": rejectMsg,
+					},
+				})
+				return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
 			}
-			body = nextBody
+			if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
+				nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
+				if setErr != nil {
+					return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
+				}
+				body = nextBody
+			}
 		}
 
 		normalizedBody, normalized, err := normalizeOpenAIPassthroughOAuthBody(body, isOpenAIResponsesCompactPath(c))

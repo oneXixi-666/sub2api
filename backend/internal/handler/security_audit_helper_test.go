@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -159,6 +161,41 @@ func TestRunSecurityAuditLogsWebSocketChecksAndCacheHits(t *testing.T) {
 	require.Equal(t, "allow", doneLogs[1].ContextMap()["decision"])
 	require.Equal(t, "subsequent_turn", doneLogs[1].ContextMap()["stage"])
 	require.Equal(t, int64(1), engine.evaluates.Load())
+}
+
+func TestRunContentModerationReadsTrustFromRequestContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &service.ContentModerationConfig{
+		Enabled:             true,
+		Mode:                service.ContentModerationModePreBlock,
+		SampleRate:          100,
+		AllGroups:           true,
+		HardBlockedKeywords: []string{"internal hard-term"},
+		KeywordBlockingMode: service.ContentModerationKeywordModeKeywordOnly,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationHandlerTestRepo{}, nil, nil, nil, nil, nil, nil,
+	)
+	body := []byte(`{"input":[{"type":"message","role":"user","content":"<codex_internal_context>\ninternal hard-term\n</codex_internal_context>\nactual request"}]}`)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	untrusted := runContentModeration(c, nil, moderationSvc, nil, middleware2.AuthSubject{UserID: 7}, service.ContentModerationProtocolOpenAIResponses, "gpt-test", body)
+	require.NotNil(t, untrusted)
+	require.True(t, untrusted.Blocked)
+
+	c.Request = c.Request.WithContext(service.WithTrustedContentModerationSource(c.Request.Context()))
+	trusted := runContentModeration(c, nil, moderationSvc, nil, middleware2.AuthSubject{UserID: 7}, service.ContentModerationProtocolOpenAIResponses, "gpt-test", body)
+	require.NotNil(t, trusted)
+	require.True(t, trusted.Allowed)
+	require.False(t, trusted.Blocked)
 }
 
 type turnCountingEngine struct {

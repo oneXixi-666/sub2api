@@ -302,6 +302,13 @@ gateway:
   # Docker 用户可将宿主机文件挂载到 /app/data/codex-instructions.md.tmpl，
   # 然后把本字段指向该路径。
   forced_codex_instructions_template_file: ""
+  # Optional: API Key IDs whose OpenAI/Codex requests must not receive any
+  # gateway-generated prompt text. Client-provided instructions/system prompts
+  # are preserved. Matching uses the authenticated API Key already in memory and
+  # does not query the database on the request path.
+  # 可选：禁止网关主动添加 OpenAI/Codex 提示词的 API Key ID。客户端自己携带的
+  # instructions/system prompt 仍会保留；请求热路径只匹配鉴权结果，不额外查库。
+  openai_prompt_injection_bypass_api_key_ids: []
   # OpenAI 透传模式是否放行客户端超时头（如 x-stainless-timeout）
   # 默认 false：过滤超时头，降低上游提前断流风险。
   openai_passthrough_allow_timeout_headers: false

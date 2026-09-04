@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -42,6 +43,38 @@ func TestExtractCyberPolicyConversationEvidence(t *testing.T) {
 	require.Equal(t, 2, evidence.MessageCount)
 	require.Len(t, evidence.InputHash, 64)
 	require.Empty(t, extractCyberPolicyConversationEvidence(cyberPolicyRequestEvidence{}).Snapshot)
+}
+
+func TestExtractCyberPolicyInputExcerptUsesUpstreamOffset(t *testing.T) {
+	prefix := strings.Repeat("前", 300)
+	match := "真正命中😀内容"
+	suffix := strings.Repeat("后", 300)
+	body, err := json.Marshal(map[string]any{
+		"input": []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": prefix + match + suffix}}}},
+	})
+	require.NoError(t, err)
+
+	start := len([]rune(prefix))
+	mark := &service.CyberPolicyMark{InputOffset: &service.CyberPolicyInputOffset{
+		Start: start,
+		End:   start + len([]rune(match)),
+	}}
+	excerpt := extractCyberPolicyInputExcerpt(cyberPolicyRequestEvidence{
+		Body:     body,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	}, mark, "legacy fallback")
+	require.Contains(t, excerpt, match)
+	require.NotEqual(t, "legacy fallback", excerpt)
+}
+
+func TestExtractCyberPolicyInputExcerptFallsBackWithoutUsableOffset(t *testing.T) {
+	fallback := "legacy fallback"
+	body := []byte(`{"input":"short"}`)
+	mark := &service.CyberPolicyMark{InputOffset: &service.CyberPolicyInputOffset{Start: 100, End: 101}}
+	require.Equal(t, fallback, extractCyberPolicyInputExcerpt(cyberPolicyRequestEvidence{
+		Body:     body,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	}, mark, fallback))
 }
 
 // TestRecordCyberPolicyIfMarked_WithMark verifies that:
