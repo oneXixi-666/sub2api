@@ -62,13 +62,15 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	    category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
 	    violation_count, auto_banned, email_sent, queue_delay_ms, matched_keyword,
 	    input_snapshot, input_hash, input_length, message_count, input_truncated,
-	    protocol, audit_stage, turn_number, cyber_policy_mode, cyber_policy_source, cyber_policy_snapshot
+	    protocol, audit_stage, turn_number, cyber_policy_mode, cyber_policy_source, cyber_policy_snapshot,
+	    matched_role, matched_source, matched_start, matched_end
 	) VALUES (
 	    $1, $2, $3, $4, $5, $6, $7,
 	    $8, $9, $10, $11, $12, $13, $14, $15,
 	    $16::jsonb, $17::jsonb, $18, $19, $20,
 	    $21, $22, $23, $24, $25,
-	    $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36::jsonb
+	    $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36::jsonb,
+	    $37, $38, $39, $40
 	) RETURNING id, created_at`,
 		log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
@@ -76,6 +78,7 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS), log.MatchedKeyword,
 		log.InputSnapshot, log.InputHash, log.InputLength, log.MessageCount, log.InputTruncated,
 		log.Protocol, log.AuditStage, log.TurnNumber, log.CyberPolicyMode, log.CyberPolicySource, string(cyberPolicySnapshot),
+		log.MatchedRole, log.MatchedSource, log.MatchedStart, log.MatchedEnd,
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert content moderation log: %w", err)
@@ -112,7 +115,8 @@ SELECT
 	    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.matched_keyword,
 	    l.input_snapshot, l.input_hash, l.input_length, l.message_count, l.input_truncated,
 	    l.protocol, l.audit_stage, l.turn_number, l.cyber_policy_mode,
-	    l.cyber_policy_source, l.cyber_policy_snapshot, l.created_at
+	    l.cyber_policy_source, l.cyber_policy_snapshot,
+	    l.matched_role, l.matched_source, l.matched_start, l.matched_end, l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id `+whereSQL+`
 ORDER BY l.created_at DESC, l.id DESC
@@ -168,6 +172,10 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.CyberPolicyMode,
 			&item.CyberPolicySource,
 			&cyberPolicySnapshotRaw,
+			&item.MatchedRole,
+			&item.MatchedSource,
+			&item.MatchedStart,
+			&item.MatchedEnd,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -324,8 +332,10 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 		where = append(where, "l.flagged = TRUE")
 	case "blocked", "block":
 		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block')")
+	case "observe", "keyword_observe":
+		where = append(where, "l.action = 'keyword_observe'")
 	case "pass", "allow":
-		where = append(where, "l.flagged = FALSE AND l.error = ''")
+		where = append(where, "l.action = 'allow' AND l.flagged = FALSE AND l.error = ''")
 	case "error":
 		where = append(where, "l.error <> ''")
 	}

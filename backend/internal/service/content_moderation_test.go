@@ -184,6 +184,7 @@ type contentModerationTestHashCache struct {
 	deleted       []string
 	hasResult     bool
 	hasResultUsed bool
+	eventErr      error
 }
 
 type contentModerationTestUserRepo struct {
@@ -375,6 +376,9 @@ func (c *contentModerationTestHashCache) HasFlaggedInputHash(ctx context.Context
 func (c *contentModerationTestHashCache) AcquireEventDedupe(ctx context.Context, fingerprint string, ttl time.Duration) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.eventErr != nil {
+		return false, c.eventErr
+	}
 	if c.events == nil {
 		c.events = map[string]time.Time{}
 	}
@@ -486,6 +490,15 @@ func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
 	require.Equal(t, []string{"foo", "bar", "baz"}, out)
 }
 
+func TestContentModerationConfigMigratesLegacyObservationLibrary(t *testing.T) {
+	cfg, err := parseContentModerationConfig(`{"blocked_keywords":["broad-one","broad-two"],"hard_blocked_keywords":[]}`)
+	require.NoError(t, err)
+	require.Equal(t, []string{"broad-one", "broad-two"}, cfg.UserObservationKeywords)
+	require.Equal(t, cfg.UserObservationKeywords, cfg.BlockedKeywords)
+	require.Empty(t, cfg.ContextObservationKeywords)
+	require.Empty(t, cfg.HardBlockedKeywords)
+}
+
 func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 	keyword, hit := matchBlockedKeyword("Please ignore the BadWord here", []string{"badword"})
 	require.True(t, hit)
@@ -496,6 +509,18 @@ func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 
 	_, hit = matchBlockedKeyword("anything", nil)
 	require.False(t, hit)
+}
+
+func TestExcerptAroundKeywordCentersEvidence(t *testing.T) {
+	text := strings.Repeat("前", 400) + "exact-risk-phrase" + strings.Repeat("后", 400)
+	match := KeywordMatch{Keyword: "exact-risk-phrase", Start: len([]byte(strings.Repeat("前", 400))), End: len([]byte(strings.Repeat("前", 400) + "exact-risk-phrase"))}
+
+	excerpt := excerptAroundKeyword(text, match)
+
+	require.Contains(t, excerpt, "exact-risk-phrase")
+	require.LessOrEqual(t, len([]rune(excerpt)), maxModerationExcerptRunes)
+	require.Contains(t, excerpt, "前")
+	require.Contains(t, excerpt, "后")
 }
 
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {
@@ -586,9 +611,91 @@ func TestContentModerationCheck_BroadKeywordIsObservationOnly(t *testing.T) {
 	require.False(t, decision.Blocked)
 	logs := requireContentModerationLogCount(t, repo, 1)
 	require.Equal(t, ContentModerationActionKeywordObserve, logs[0].Action)
-	require.True(t, logs[0].Flagged)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, contentModerationKeywordObserveCategory, logs[0].HighestCategory)
+	require.Zero(t, logs[0].HighestScore)
 	require.Equal(t, "broad-policy-term", logs[0].MatchedKeyword)
+	require.Equal(t, moderationRoleAmbiguous, logs[0].MatchedRole)
+	require.Equal(t, "input[string]", logs[0].MatchedSource)
 	require.Zero(t, logs[0].ViolationCount)
+}
+
+func TestContentModerationCheck_KeywordOnlyStillAuditsResponsesString(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		var request moderationAPIRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.Equal(t, "official string input", request.Input)
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{CategoryScores: map[string]float64{"sexual": 0.01}}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.HardBlockedKeywords = []string{"official"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(rawCfg),
+	}}, &contentModerationTestRepo{}, &contentModerationTestHashCache{}, nil, nil, nil, nil, nil)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"official string input"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.True(t, upstreamCalled, "ambiguous Responses input must not bypass the moderation API")
+}
+
+func TestContentModerationCheck_ObservationLibrariesRespectSource(t *testing.T) {
+	newService := func(bodyConfig *ContentModerationConfig) (*ContentModerationService, *contentModerationTestRepo) {
+		rawCfg, err := json.Marshal(bodyConfig)
+		require.NoError(t, err)
+		repo := &contentModerationTestRepo{}
+		return NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(rawCfg),
+		}}, repo, &contentModerationTestHashCache{}, nil, nil, nil, nil, nil), repo
+	}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.UserObservationKeywords = []string{"user-only-term"}
+	cfg.ContextObservationKeywords = []string{"context-only-term"}
+
+	t.Run("fixed system and developer prompts are not scanned", func(t *testing.T) {
+		svc, repo := newService(cfg)
+		decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+			UserID: 1, Protocol: ContentModerationProtocolOpenAIResponses,
+			Body: []byte(`{"instructions":"context-only-term","input":[` +
+				`{"role":"system","content":"context-only-term"},` +
+				`{"role":"assistant","content":"clean output"}]}`),
+		})
+		require.NoError(t, err)
+		require.True(t, decision.Allowed)
+		require.Empty(t, repo.snapshotLogs())
+	})
+
+	t.Run("tool output uses context library and records provenance", func(t *testing.T) {
+		svc, repo := newService(cfg)
+		decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+			UserID: 1, Protocol: ContentModerationProtocolOpenAIResponses,
+			Body: []byte(`{"input":[{"type":"function_call_output","call_id":"1","output":"context-only-term"}]}`),
+		})
+		require.NoError(t, err)
+		require.True(t, decision.Allowed)
+		logs := requireContentModerationLogCount(t, repo, 1)
+		require.False(t, logs[0].Flagged)
+		require.Equal(t, moderationRoleTool, logs[0].MatchedRole)
+		require.Equal(t, "input[0].output", logs[0].MatchedSource)
+	})
 }
 
 func TestContentModerationCheck_RetryDedupeKeepsBlockButRecordsOneEvent(t *testing.T) {
@@ -1033,7 +1140,7 @@ func TestExtractContentModerationInput_AnthropicImageSourceOnlyParticipatesInMem
 	require.NotContains(t, log.InputExcerpt, "aGVsbG8=")
 }
 
-func TestExtractContentModerationInput_AnthropicKeepsEphemeralUserTextAndSkipsSystemReminders(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicStripsOnlyCompleteSystemReminders(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{
@@ -1049,7 +1156,7 @@ func TestExtractContentModerationInput_AnthropicKeepsEphemeralUserTextAndSkipsSy
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "hid", input.Text)
+	require.Equal(t, "<system-reminder>Ainder> hid", input.Text)
 	require.Empty(t, input.Images)
 }
 

@@ -184,6 +184,45 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		"Error should mention flagged or cyber_policy")
 }
 
+func TestRecordCyberPolicyEvent_DedupesRetriesBeforeAllSideEffects(t *testing.T) {
+	group7, group8 := int64(7), int64(8)
+	repo := &banCountArgsTestRepo{}
+	cache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true",
+	}}, repo, cache, nil, nil, nil, nil, nil)
+	base := CyberPolicyRecordInput{
+		UserID: 741, APIKeyID: 99, GroupID: &group7,
+		InputHash: strings.Repeat("b", 64), InputSnapshot: "[user]\nsame request",
+	}
+
+	svc.RecordCyberPolicyEvent(context.Background(), base)
+	svc.RecordCyberPolicyEvent(context.Background(), base)
+
+	require.Len(t, repo.snapshotLogs(), 1, "a retry must not create another log row")
+	require.Len(t, repo.snapshotCyberCountCalls(), 1, "a retry must not increment the violation counter")
+
+	base.GroupID = &group8
+	svc.RecordCyberPolicyEvent(context.Background(), base)
+	require.Len(t, repo.snapshotLogs(), 2, "different groups must not share a dedupe key")
+	require.Len(t, repo.snapshotCyberCountCalls(), 2)
+}
+
+func TestRecordCyberPolicyEvent_DedupeFailureFailsOpenForEvidence(t *testing.T) {
+	repo := &banCountArgsTestRepo{}
+	cache := &contentModerationTestHashCache{eventErr: errors.New("redis unavailable")}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true",
+	}}, repo, cache, nil, nil, nil, nil, nil)
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID: 741, InputHash: strings.Repeat("c", 64), InputSnapshot: "[user]\nevidence",
+	})
+
+	require.Len(t, repo.snapshotLogs(), 1, "Redis failure must not discard upstream evidence")
+	require.Len(t, repo.snapshotCyberCountCalls(), 1)
+}
+
 func TestRecordCyberPolicyEvent_UsesFrozenResolvedPolicy(t *testing.T) {
 	repo := &contentModerationTestRepo{}
 	groupID := int64(7)

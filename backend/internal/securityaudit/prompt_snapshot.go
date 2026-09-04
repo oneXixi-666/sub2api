@@ -34,6 +34,7 @@ type promptSegment struct {
 // normalized transcript before Snapshot is truncated.
 type ConversationEvidence struct {
 	Snapshot     string
+	Excerpt      string
 	InputHash    string
 	InputLength  int
 	MessageCount int
@@ -41,6 +42,14 @@ type ConversationEvidence struct {
 }
 
 const DefaultConversationEvidenceMaxRunes = 12000
+
+const (
+	conversationLatestUserRunes = 4000
+	conversationAdjacentRunes   = 5000
+	conversationSystemRunes     = 2000
+	conversationMetadataRunes   = 1000
+	conversationExcerptRunes    = 240
+)
 
 // ExtractConversationEvidence reuses the prompt-audit protocol parser while
 // preserving source order and role labels. It intentionally excludes binary
@@ -57,34 +66,124 @@ func ExtractConversationEvidence(protocol string, body []byte, maxRunes int) (Co
 	if maxRunes <= 0 {
 		maxRunes = DefaultConversationEvidenceMaxRunes
 	}
+	fullText := formatConversationSegments(segments)
+	digest := sha256.Sum256([]byte(fullText))
+	inputLength := utf8.RuneCountInString(fullText)
+	snapshot := fullText
+	truncated := false
+	if inputLength > maxRunes {
+		snapshot = buildPrioritizedConversationEvidence(segments, maxRunes)
+		truncated = true
+	}
+	latestUser := latestConversationUserText(segments)
+	return ConversationEvidence{
+		Snapshot:     snapshot,
+		Excerpt:      TrimRunes(latestUser, conversationExcerptRunes),
+		InputHash:    hex.EncodeToString(digest[:]),
+		InputLength:  inputLength,
+		MessageCount: len(segments),
+		Truncated:    truncated,
+	}, nil
+}
+
+func formatConversationSegments(segments []promptSegment) string {
 	var builder strings.Builder
 	for index, segment := range segments {
 		if index > 0 {
 			builder.WriteString("\n\n")
 		}
-		role := strings.ToLower(strings.TrimSpace(segment.role))
-		if role == "" {
-			if segment.user {
-				role = "user"
-			} else {
-				role = "unknown"
-			}
-		}
-		builder.WriteByte('[')
-		builder.WriteString(role)
-		builder.WriteString("]\n")
-		builder.WriteString(segment.text)
+		builder.WriteString(formatConversationSegment(segment))
 	}
-	fullText := strings.ReplaceAll(strings.TrimSpace(builder.String()), "\x00", "")
-	digest := sha256.Sum256([]byte(fullText))
-	inputLength := utf8.RuneCountInString(fullText)
-	return ConversationEvidence{
-		Snapshot:     TrimRunes(fullText, maxRunes),
-		InputHash:    hex.EncodeToString(digest[:]),
-		InputLength:  inputLength,
-		MessageCount: len(segments),
-		Truncated:    inputLength > maxRunes,
-	}, nil
+	return strings.ReplaceAll(strings.TrimSpace(builder.String()), "\x00", "")
+}
+
+func formatConversationSegment(segment promptSegment) string {
+	role := strings.ToLower(strings.TrimSpace(segment.role))
+	if role == "" {
+		if segment.user {
+			role = "user"
+		} else {
+			role = "unknown"
+		}
+	}
+	return "[" + role + "]\n" + strings.ReplaceAll(strings.TrimSpace(segment.text), "\x00", "")
+}
+
+func latestConversationUserText(segments []promptSegment) string {
+	for index := len(segments) - 1; index >= 0; index-- {
+		role := strings.ToLower(strings.TrimSpace(segments[index].role))
+		if segments[index].user || role == "user" {
+			return strings.TrimSpace(segments[index].text)
+		}
+	}
+	return ""
+}
+
+func buildPrioritizedConversationEvidence(segments []promptSegment, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	latestUserIndex := -1
+	for index := len(segments) - 1; index >= 0; index-- {
+		if segments[index].user || strings.EqualFold(strings.TrimSpace(segments[index].role), "user") {
+			latestUserIndex = index
+			break
+		}
+	}
+	selected := make(map[int]struct{}, len(segments))
+	parts := make([]string, 0, len(segments))
+	remaining := maxRunes
+	appendSegment := func(index int, categoryBudget *int) {
+		if index < 0 || index >= len(segments) || remaining <= 0 || *categoryBudget <= 0 {
+			return
+		}
+		if _, exists := selected[index]; exists {
+			return
+		}
+		formatted := formatConversationSegment(segments[index])
+		limit := min(remaining, *categoryBudget)
+		formatted = TrimRunes(formatted, limit)
+		if strings.TrimSpace(formatted) == "" {
+			return
+		}
+		parts = append(parts, formatted)
+		used := utf8.RuneCountInString(formatted)
+		remaining -= used
+		*categoryBudget -= used
+		selected[index] = struct{}{}
+	}
+	userBudget := conversationLatestUserRunes
+	appendSegment(latestUserIndex, &userBudget)
+	adjacentBudget := conversationAdjacentRunes
+	for distance := 1; distance < len(segments) && adjacentBudget > 0 && remaining > 0; distance++ {
+		for _, index := range []int{latestUserIndex - distance, latestUserIndex + distance} {
+			if index < 0 || index >= len(segments) || !isAdjacentConversationRole(segments[index].role) {
+				continue
+			}
+			appendSegment(index, &adjacentBudget)
+		}
+	}
+	systemBudget := conversationSystemRunes
+	for index, segment := range segments {
+		role := strings.ToLower(strings.TrimSpace(segment.role))
+		if role == "system" || role == "developer" {
+			appendSegment(index, &systemBudget)
+		}
+	}
+	metadataBudget := conversationMetadataRunes
+	for index := len(segments) - 1; index >= 0; index-- {
+		appendSegment(index, &metadataBudget)
+	}
+	return TrimRunes(strings.Join(parts, "\n\n"), maxRunes)
+}
+
+func isAdjacentConversationRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "assistant", "model", "tool", "function":
+		return true
+	default:
+		return false
+	}
 }
 
 func ExtractPromptSnapshot(req Request) (PromptSnapshot, error) {

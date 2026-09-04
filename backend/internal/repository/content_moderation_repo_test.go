@@ -21,6 +21,16 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 	require.NotContains(t, sql, "l.action = 'block'")
 }
 
+func TestBuildContentModerationLogWhere_ObservationHasDedicatedFilter(t *testing.T) {
+	where, _ := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "observe"})
+	require.Contains(t, strings.Join(where, " AND "), "l.action = 'keyword_observe'")
+
+	where, _ = buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "pass"})
+	passSQL := strings.Join(where, " AND ")
+	require.Contains(t, passSQL, "l.action = 'allow'")
+	require.NotContains(t, passSQL, "keyword_observe")
+}
+
 func TestBuildContentModerationLogWhere_SearchIncludesConversationEvidence(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Search: "exploit"})
 
@@ -48,6 +58,7 @@ func TestContentModerationRepositoryCreateLog_PersistsConversationEvidence(t *te
 			"[user] review exploit in context", hash, 32, 1, true,
 			"openai_responses", "http", 0, "enforce", "group_override",
 			`{"version":1,"source":"group_override","policy":{"mode":"enforce","session_block_enabled":true,"session_block_ttl_seconds":600,"violation_count_enabled":true,"email_on_hit":false,"auto_ban_enabled":true,"ban_threshold":3,"violation_window_hours":24}}`,
+			"", "", 0, 0,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(91), createdAt))
 

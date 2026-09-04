@@ -99,7 +99,7 @@ func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.
 		"contents": [
 			{"role":"user","parts":[{"text":"查询天气"}]},
 			{"role":"model","parts":[{"functionCall":{"name":"weather","args":{}}}]},
-			{"role":"user","parts":[{"functionResponse":{"name":"weather","response":{"temp":25}}}]}
+			{"role":"user","parts":[{"functionResponse":{"name":"weather","response":{"temp":25,"summary":"晴"}}}]}
 		]
 	}`)
 
@@ -107,6 +107,10 @@ func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.
 
 	require.Empty(t, input.Text)
 	require.Empty(t, input.Images)
+	extracted := extractContentModerationInputs(ContentModerationProtocolGemini, body)
+	require.NotEmpty(t, extracted.Segments)
+	require.Equal(t, moderationRoleTool, extracted.Segments[len(extracted.Segments)-1].Role)
+	require.False(t, extracted.Segments[len(extracted.Segments)-1].Enforceable)
 }
 
 func TestExtractContentModerationInput_GeminiFirstTurnExtractsUser(t *testing.T) {
@@ -178,39 +182,77 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInputs_ResponsesOpaqueStringIsObservationOnly(t *testing.T) {
+func TestExtractContentModerationInputs_ResponsesStringRequiresAPIAudit(t *testing.T) {
 	body := []byte(`{"input":"tool output with broad-policy-term and approval context"}`)
 
 	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
 
 	require.Empty(t, extracted.User.Text)
-	require.Equal(t, "tool output with broad-policy-term and approval context", extracted.Observation.Text)
+	require.Equal(t, "tool output with broad-policy-term and approval context", extracted.Audit.Text)
+	require.True(t, extracted.RequiresAPI)
+	require.Equal(t, moderationRoleAmbiguous, extracted.Segments[0].Role)
 }
 
-func TestExtractContentModerationInputs_ResponsesUnroledInputTextIsObservationOnly(t *testing.T) {
+func TestExtractContentModerationInputs_ResponsesWebSocketStringRequiresAPIAudit(t *testing.T) {
+	body := []byte(`{"type":"response.create","response":{"input":"websocket string input"}}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponsesWS, body)
+
+	require.Empty(t, extracted.User.Text)
+	require.Equal(t, "websocket string input", extracted.Audit.Text)
+	require.True(t, extracted.RequiresAPI)
+	require.Equal(t, moderationRoleAmbiguous, extracted.Segments[0].Role)
+}
+
+func TestExtractContentModerationInputs_ResponsesUnroledInputTextRequiresAPIAudit(t *testing.T) {
 	body := []byte(`{"input":[{"type":"input_text","text":"flattened tool result"}]}`)
 
 	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
 
 	require.Empty(t, extracted.User.Text)
-	require.Equal(t, "flattened tool result", extracted.Observation.Text)
+	require.Equal(t, "flattened tool result", extracted.Audit.Text)
+	require.True(t, extracted.RequiresAPI)
 }
 
-func TestExtractContentModerationInputs_ResponsesSyntheticUserEnvelopeIsObservationOnly(t *testing.T) {
+func TestExtractContentModerationInputs_ResponsesCompleteEnvelopeIsStrippedButUserRemainderIsAudited(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"developer","content":[{"type":"input_text","text":"policy"}]},
-			{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n<environment_context>tool output broad-policy-term</environment_context>"}]}
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\ntool output broad-policy-term\n</environment_context>\nplease review this request"}]}
 		]
 	}`)
 
 	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, extracted.User.Text)
-	require.Contains(t, extracted.Observation.Text, "broad-policy-term")
+	require.Equal(t, "please review this request", extracted.User.Text)
+	require.Equal(t, extracted.User.Text, extracted.Audit.Text)
+	require.False(t, extracted.RequiresAPI)
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleUser, Source: "input[1].content[0].text", Text: "please review this request", Enforceable: true})
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleEnvironment, Source: "input[1].content[0].text.envelope", Text: "<environment_context>\ntool output broad-policy-term\n</environment_context>"})
 }
 
-func TestExtractContentModerationInputs_ResponsesContextRolesStayObservable(t *testing.T) {
+func TestExtractContentModerationInputs_MarkerLiteralCannotSkipRealUserInput(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":"explain the literal <environment_context> marker and then do the task"}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Equal(t, "explain the literal <environment_context> marker and then do the task", extracted.User.Text)
+	require.Equal(t, extracted.User.Text, extracted.Audit.Text)
+}
+
+func TestExtractContentModerationInputs_AgentsEnvelopeRequiresCompleteHeaderAndKeepsRemainder(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":"# AGENTS.md instructions\n\n<INSTRUCTIONS>\ninternal policy\n</INSTRUCTIONS>\nactual user request"}]}`)
+
+	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Equal(t, "actual user request", extracted.User.Text)
+	require.Contains(t, extracted.Segments, ModerationSegment{
+		Role: moderationRoleEnvironment, Source: "input[0].content.envelope",
+		Text: "# AGENTS.md instructions\n\n<INSTRUCTIONS>\ninternal policy\n</INSTRUCTIONS>",
+	})
+}
+
+func TestExtractContentModerationInputs_ResponsesContextRolesRemainSeparate(t *testing.T) {
 	body := []byte(`{
 		"instructions":"developer broad-policy-term",
 		"input":[
@@ -223,8 +265,9 @@ func TestExtractContentModerationInputs_ResponsesContextRolesStayObservable(t *t
 	extracted := extractContentModerationInputs(ContentModerationProtocolOpenAIResponses, body)
 
 	require.Empty(t, extracted.User.Text)
-	require.Contains(t, extracted.Observation.Text, "developer broad-policy-term")
-	require.Contains(t, extracted.Observation.Text, "system broad-policy-term")
-	require.Contains(t, extracted.Observation.Text, "assistant broad-policy-term")
-	require.Contains(t, extracted.Observation.Text, "tool broad-policy-term")
+	require.Empty(t, extracted.Audit.Text)
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleDeveloper, Source: "instructions", Text: "developer broad-policy-term"})
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleSystem, Source: "input[0].content", Text: "system broad-policy-term"})
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleAssistant, Source: "input[1].content[0].text", Text: "assistant broad-policy-term"})
+	require.Contains(t, extracted.Segments, ModerationSegment{Role: moderationRoleTool, Source: "input[2].output", Text: "tool broad-policy-term"})
 }

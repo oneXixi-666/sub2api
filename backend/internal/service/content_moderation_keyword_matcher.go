@@ -4,6 +4,16 @@ import (
 	"strings"
 )
 
+// KeywordMatch preserves the location and provenance of the strongest match.
+// Start and End are byte offsets into Text; End is exclusive.
+type KeywordMatch struct {
+	Keyword string
+	Start   int
+	End     int
+	Role    string
+	Source  string
+}
+
 type contentModerationKeywordMatcher struct {
 	nodes           []contentModerationKeywordNode
 	edges           []contentModerationKeywordEdge
@@ -57,9 +67,7 @@ func newContentModerationKeywordMatcher(keywords []string) *contentModerationKey
 			}
 			state = next
 		}
-		if current := buildNodes[state].bestKeyword; current < 0 || int32(keywordIndex) < current {
-			buildNodes[state].bestKeyword = int32(keywordIndex)
-		}
+		buildNodes[state].bestKeyword = betterKeywordIndex(buildNodes[state].bestKeyword, int32(keywordIndex), originalKeywords)
 	}
 
 	if len(buildNodes) == 1 {
@@ -87,9 +95,10 @@ func newContentModerationKeywordMatcher(keywords []string) *contentModerationKey
 			if fallback >= 0 {
 				buildNodes[edge.target].failure = fallback
 			}
-			buildNodes[edge.target].bestKeyword = minKeywordIndex(
+			buildNodes[edge.target].bestKeyword = betterKeywordIndex(
 				buildNodes[edge.target].bestKeyword,
 				buildNodes[buildNodes[edge.target].failure].bestKeyword,
+				originalKeywords,
 			)
 			queue = append(queue, edge.target)
 		}
@@ -154,23 +163,30 @@ func contentModerationKeywordBuildTransition(
 	return -1
 }
 
-func minKeywordIndex(left, right int32) int32 {
+func betterKeywordIndex(left, right int32, keywords []string) int32 {
 	if left < 0 {
 		return right
 	}
-	if right < 0 || left < right {
+	if right < 0 {
 		return left
 	}
-	return right
+	leftLength := len([]byte(strings.ToLower(keywords[left])))
+	rightLength := len([]byte(strings.ToLower(keywords[right])))
+	if rightLength > leftLength || (rightLength == leftLength && right < left) {
+		return right
+	}
+	return left
 }
 
-func (m *contentModerationKeywordMatcher) Match(text string) (string, bool) {
+func (m *contentModerationKeywordMatcher) Match(text string) (KeywordMatch, bool) {
 	if m == nil || text == "" || len(m.nodes) == 0 || len(m.keywords) == 0 {
-		return "", false
+		return KeywordMatch{}, false
 	}
 	lower := strings.ToLower(text)
 	state := int32(0)
 	bestKeyword := int32(-1)
+	bestStart := -1
+	bestEnd := -1
 	for index := 0; index < len(lower); index++ {
 		label := lower[index]
 		for {
@@ -184,15 +200,48 @@ func (m *contentModerationKeywordMatcher) Match(text string) (string, bool) {
 			}
 			state = m.nodes[state].failure
 		}
-		bestKeyword = minKeywordIndex(bestKeyword, m.nodes[state].bestKeyword)
-		if bestKeyword == 0 {
-			return m.keywords[0], true
+		candidate := m.nodes[state].bestKeyword
+		if candidate >= 0 && int(candidate) < len(m.keywords) {
+			candidateLength := len([]byte(strings.ToLower(m.keywords[candidate])))
+			candidateEnd := index + 1
+			candidateStart := candidateEnd - candidateLength
+			selected := betterKeywordIndex(bestKeyword, candidate, m.keywords)
+			if selected == candidate && (candidate != bestKeyword || bestStart < 0 || candidateStart < bestStart) {
+				bestKeyword = candidate
+				bestStart = candidateStart
+				bestEnd = candidateEnd
+			}
 		}
 	}
 	if bestKeyword < 0 || int(bestKeyword) >= len(m.keywords) {
-		return "", false
+		return KeywordMatch{}, false
 	}
-	return m.keywords[bestKeyword], true
+	return KeywordMatch{
+		Keyword: m.keywords[bestKeyword],
+		Start:   originalByteOffsetForLowerOffset(text, lower, bestStart),
+		End:     originalByteOffsetForLowerOffset(text, lower, bestEnd),
+	}, true
+}
+
+func originalByteOffsetForLowerOffset(original, lower string, lowerOffset int) int {
+	if lowerOffset <= 0 {
+		return 0
+	}
+	if lowerOffset >= len(lower) {
+		return len(original)
+	}
+	targetRune := len([]rune(lower[:lowerOffset]))
+	if targetRune <= 0 {
+		return 0
+	}
+	runeIndex := 0
+	for byteIndex := range original {
+		if runeIndex == targetRune {
+			return byteIndex
+		}
+		runeIndex++
+	}
+	return len(original)
 }
 
 func (m *contentModerationKeywordMatcher) next(state int32, label byte) int32 {

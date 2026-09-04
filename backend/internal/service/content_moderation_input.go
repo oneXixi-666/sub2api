@@ -17,12 +17,33 @@ func ExtractContentModerationInput(protocol string, body []byte) ContentModerati
 	return extractContentModerationInputs(protocol, body).User
 }
 
-// contentModerationExtractedInputs separates enforceable user content from
-// contextual evidence. Contextual evidence remains useful for observing broad
-// keyword hits, but must never drive hash, keyword, or moderation API blocking.
+// ModerationSegment preserves provenance so observation rules never need to
+// infer trust from text markers inside a flattened prompt.
+type ModerationSegment struct {
+	Role        string
+	Source      string
+	Text        string
+	Enforceable bool
+}
+
+const (
+	moderationRoleUser        = "user"
+	moderationRoleAssistant   = "assistant"
+	moderationRoleTool        = "tool"
+	moderationRoleSystem      = "system"
+	moderationRoleDeveloper   = "developer"
+	moderationRoleEnvironment = "environment"
+	moderationRoleAmbiguous   = "ambiguous"
+)
+
+// contentModerationExtractedInputs separates locally enforceable content from
+// content that must be sent to the moderation API. Segments retain all
+// reviewable client text without flattening roles and sources together.
 type contentModerationExtractedInputs struct {
 	User        ContentModerationInput
-	Observation ContentModerationInput
+	Audit       ContentModerationInput
+	Segments    []ModerationSegment
+	RequiresAPI bool
 }
 
 func extractContentModerationInputs(protocol string, body []byte) contentModerationExtractedInputs {
@@ -31,55 +52,43 @@ func extractContentModerationInputs(protocol string, body []byte) contentModerat
 	}
 	var parts []string
 	var images []string
-	var observationParts []string
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages:
 		collectLastAnthropicUserMessage(gjson.GetBytes(body, "messages"), &parts, &images)
-		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "system"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIChat:
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
-		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIResponses:
-		collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
-		collectResponsesObservations(gjson.GetBytes(body, "input"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "instructions"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
+		collectLastResponsesInput(responsesModerationInput(body), &parts, &images)
 	case ContentModerationProtocolGemini:
 		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images)
-		collectGeminiObservations(gjson.GetBytes(body, "contents"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "system_instruction"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "systemInstruction"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	case ContentModerationProtocolOpenAIImages:
 		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
-		addObservationText(&observationParts, gjson.GetBytes(body, "prompt").String())
 	default:
-		collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
+		collectLastResponsesInput(responsesModerationInput(body), &parts, &images)
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
 		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images)
-		collectResponsesObservations(gjson.GetBytes(body, "input"), &observationParts)
-		collectMessageObservations(gjson.GetBytes(body, "messages"), &observationParts)
-		collectGeminiObservations(gjson.GetBytes(body, "contents"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "instructions"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "system"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "system_instruction"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "systemInstruction"), &observationParts)
-		collectObservationValue(gjson.GetBytes(body, "tools"), &observationParts)
 	}
 	user := ContentModerationInput{
 		Text:   normalizeContentModerationText(strings.Join(parts, "\n")),
 		Images: normalizeModerationImages(images),
 	}
 	user.Normalize()
-	observation := ContentModerationInput{
-		Text: normalizeContentModerationText(strings.Join(observationParts, "\n")),
+	segments := collectModerationSegments(protocol, body)
+	audit := user
+	requiresAPI := false
+	if audit.IsEmpty() {
+		audit, requiresAPI = collectAmbiguousModerationInput(protocol, body)
 	}
-	observation.Normalize()
-	return contentModerationExtractedInputs{User: user, Observation: observation}
+	audit.Normalize()
+	return contentModerationExtractedInputs{User: user, Audit: audit, Segments: segments, RequiresAPI: requiresAPI}
+}
+
+func responsesModerationInput(body []byte) gjson.Result {
+	if input := gjson.GetBytes(body, "input"); input.Exists() {
+		return input
+	}
+	return gjson.GetBytes(body, "response.input")
 }
 
 func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string, images *[]string) {
@@ -97,13 +106,11 @@ func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string,
 	var candidate []string
 	var candidateImages []string
 	collectContentValue(last.Get("content"), &candidate, &candidateImages)
-	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+	cleaned, _ := splitSyntheticModerationEnvelope(strings.Join(candidate, "\n"))
+	if normalizeContentModerationText(cleaned) == "" && len(candidateImages) == 0 {
 		return
 	}
-	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
-		return
-	}
-	*parts = append(*parts, candidate...)
+	addModerationText(parts, cleaned)
 	*images = append(*images, candidateImages...)
 }
 
@@ -122,13 +129,11 @@ func collectLastAnthropicUserMessage(messages gjson.Result, parts *[]string, ima
 	var candidate []string
 	var candidateImages []string
 	collectAnthropicUserContentValue(last.Get("content"), &candidate, &candidateImages)
-	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
+	cleaned, _ := splitSyntheticModerationEnvelope(strings.Join(candidate, "\n"))
+	if normalizeContentModerationText(cleaned) == "" && len(candidateImages) == 0 {
 		return
 	}
-	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
-		return
-	}
-	*parts = append(*parts, candidate...)
+	addModerationText(parts, cleaned)
 	*images = append(*images, candidateImages...)
 }
 
@@ -137,9 +142,7 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		if !isAnthropicSystemReminderText(value.String()) {
-			addModerationText(parts, value.String())
-		}
+		addModerationText(parts, value.String())
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectAnthropicUserContentValue(item, parts, images)
@@ -149,7 +152,7 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		switch typ {
 		case "", "text", "input_text", "message":
-			if value.Get("text").Exists() && !isAnthropicSystemReminderText(value.Get("text").String()) {
+			if value.Get("text").Exists() {
 				addModerationText(parts, value.Get("text").String())
 			}
 			if value.Get("content").Exists() {
@@ -161,18 +164,13 @@ func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, image
 	}
 }
 
-func isAnthropicSystemReminderText(text string) bool {
-	return strings.HasPrefix(strings.TrimSpace(text), "<system-reminder>")
-}
-
 func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]string) {
 	switch {
 	case !input.Exists():
 		return
 	case input.Type == gjson.String:
-		// A top-level string has no independently verifiable source boundary.
-		// Codex clients may flatten tool output, approvals, and environment data
-		// into it, so retain it for observation only.
+		// Official Responses string input is attributable only as ambiguous
+		// client input. It is audited by API but never locally hard-blocked.
 		return
 	case input.IsArray():
 		array := input.Array()
@@ -189,10 +187,8 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 		if last.Get("type").String() == "input_text" || last.Get("text").Exists() {
 			collectContentValue(last, &candidate, &candidateImages)
 		}
-		if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
-			return
-		}
-		*parts = append(*parts, candidate...)
+		cleaned, _ := splitSyntheticModerationEnvelope(strings.Join(candidate, "\n"))
+		addModerationText(parts, cleaned)
 		*images = append(*images, candidateImages...)
 	case input.IsObject():
 		if isResponsesUserTextItem(input) {
@@ -202,10 +198,8 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 			if input.Get("type").String() == "input_text" || input.Get("text").Exists() {
 				collectContentValue(input, &candidate, &candidateImages)
 			}
-			if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
-				return
-			}
-			*parts = append(*parts, candidate...)
+			cleaned, _ := splitSyntheticModerationEnvelope(strings.Join(candidate, "\n"))
+			addModerationText(parts, cleaned)
 			*images = append(*images, candidateImages...)
 		}
 	}
@@ -251,104 +245,365 @@ func collectLastGeminiContent(contents gjson.Result, parts *[]string, images *[]
 	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
 		return
 	}
-	if isSyntheticModerationUserText(strings.Join(candidate, "\n")) {
-		return
-	}
-	*parts = append(*parts, candidate...)
+	cleaned, _ := splitSyntheticModerationEnvelope(strings.Join(candidate, "\n"))
+	addModerationText(parts, cleaned)
 	*images = append(*images, candidateImages...)
 }
 
-func collectMessageObservations(messages gjson.Result, parts *[]string) {
+func collectAmbiguousModerationInput(protocol string, body []byte) (ContentModerationInput, bool) {
+	if protocol != ContentModerationProtocolOpenAIResponses && protocol != ContentModerationProtocolOpenAIResponsesWS && protocol != "" {
+		return ContentModerationInput{}, false
+	}
+	input := responsesModerationInput(body)
+	var candidate gjson.Result
+	switch {
+	case input.Type == gjson.String:
+		candidate = input
+	case input.IsArray():
+		items := input.Array()
+		if len(items) == 0 || strings.TrimSpace(items[len(items)-1].Get("role").String()) != "" {
+			return ContentModerationInput{}, false
+		}
+		candidate = items[len(items)-1]
+	case input.IsObject() && strings.TrimSpace(input.Get("role").String()) == "":
+		candidate = input
+	default:
+		return ContentModerationInput{}, false
+	}
+	var parts []string
+	var images []string
+	if candidate.Type == gjson.String {
+		addModerationText(&parts, candidate.String())
+	} else {
+		collectContentValue(candidate.Get("content"), &parts, &images)
+		if candidate.Get("type").String() == "input_text" || candidate.Get("text").Exists() {
+			collectContentValue(candidate, &parts, &images)
+		}
+	}
+	out := ContentModerationInput{Text: normalizeContentModerationText(strings.Join(parts, "\n")), Images: normalizeModerationImages(images)}
+	out.Normalize()
+	return out, !out.IsEmpty()
+}
+
+func collectModerationSegments(protocol string, body []byte) []ModerationSegment {
+	segments := make([]ModerationSegment, 0, 16)
+	switch protocol {
+	case ContentModerationProtocolAnthropicMessages:
+		appendMessageSegments(&segments, gjson.GetBytes(body, "messages"), "messages")
+		appendValueSegments(&segments, gjson.GetBytes(body, "system"), moderationRoleSystem, "system", false)
+		appendValueSegments(&segments, gjson.GetBytes(body, "tools"), moderationRoleSystem, "tools", false)
+	case ContentModerationProtocolOpenAIChat:
+		appendMessageSegments(&segments, gjson.GetBytes(body, "messages"), "messages")
+		appendValueSegments(&segments, gjson.GetBytes(body, "tools"), moderationRoleSystem, "tools", false)
+	case ContentModerationProtocolOpenAIResponses, ContentModerationProtocolOpenAIResponsesWS:
+		appendResponsesSegments(&segments, responsesModerationInput(body))
+		instructions := gjson.GetBytes(body, "instructions")
+		if !instructions.Exists() {
+			instructions = gjson.GetBytes(body, "response.instructions")
+		}
+		appendValueSegments(&segments, instructions, moderationRoleDeveloper, "instructions", false)
+		appendValueSegments(&segments, gjson.GetBytes(body, "tools"), moderationRoleSystem, "tools", false)
+	case ContentModerationProtocolGemini:
+		appendGeminiSegments(&segments, gjson.GetBytes(body, "contents"))
+		appendValueSegments(&segments, gjson.GetBytes(body, "system_instruction"), moderationRoleSystem, "system_instruction", false)
+		appendValueSegments(&segments, gjson.GetBytes(body, "systemInstruction"), moderationRoleSystem, "systemInstruction", false)
+		appendValueSegments(&segments, gjson.GetBytes(body, "tools"), moderationRoleSystem, "tools", false)
+	case ContentModerationProtocolOpenAIImages:
+		appendTextSegment(&segments, moderationRoleUser, "prompt", gjson.GetBytes(body, "prompt").String(), true)
+	default:
+		appendResponsesSegments(&segments, responsesModerationInput(body))
+		appendMessageSegments(&segments, gjson.GetBytes(body, "messages"), "messages")
+		appendGeminiSegments(&segments, gjson.GetBytes(body, "contents"))
+	}
+	return segments
+}
+
+func appendMessageSegments(segments *[]ModerationSegment, messages gjson.Result, source string) {
 	if !messages.IsArray() {
 		return
 	}
-	messages.ForEach(func(_, message gjson.Result) bool {
-		collectObservationValue(message.Get("content"), parts)
+	items := messages.Array()
+	for index, message := range items {
+		role := normalizeModerationRole(message.Get("role").String())
+		if role == "" {
+			role = moderationRoleAmbiguous
+		}
+		enforceable := index == len(items)-1 && role == moderationRoleUser
+		base := fmt.Sprintf("%s[%d]", source, index)
+		appendMessageContentSegments(segments, message.Get("content"), role, base+".content", enforceable)
+		appendValueSegments(segments, message.Get("tool_calls"), moderationRoleAssistant, base+".tool_calls", false)
+	}
+}
+
+func appendMessageContentSegments(segments *[]ModerationSegment, content gjson.Result, role, source string, enforceable bool) {
+	if !content.IsArray() {
+		appendValueSegments(segments, content, role, source, enforceable)
+		return
+	}
+	content.ForEach(func(key, item gjson.Result) bool {
+		itemRole := role
+		itemEnforceable := enforceable
+		switch strings.ToLower(strings.TrimSpace(item.Get("type").String())) {
+		case "tool_result", "function_call_output", "computer_call_output":
+			itemRole = moderationRoleTool
+			itemEnforceable = false
+		}
+		appendValueSegments(segments, item, itemRole, fmt.Sprintf("%s[%s]", source, key.String()), itemEnforceable)
 		return true
 	})
 }
 
-func collectResponsesObservations(input gjson.Result, parts *[]string) {
+func appendResponsesSegments(segments *[]ModerationSegment, input gjson.Result) {
 	switch {
 	case !input.Exists():
 		return
 	case input.Type == gjson.String:
-		addObservationText(parts, input.String())
+		appendTextSegment(segments, moderationRoleAmbiguous, "input[string]", input.String(), false)
 	case input.IsArray():
-		input.ForEach(func(_, item gjson.Result) bool {
-			collectResponsesObservationItem(item, parts)
-			return true
-		})
+		items := input.Array()
+		for index, item := range items {
+			appendResponsesItemSegments(segments, item, fmt.Sprintf("input[%d]", index), index == len(items)-1)
+		}
 	case input.IsObject():
-		collectResponsesObservationItem(input, parts)
+		appendResponsesItemSegments(segments, input, "input", true)
 	}
 }
 
-func collectResponsesObservationItem(item gjson.Result, parts *[]string) {
+func appendResponsesItemSegments(segments *[]ModerationSegment, item gjson.Result, source string, last bool) {
+	role := normalizeModerationRole(item.Get("role").String())
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	switch typ {
+	case "function_call_output", "tool_result", "computer_call_output":
+		role = moderationRoleTool
+	case "mcp_approval_request", "mcp_approval_response":
+		role = moderationRoleEnvironment
+	case "function_call", "computer_call", "web_search_call":
+		role = moderationRoleAssistant
+	}
+	if role == "" {
+		role = moderationRoleAmbiguous
+	}
+	enforceable := last && role == moderationRoleUser
 	for _, field := range []string{"content", "text", "output", "arguments"} {
-		collectObservationValue(item.Get(field), parts)
+		appendValueSegments(segments, item.Get(field), role, source+"."+field, enforceable)
 	}
 }
 
-func collectGeminiObservations(contents gjson.Result, parts *[]string) {
+func appendGeminiSegments(segments *[]ModerationSegment, contents gjson.Result) {
 	if !contents.IsArray() {
 		return
 	}
-	contents.ForEach(func(_, content gjson.Result) bool {
-		collectObservationValue(content.Get("parts"), parts)
+	items := contents.Array()
+	for index, content := range items {
+		role := normalizeModerationRole(content.Get("role").String())
+		if role == "" {
+			role = moderationRoleUser
+		}
+		enforceable := index == len(items)-1 && role == moderationRoleUser
+		appendGeminiPartSegments(segments, content.Get("parts"), role, fmt.Sprintf("contents[%d].parts", index), enforceable)
+	}
+}
+
+func appendGeminiPartSegments(segments *[]ModerationSegment, parts gjson.Result, role, source string, enforceable bool) {
+	if !parts.IsArray() {
+		appendValueSegments(segments, parts, role, source, enforceable)
+		return
+	}
+	parts.ForEach(func(key, part gjson.Result) bool {
+		partRole := role
+		partEnforceable := enforceable
+		if part.Get("functionResponse").Exists() || part.Get("function_response").Exists() {
+			partRole = moderationRoleTool
+			partEnforceable = false
+		} else if part.Get("functionCall").Exists() || part.Get("function_call").Exists() {
+			partRole = moderationRoleAssistant
+			partEnforceable = false
+		}
+		appendValueSegments(segments, part, partRole, fmt.Sprintf("%s[%s]", source, key.String()), partEnforceable)
 		return true
 	})
 }
 
-func collectObservationValue(value gjson.Result, parts *[]string) {
+func normalizeModerationRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "user":
+		return moderationRoleUser
+	case "assistant", "model":
+		return moderationRoleAssistant
+	case "tool", "function":
+		return moderationRoleTool
+	case "system":
+		return moderationRoleSystem
+	case "developer":
+		return moderationRoleDeveloper
+	default:
+		return ""
+	}
+}
+
+func appendValueSegments(segments *[]ModerationSegment, value gjson.Result, role, source string, enforceable bool) {
 	switch {
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		addObservationText(parts, value.String())
+		appendTextSegment(segments, role, source, value.String(), enforceable)
 	case value.IsArray():
-		value.ForEach(func(_, item gjson.Result) bool {
-			collectObservationValue(item, parts)
+		value.ForEach(func(key, item gjson.Result) bool {
+			appendValueSegments(segments, item, role, fmt.Sprintf("%s[%s]", source, key.String()), enforceable)
 			return true
 		})
 	case value.IsObject():
 		value.ForEach(func(key, item gjson.Result) bool {
-			switch strings.ToLower(strings.TrimSpace(key.String())) {
-			case "type", "role", "id", "call_id", "tool_call_id", "name",
-				"url", "image_url", "data", "base64", "media_type", "mediatype", "mime_type", "mimetype":
+			field := strings.ToLower(strings.TrimSpace(key.String()))
+			switch field {
+			case "type", "role", "id", "call_id", "tool_call_id", "tool_use_id", "approval_request_id", "name", "url", "image_url", "data", "base64", "media_type", "mediatype", "mime_type", "mimetype":
 				return true
 			default:
-				collectObservationValue(item, parts)
+				appendValueSegments(segments, item, role, source+"."+key.String(), enforceable)
 				return true
 			}
 		})
 	}
 }
 
-func isSyntheticModerationUserText(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
+func appendTextSegment(segments *[]ModerationSegment, role, source, text string, enforceable bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
 	}
-	for _, marker := range []string{
-		"# agents.md instructions",
-		"<environment_context>",
-		"<system-reminder>",
-		"<permissions instructions>",
-		"<collaboration_mode>",
-		"<plugins_instructions>",
-	} {
-		if strings.Contains(lower, marker) {
-			return true
+	if role == moderationRoleUser {
+		cleaned, envelopes := splitSyntheticModerationEnvelope(text)
+		if cleaned = strings.TrimSpace(cleaned); cleaned != "" {
+			*segments = append(*segments, ModerationSegment{Role: role, Source: source, Text: cleaned, Enforceable: enforceable})
 		}
+		for _, envelope := range envelopes {
+			*segments = append(*segments, ModerationSegment{Role: moderationRoleEnvironment, Source: source + ".envelope", Text: envelope})
+		}
+		return
 	}
-	return false
+	*segments = append(*segments, ModerationSegment{Role: role, Source: source, Text: text, Enforceable: enforceable})
 }
 
-func addObservationText(parts *[]string, text string) {
-	text = strings.TrimSpace(text)
-	if text != "" {
-		*parts = append(*parts, text)
+type moderationEnvelopeRange struct {
+	start int
+	end   int
+}
+
+// splitSyntheticModerationEnvelope removes only complete, line-aligned
+// envelopes. A marker appearing in ordinary user prose has no special effect.
+func splitSyntheticModerationEnvelope(text string) (string, []string) {
+	lower := strings.ToLower(text)
+	ranges := make([]moderationEnvelopeRange, 0, 6)
+	for _, pair := range [][2]string{
+		{"<environment_context>", "</environment_context>"},
+		{"<system-reminder>", "</system-reminder>"},
+		{"<permissions instructions>", "</permissions instructions>"},
+		{"<collaboration_mode>", "</collaboration_mode>"},
+		{"<plugins_instructions>", "</plugins_instructions>"},
+	} {
+		ranges = append(ranges, findCompleteModerationEnvelopes(lower, pair[0], pair[1])...)
+	}
+	for _, current := range findCompleteModerationEnvelopes(lower, "<instructions>", "</instructions>") {
+		headerStart, header := previousNonEmptyModerationLine(lower, current.start)
+		if header == "# agents.md instructions" {
+			current.start = headerStart
+			ranges = append(ranges, current)
+		}
+	}
+	if len(ranges) == 0 {
+		return text, nil
+	}
+	for index := range ranges {
+		ranges[index].start = originalByteOffsetForLowerOffset(text, lower, ranges[index].start)
+		ranges[index].end = originalByteOffsetForLowerOffset(text, lower, ranges[index].end)
+	}
+	sortModerationEnvelopeRanges(ranges)
+	merged := ranges[:0]
+	for _, current := range ranges {
+		if len(merged) == 0 || current.start > merged[len(merged)-1].end {
+			merged = append(merged, current)
+			continue
+		}
+		if current.end > merged[len(merged)-1].end {
+			merged[len(merged)-1].end = current.end
+		}
+	}
+	var cleaned strings.Builder
+	envelopes := make([]string, 0, len(merged))
+	position := 0
+	for _, current := range merged {
+		cleaned.WriteString(text[position:current.start])
+		envelopes = append(envelopes, strings.TrimSpace(text[current.start:current.end]))
+		position = current.end
+	}
+	cleaned.WriteString(text[position:])
+	return cleaned.String(), envelopes
+}
+
+func previousNonEmptyModerationLine(text string, before int) (int, string) {
+	position := strings.LastIndex(text[:before], "\n")
+	for position >= 0 {
+		lineEnd := position
+		previousBreak := strings.LastIndex(text[:lineEnd], "\n")
+		lineStart := previousBreak + 1
+		line := strings.TrimSpace(text[lineStart:lineEnd])
+		if line != "" {
+			return lineStart, line
+		}
+		position = previousBreak
+	}
+	line := strings.TrimSpace(text[:before])
+	return 0, line
+}
+
+func findCompleteModerationEnvelopes(lower, open, close string) []moderationEnvelopeRange {
+	ranges := make([]moderationEnvelopeRange, 0, 1)
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], open)
+		if relative < 0 {
+			break
+		}
+		start := offset + relative
+		lineStart := strings.LastIndex(lower[:start], "\n") + 1
+		if strings.TrimSpace(lower[lineStart:start]) != "" {
+			offset = start + len(open)
+			continue
+		}
+		closeRelative := strings.Index(lower[start+len(open):], close)
+		if closeRelative < 0 {
+			break
+		}
+		end := start + len(open) + closeRelative + len(close)
+		lineEnd := end
+		for lineEnd < len(lower) && lower[lineEnd] != '\n' {
+			if lower[lineEnd] != ' ' && lower[lineEnd] != '\t' && lower[lineEnd] != '\r' {
+				offset = start + len(open)
+				end = -1
+				break
+			}
+			lineEnd++
+		}
+		if end < 0 {
+			continue
+		}
+		if lineEnd < len(lower) {
+			lineEnd++
+		}
+		ranges = append(ranges, moderationEnvelopeRange{start: lineStart, end: lineEnd})
+		offset = lineEnd
+	}
+	return ranges
+}
+
+func sortModerationEnvelopeRanges(ranges []moderationEnvelopeRange) {
+	for index := 1; index < len(ranges); index++ {
+		current := ranges[index]
+		insertAt := index
+		for insertAt > 0 && current.start < ranges[insertAt-1].start {
+			ranges[insertAt] = ranges[insertAt-1]
+			insertAt--
+		}
+		ranges[insertAt] = current
 	}
 }
 
@@ -458,9 +713,6 @@ func limitContentModerationImages(images []string) []string {
 func addModerationText(parts *[]string, text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return
-	}
-	if strings.Contains(text, "<system-reminder>") {
 		return
 	}
 	*parts = append(*parts, text)

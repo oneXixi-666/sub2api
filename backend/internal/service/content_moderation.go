@@ -174,12 +174,14 @@ type ContentModerationConfig struct {
 	HitRetentionDays     int                `json:"hit_retention_days"`
 	NonHitRetentionDays  int                `json:"non_hit_retention_days"`
 	PreHashCheckEnabled  bool               `json:"pre_hash_check_enabled"`
-	// BlockedKeywords is the legacy configuration key for the broad observation
-	// library. Hits are recorded but never block or trigger account side effects.
-	BlockedKeywords     []string                     `json:"blocked_keywords"`
-	HardBlockedKeywords []string                     `json:"hard_blocked_keywords"`
-	KeywordBlockingMode string                       `json:"keyword_blocking_mode"`
-	ModelFilter         ContentModerationModelFilter `json:"model_filter"`
+	// BlockedKeywords is retained as a compatibility alias for the user
+	// observation library. New clients should use the two source-specific keys.
+	BlockedKeywords            []string                     `json:"blocked_keywords,omitempty"`
+	UserObservationKeywords    []string                     `json:"user_observation_keywords"`
+	ContextObservationKeywords []string                     `json:"context_observation_keywords"`
+	HardBlockedKeywords        []string                     `json:"hard_blocked_keywords"`
+	KeywordBlockingMode        string                       `json:"keyword_blocking_mode"`
+	ModelFilter                ContentModerationModelFilter `json:"model_filter"`
 	// CyberPolicyEnforceAllGroups/CyberPolicyEnforceGroupIDs only control local
 	// post-hit enforcement. Upstream cyber evidence is collected independently.
 	CyberPolicyEnforceAllGroups bool    `json:"cyber_policy_enforce_all_groups"`
@@ -224,6 +226,8 @@ type ContentModerationConfigView struct {
 	NonHitRetentionDays            int                             `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            bool                            `json:"pre_hash_check_enabled"`
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
+	UserObservationKeywords        []string                        `json:"user_observation_keywords"`
+	ContextObservationKeywords     []string                        `json:"context_observation_keywords"`
 	HardBlockedKeywords            []string                        `json:"hard_blocked_keywords"`
 	KeywordBlockingMode            string                          `json:"keyword_blocking_mode"`
 	ModelFilter                    ContentModerationModelFilter    `json:"model_filter"`
@@ -321,6 +325,8 @@ type UpdateContentModerationConfigInput struct {
 	NonHitRetentionDays            *int                          `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            *bool                         `json:"pre_hash_check_enabled"`
 	BlockedKeywords                *[]string                     `json:"blocked_keywords"`
+	UserObservationKeywords        *[]string                     `json:"user_observation_keywords"`
+	ContextObservationKeywords     *[]string                     `json:"context_observation_keywords"`
 	HardBlockedKeywords            *[]string                     `json:"hard_blocked_keywords"`
 	KeywordBlockingMode            *string                       `json:"keyword_blocking_mode"`
 	ModelFilter                    *ContentModerationModelFilter `json:"model_filter"`
@@ -436,6 +442,10 @@ type ContentModerationLog struct {
 	HighestCategory     string               `json:"highest_category"`
 	HighestScore        float64              `json:"highest_score"`
 	MatchedKeyword      string               `json:"matched_keyword"`
+	MatchedRole         string               `json:"matched_role"`
+	MatchedSource       string               `json:"matched_source"`
+	MatchedStart        int                  `json:"matched_start"`
+	MatchedEnd          int                  `json:"matched_end"`
 	CategoryScores      map[string]float64   `json:"category_scores"`
 	ThresholdSnapshot   map[string]float64   `json:"threshold_snapshot"`
 	InputExcerpt        string               `json:"input_excerpt"`
@@ -579,12 +589,13 @@ type ContentModerationService struct {
 }
 
 type contentModerationRuntimeSnapshot struct {
-	riskControlEnabled        bool
-	config                    *ContentModerationConfig
-	keywordMatcher            *contentModerationKeywordMatcher
-	observationKeywordMatcher *contentModerationKeywordMatcher
-	configDigest              [sha256.Size]byte
-	loadedAt                  time.Time
+	riskControlEnabled               bool
+	config                           *ContentModerationConfig
+	keywordMatcher                   *contentModerationKeywordMatcher
+	userObservationKeywordMatcher    *contentModerationKeywordMatcher
+	contextObservationKeywordMatcher *contentModerationKeywordMatcher
+	configDigest                     [sha256.Size]byte
+	loadedAt                         time.Time
 }
 
 type contentModerationTask struct {
@@ -725,7 +736,15 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 		cfg.PreHashCheckEnabled = *input.PreHashCheckEnabled
 	}
 	if input.BlockedKeywords != nil {
-		cfg.BlockedKeywords = normalizeBlockedKeywords(*input.BlockedKeywords)
+		cfg.UserObservationKeywords = normalizeBlockedKeywords(*input.BlockedKeywords)
+		cfg.BlockedKeywords = append([]string(nil), cfg.UserObservationKeywords...)
+	}
+	if input.UserObservationKeywords != nil {
+		cfg.UserObservationKeywords = normalizeBlockedKeywords(*input.UserObservationKeywords)
+		cfg.BlockedKeywords = append([]string(nil), cfg.UserObservationKeywords...)
+	}
+	if input.ContextObservationKeywords != nil {
+		cfg.ContextObservationKeywords = normalizeBlockedKeywords(*input.ContextObservationKeywords)
 	}
 	if input.HardBlockedKeywords != nil {
 		cfg.HardBlockedKeywords = normalizeBlockedKeywords(*input.HardBlockedKeywords)
@@ -932,7 +951,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"sample_rate", cfg.SampleRate,
 		"api_key_count", len(cfg.apiKeys()),
 		"pre_hash_check_enabled", cfg.PreHashCheckEnabled,
-		"observation_keyword_count", len(cfg.BlockedKeywords),
+		"user_observation_keyword_count", len(cfg.UserObservationKeywords),
+		"context_observation_keyword_count", len(cfg.ContextObservationKeywords),
 		"hard_block_keyword_count", len(cfg.HardBlockedKeywords),
 		"record_non_hits", cfg.RecordNonHits)
 	if !cfg.Enabled {
@@ -979,9 +999,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	extracted := extractContentModerationInputs(input.Protocol, input.Body)
-	observation := extracted.Observation
-	if !observation.IsEmpty() && len(cfg.BlockedKeywords) > 0 {
-		if keyword, hit := runtimeSnapshot.matchObservationKeyword(observation.Text); hit {
+	if match, segment, hit := runtimeSnapshot.matchObservationSegments(extracted.Segments); hit {
+		observation := ContentModerationInput{Text: segment.Text}
+		observation.Normalize()
+		if !observation.IsEmpty() {
 			observationHash := observation.Hash()
 			slog.Info("content_moderation.keyword_observe",
 				"user_id", input.UserID,
@@ -989,16 +1010,17 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				"group_id", contentModerationLogGroupID(input.GroupID),
 				"endpoint", input.Endpoint,
 				"protocol", input.Protocol,
-				"keyword", keyword)
-			scores := map[string]float64{contentModerationKeywordObserveCategory: 1.0}
-			log := s.buildLog(input, cfg, ContentModerationActionKeywordObserve, true, contentModerationKeywordObserveCategory, 1.0, scores, observation.ExcerptText(), nil, nil, "")
-			log.MatchedKeyword = keyword
+				"keyword", match.Keyword,
+				"role", match.Role,
+				"source", match.Source)
+			log := s.buildLog(input, cfg, ContentModerationActionKeywordObserve, false, contentModerationKeywordObserveCategory, 0, nil, excerptAroundKeyword(segment.Text, match), nil, nil, "")
+			applyKeywordMatch(log, match)
 			s.enqueueRecord(input, cfg, log, observationHash, false, false)
 		}
 	}
-	content := extracted.User
+	content := extracted.Audit
 	if content.IsEmpty() {
-		slog.Info("content_moderation.skip_no_enforceable_user_input",
+		slog.Info("content_moderation.skip_no_auditable_input",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -1008,6 +1030,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	content.Normalize()
+	enforceable := extracted.User
+	enforceable.Normalize()
 	slog.Info("content_moderation.input_extracted",
 		"user_id", input.UserID,
 		"api_key_id", input.APIKeyID,
@@ -1017,9 +1041,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"text_runes", len([]rune(content.Text)),
 		"image_count", len(content.Images))
 	hashText := content.Hash()
+	enforceableHash := enforceable.Hash()
 	if cfg.Mode == ContentModerationModePreBlock {
-		if cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
-			if keyword, hit := runtimeSnapshot.matchBlockedKeyword(content.Text); hit {
+		if !enforceable.IsEmpty() && cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.HardBlockedKeywords) > 0 {
+			if match, segment, hit := runtimeSnapshot.matchEnforceableKeyword(extracted.Segments); hit {
 				s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 				slog.Info("content_moderation.keyword_block",
 					"user_id", input.UserID,
@@ -1028,11 +1053,12 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 					"endpoint", input.Endpoint,
 					"protocol", input.Protocol,
 					"keyword_blocking_mode", cfg.KeywordBlockingMode,
-					"keyword", keyword)
+					"keyword", match.Keyword,
+					"source", match.Source)
 				scores := map[string]float64{contentModerationKeywordCategory: 1.0}
-				log := s.buildLog(input, cfg, ContentModerationActionKeywordBlock, true, contentModerationKeywordCategory, 1.0, scores, content.ExcerptText(), nil, nil, "")
-				log.MatchedKeyword = keyword
-				s.enqueueRecord(input, cfg, log, hashText, false, true)
+				log := s.buildLog(input, cfg, ContentModerationActionKeywordBlock, true, contentModerationKeywordCategory, 1.0, scores, excerptAroundKeyword(segment.Text, match), nil, nil, "")
+				applyKeywordMatch(log, match)
+				s.enqueueRecord(input, cfg, log, enforceableHash, false, true)
 				return &ContentModerationDecision{
 					Allowed:         false,
 					Blocked:         true,
@@ -1046,7 +1072,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				}, nil
 			}
 		}
-		if cfg.KeywordBlockingMode == ContentModerationKeywordModeKeywordOnly {
+		if cfg.KeywordBlockingMode == ContentModerationKeywordModeKeywordOnly && !extracted.RequiresAPI {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
 			slog.Info("content_moderation.skip_api_keyword_only",
 				"user_id", input.UserID,
@@ -1057,8 +1083,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			return allow, nil
 		}
 	}
-	if cfg.PreHashCheckEnabled && s.hashCache != nil {
-		matched, err := s.hashCache.HasFlaggedInputHash(ctx, hashText)
+	if !enforceable.IsEmpty() && cfg.PreHashCheckEnabled && s.hashCache != nil {
+		matched, err := s.hashCache.HasFlaggedInputHash(ctx, enforceableHash)
 		if err != nil {
 			slog.Warn("content_moderation.hash_check_failed", "user_id", input.UserID, "endpoint", input.Endpoint, "error", err)
 		}
@@ -1072,21 +1098,21 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				"group_id", contentModerationLogGroupID(input.GroupID),
 				"endpoint", input.Endpoint,
 				"protocol", input.Protocol,
-				"input_hash", hashText)
+				"input_hash", enforceableHash)
 			message := cfg.BlockMessage
 			if message != "" {
-				message = fmt.Sprintf("%s（hash: %s）", message, hashText)
+				message = fmt.Sprintf("%s（hash: %s）", message, enforceableHash)
 			}
 			scores := map[string]float64{"hash": 1.0}
-			log := s.buildLog(input, cfg, ContentModerationActionHashBlock, true, "hash", 1.0, scores, content.ExcerptText(), nil, nil, "")
-			s.enqueueRecord(input, cfg, log, hashText, false, false)
+			log := s.buildLog(input, cfg, ContentModerationActionHashBlock, true, "hash", 1.0, scores, enforceable.ExcerptText(), nil, nil, "")
+			s.enqueueRecord(input, cfg, log, enforceableHash, false, false)
 			return &ContentModerationDecision{
 				Allowed:    false,
 				Blocked:    true,
 				Flagged:    true,
 				Message:    message,
 				StatusCode: cfg.BlockStatus,
-				InputHash:  hashText,
+				InputHash:  enforceableHash,
 				Action:     ContentModerationActionHashBlock,
 			}, nil
 		}
@@ -1691,12 +1717,13 @@ func (s *ContentModerationService) refreshRuntimeSnapshot(ctx context.Context) (
 	configDigest := sha256.Sum256([]byte(rawConfig))
 	if current := s.runtimeSnapshot.Load(); current != nil && current.configDigest == configDigest {
 		snapshot := &contentModerationRuntimeSnapshot{
-			riskControlEnabled:        values[SettingKeyRiskControlEnabled] == "true",
-			config:                    current.config,
-			keywordMatcher:            current.keywordMatcher,
-			observationKeywordMatcher: current.observationKeywordMatcher,
-			configDigest:              configDigest,
-			loadedAt:                  time.Now(),
+			riskControlEnabled:               values[SettingKeyRiskControlEnabled] == "true",
+			config:                           current.config,
+			keywordMatcher:                   current.keywordMatcher,
+			userObservationKeywordMatcher:    current.userObservationKeywordMatcher,
+			contextObservationKeywordMatcher: current.contextObservationKeywordMatcher,
+			configDigest:                     configDigest,
+			loadedAt:                         time.Now(),
 		}
 		s.runtimeSnapshot.Store(snapshot)
 		s.runtimeRefreshRetryAt.Store(0)
@@ -1707,12 +1734,13 @@ func (s *ContentModerationService) refreshRuntimeSnapshot(ctx context.Context) (
 		return nil, err
 	}
 	snapshot := &contentModerationRuntimeSnapshot{
-		riskControlEnabled:        values[SettingKeyRiskControlEnabled] == "true",
-		config:                    cfg,
-		keywordMatcher:            newContentModerationKeywordMatcher(cfg.HardBlockedKeywords),
-		observationKeywordMatcher: newContentModerationKeywordMatcher(cfg.BlockedKeywords),
-		configDigest:              configDigest,
-		loadedAt:                  time.Now(),
+		riskControlEnabled:               values[SettingKeyRiskControlEnabled] == "true",
+		config:                           cfg,
+		keywordMatcher:                   newContentModerationKeywordMatcher(cfg.HardBlockedKeywords),
+		userObservationKeywordMatcher:    newContentModerationKeywordMatcher(cfg.UserObservationKeywords),
+		contextObservationKeywordMatcher: newContentModerationKeywordMatcher(cfg.ContextObservationKeywords),
+		configDigest:                     configDigest,
+		loadedAt:                         time.Now(),
 	}
 	s.runtimeSnapshot.Store(snapshot)
 	s.runtimeRefreshRetryAt.Store(0)
@@ -1731,7 +1759,8 @@ func (s *ContentModerationService) replaceRuntimeConfig(cfg *ContentModerationCo
 	}
 	config := cloneContentModerationConfig(cfg)
 	keywordMatcher := newContentModerationKeywordMatcher(cfg.HardBlockedKeywords)
-	observationKeywordMatcher := newContentModerationKeywordMatcher(cfg.BlockedKeywords)
+	userObservationKeywordMatcher := newContentModerationKeywordMatcher(cfg.UserObservationKeywords)
+	contextObservationKeywordMatcher := newContentModerationKeywordMatcher(cfg.ContextObservationKeywords)
 	configDigest := sha256.Sum256(raw)
 
 	s.runtimeRefreshMu.Lock()
@@ -1741,33 +1770,41 @@ func (s *ContentModerationService) replaceRuntimeConfig(cfg *ContentModerationCo
 		return
 	}
 	s.runtimeSnapshot.Store(&contentModerationRuntimeSnapshot{
-		riskControlEnabled:        current.riskControlEnabled,
-		config:                    config,
-		keywordMatcher:            keywordMatcher,
-		observationKeywordMatcher: observationKeywordMatcher,
-		configDigest:              configDigest,
-		loadedAt:                  time.Now(),
+		riskControlEnabled:               current.riskControlEnabled,
+		config:                           config,
+		keywordMatcher:                   keywordMatcher,
+		userObservationKeywordMatcher:    userObservationKeywordMatcher,
+		contextObservationKeywordMatcher: contextObservationKeywordMatcher,
+		configDigest:                     configDigest,
+		loadedAt:                         time.Now(),
 	})
 }
 
-func (s *contentModerationRuntimeSnapshot) matchBlockedKeyword(text string) (string, bool) {
-	if s == nil || s.config == nil {
-		return "", false
-	}
-	if s.keywordMatcher != nil {
-		return s.keywordMatcher.Match(text)
-	}
-	return matchBlockedKeyword(text, s.config.HardBlockedKeywords)
+func (s *contentModerationRuntimeSnapshot) matchEnforceableKeyword(segments []ModerationSegment) (KeywordMatch, ModerationSegment, bool) {
+	return strongestSegmentKeywordMatch(segments, s.keywordMatcher, func(segment ModerationSegment) bool {
+		return segment.Enforceable && segment.Role == moderationRoleUser
+	})
 }
 
-func (s *contentModerationRuntimeSnapshot) matchObservationKeyword(text string) (string, bool) {
+func (s *contentModerationRuntimeSnapshot) matchObservationSegments(segments []ModerationSegment) (KeywordMatch, ModerationSegment, bool) {
 	if s == nil || s.config == nil {
-		return "", false
+		return KeywordMatch{}, ModerationSegment{}, false
 	}
-	if s.observationKeywordMatcher != nil {
-		return s.observationKeywordMatcher.Match(text)
+	userMatch, userSegment, userHit := strongestSegmentKeywordMatch(segments, s.userObservationKeywordMatcher, func(segment ModerationSegment) bool {
+		return segment.Enforceable || segment.Role == moderationRoleAmbiguous
+	})
+	contextMatch, contextSegment, contextHit := strongestSegmentKeywordMatch(segments, s.contextObservationKeywordMatcher, func(segment ModerationSegment) bool {
+		switch segment.Role {
+		case moderationRoleAssistant, moderationRoleTool, moderationRoleEnvironment:
+			return true
+		default:
+			return false
+		}
+	})
+	if !contextHit || (userHit && keywordMatchStronger(userMatch, contextMatch)) {
+		return userMatch, userSegment, userHit
 	}
-	return matchBlockedKeyword(text, s.config.BlockedKeywords)
+	return contextMatch, contextSegment, true
 }
 
 func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
@@ -2090,6 +2127,34 @@ func (s *ContentModerationService) acquireContentModerationEvent(ctx context.Con
 	return acquired
 }
 
+func (s *ContentModerationService) acquireCyberPolicyEvent(ctx context.Context, log *ContentModerationLog) bool {
+	if s == nil || log == nil || s.hashCache == nil || log.InputHash == "" {
+		return true
+	}
+	identity := ""
+	if log.UserID != nil && *log.UserID > 0 {
+		identity = fmt.Sprintf("user:%d", *log.UserID)
+	} else if log.APIKeyID != nil && *log.APIKeyID > 0 {
+		identity = fmt.Sprintf("api_key:%d", *log.APIKeyID)
+	} else {
+		return true
+	}
+	fingerprintBytes := sha256.Sum256([]byte("cyber_policy\n" + identity + "\ngroup:" + fmt.Sprint(contentModerationLogGroupID(log.GroupID)) + "\n" + log.InputHash))
+	fingerprint := hex.EncodeToString(fingerprintBytes[:])
+	acquired, err := s.hashCache.AcquireEventDedupe(ctx, fingerprint, contentModerationRetryDedupeWindow)
+	if err != nil {
+		// Fail open for evidence: Redis degradation must not erase the only copy
+		// of a real upstream cyber event.
+		slog.Warn("content_moderation.cyber_event_dedupe_failed",
+			"user_id", contentModerationEmailUserID(log),
+			"api_key_id", contentModerationLogAPIKeyID(log.APIKeyID),
+			"group_id", contentModerationLogGroupID(log.GroupID),
+			"error", err)
+		return true
+	}
+	return acquired
+}
+
 func contentModerationLogAPIKeyID(apiKeyID *int64) int64 {
 	if apiKeyID == nil {
 		return 0
@@ -2276,31 +2341,33 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	cfg := &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		RecordNonHits:        false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		HardBlockedKeywords:  []string{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
+		Enabled:                    false,
+		Mode:                       ContentModerationModePreBlock,
+		BaseURL:                    defaultContentModerationBaseURL,
+		Model:                      defaultContentModerationModel,
+		TimeoutMS:                  defaultContentModerationTimeoutMS,
+		SampleRate:                 100,
+		AllGroups:                  true,
+		GroupIDs:                   []int64{},
+		RecordNonHits:              false,
+		Thresholds:                 ContentModerationDefaultThresholds(),
+		WorkerCount:                defaultContentModerationWorkerCount,
+		QueueSize:                  defaultContentModerationQueueSize,
+		BlockStatus:                defaultContentModerationBlockHTTPStatus,
+		BlockMessage:               defaultContentModerationBlockMessage,
+		EmailOnHit:                 true,
+		AutoBanEnabled:             true,
+		BanThreshold:               defaultContentModerationBanThreshold,
+		ViolationWindowHours:       defaultContentModerationViolationWindowHours,
+		RetryCount:                 defaultContentModerationRetryCount,
+		HitRetentionDays:           defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:        defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:        false,
+		BlockedKeywords:            []string{},
+		UserObservationKeywords:    []string{},
+		ContextObservationKeywords: []string{},
+		HardBlockedKeywords:        []string{},
+		KeywordBlockingMode:        ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2326,6 +2393,8 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.CyberPolicyDefaultPolicy = cloneCyberPolicySettings(cfg.CyberPolicyDefaultPolicy)
 	clone.CyberPolicyGroupPolicies = cloneCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
+	clone.UserObservationKeywords = append([]string(nil), cfg.UserObservationKeywords...)
+	clone.ContextObservationKeywords = append([]string(nil), cfg.ContextObservationKeywords...)
 	clone.HardBlockedKeywords = append([]string(nil), cfg.HardBlockedKeywords...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -2417,7 +2486,14 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.CyberPolicyGroupPolicies = normalizeCyberPolicyGroupPolicies(cfg.CyberPolicyGroupPolicies)
 	syncLegacyCyberPolicyFields(cfg)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
-	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
+	legacyObservationKeywords := normalizeBlockedKeywords(cfg.BlockedKeywords)
+	cfg.UserObservationKeywords = normalizeBlockedKeywords(cfg.UserObservationKeywords)
+	if len(cfg.UserObservationKeywords) == 0 && len(legacyObservationKeywords) > 0 {
+		cfg.UserObservationKeywords = append([]string(nil), legacyObservationKeywords...)
+	}
+	// Keep the legacy key synchronized for older admin clients during rollout.
+	cfg.BlockedKeywords = append([]string(nil), cfg.UserObservationKeywords...)
+	cfg.ContextObservationKeywords = normalizeBlockedKeywords(cfg.ContextObservationKeywords)
 	cfg.HardBlockedKeywords = normalizeBlockedKeywords(cfg.HardBlockedKeywords)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
@@ -2653,6 +2729,8 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		NonHitRetentionDays:            cfg.NonHitRetentionDays,
 		PreHashCheckEnabled:            cfg.PreHashCheckEnabled,
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
+		UserObservationKeywords:        append([]string(nil), cfg.UserObservationKeywords...),
+		ContextObservationKeywords:     append([]string(nil), cfg.ContextObservationKeywords...),
 		HardBlockedKeywords:            append([]string(nil), cfg.HardBlockedKeywords...),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
@@ -3086,6 +3164,90 @@ func matchBlockedKeyword(text string, keywords []string) (string, bool) {
 	return "", false
 }
 
+func strongestSegmentKeywordMatch(segments []ModerationSegment, matcher *contentModerationKeywordMatcher, include func(ModerationSegment) bool) (KeywordMatch, ModerationSegment, bool) {
+	if matcher == nil {
+		return KeywordMatch{}, ModerationSegment{}, false
+	}
+	var best KeywordMatch
+	var bestSegment ModerationSegment
+	found := false
+	for _, segment := range segments {
+		if strings.TrimSpace(segment.Text) == "" || (include != nil && !include(segment)) {
+			continue
+		}
+		match, hit := matcher.Match(segment.Text)
+		if !hit {
+			continue
+		}
+		match.Role = segment.Role
+		match.Source = segment.Source
+		if !found || keywordMatchStronger(match, best) {
+			best = match
+			bestSegment = segment
+			found = true
+		}
+	}
+	return best, bestSegment, found
+}
+
+func keywordMatchStronger(candidate, current KeywordMatch) bool {
+	candidateLength := len([]rune(candidate.Keyword))
+	currentLength := len([]rune(current.Keyword))
+	if candidateLength != currentLength {
+		return candidateLength > currentLength
+	}
+	if candidate.Start != current.Start {
+		return candidate.Start < current.Start
+	}
+	return strings.ToLower(candidate.Keyword) < strings.ToLower(current.Keyword)
+}
+
+func applyKeywordMatch(log *ContentModerationLog, match KeywordMatch) {
+	if log == nil {
+		return
+	}
+	log.MatchedKeyword = match.Keyword
+	log.MatchedRole = match.Role
+	log.MatchedSource = match.Source
+	log.MatchedStart = match.Start
+	log.MatchedEnd = match.End
+}
+
+func excerptAroundKeyword(text string, match KeywordMatch) string {
+	if text == "" {
+		return ""
+	}
+	start := match.Start
+	end := match.End
+	if start < 0 || end < start || end > len(text) {
+		lower := strings.ToLower(text)
+		lowerStart := strings.Index(lower, strings.ToLower(match.Keyword))
+		if lowerStart < 0 {
+			return trimRunes(text, maxModerationExcerptRunes)
+		}
+		lowerEnd := lowerStart + len([]byte(strings.ToLower(match.Keyword)))
+		start = originalByteOffsetForLowerOffset(text, lower, lowerStart)
+		end = originalByteOffsetForLowerOffset(text, lower, lowerEnd)
+	}
+	if start < 0 || end < start || end > len(text) {
+		return trimRunes(text, maxModerationExcerptRunes)
+	}
+	startRune := len([]rune(text[:start]))
+	endRune := len([]rune(text[:end]))
+	runes := []rune(text)
+	if len(runes) <= maxModerationExcerptRunes {
+		return text
+	}
+	matchRunes := max(1, endRune-startRune)
+	leftBudget := max(0, (maxModerationExcerptRunes-matchRunes)/2)
+	windowStart := max(0, startRune-leftBudget)
+	windowEnd := min(len(runes), windowStart+maxModerationExcerptRunes)
+	if windowEnd-windowStart < maxModerationExcerptRunes {
+		windowStart = max(0, windowEnd-maxModerationExcerptRunes)
+	}
+	return string(runes[windowStart:windowEnd])
+}
+
 func normalizeModerationAPIKeys(keys []string) []string {
 	if len(keys) == 0 {
 		return []string{}
@@ -3204,6 +3366,7 @@ type CyberPolicyRecordInput struct {
 	AuditStage      string
 	TurnNumber      int
 	InputSnapshot   string
+	InputExcerpt    string
 	InputHash       string
 	InputLength     int
 	MessageCount    int
@@ -3280,7 +3443,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		Flagged:             true,
 		HighestCategory:     "cyber_policy",
 		HighestScore:        1.0,
-		InputExcerpt:        trimRunes(inputSnapshot, maxModerationExcerptRunes),
+		InputExcerpt:        trimRunes(redactContentModerationSecrets(in.InputExcerpt), maxModerationExcerptRunes),
 		InputSnapshot:       inputSnapshot,
 		InputHash:           normalizeContentModerationHash(in.InputHash),
 		InputLength:         max(0, in.InputLength),
@@ -3291,6 +3454,16 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		TurnNumber:          max(0, in.TurnNumber),
 		Error:               trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:           time.Now(),
+	}
+	if strings.TrimSpace(log.InputExcerpt) == "" {
+		log.InputExcerpt = trimRunes(inputSnapshot, maxModerationExcerptRunes)
+	}
+	if !s.acquireCyberPolicyEvent(ctx, log) {
+		slog.Info("content_moderation.cyber_duplicate_event_suppressed",
+			"user_id", in.UserID,
+			"group_id", contentModerationLogGroupID(log.GroupID),
+			"input_hash", log.InputHash)
+		return
 	}
 	autoBanned := false
 	if resolvedPolicy.Enforces() && policy.ViolationCountEnabled && log.UserID != nil && *log.UserID > 0 {

@@ -22,6 +22,16 @@ func TestApplyMigrations_NilDB(t *testing.T) {
 	require.Contains(t, err.Error(), "nil sql db")
 }
 
+func TestMigration236AddsKeywordMatchProvenance(t *testing.T) {
+	content, err := migrations.FS.ReadFile("236_content_moderation_keyword_match_context.sql")
+	require.NoError(t, err)
+	sql := string(content)
+	for _, column := range []string{"matched_role", "matched_source", "matched_start", "matched_end"} {
+		require.Contains(t, sql, column)
+	}
+	require.Contains(t, sql, "action = 'keyword_observe'")
+}
+
 func TestApplyMigrations_DelegatesToApplyMigrationsFS(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

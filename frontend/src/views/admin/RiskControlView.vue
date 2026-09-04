@@ -999,6 +999,25 @@
 
             <div>
               <div class="mb-2 flex items-center justify-between">
+                <label class="input-label mb-0">{{ t('admin.riskControl.contextObservationKeywords') }}</label>
+                <span class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-300">
+                  {{ t('admin.riskControl.blockedKeywordCount', { count: contextObservationKeywordCount }) }}
+                </span>
+              </div>
+              <textarea
+                v-model="configForm.context_observation_keywords_text"
+                data-test="context-observation-keywords"
+                class="input min-h-40 resize-y font-mono text-sm"
+                :placeholder="t('admin.riskControl.contextObservationKeywordsPlaceholder')"
+              ></textarea>
+              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.riskControl.contextObservationKeywordsDescription') }}
+                {{ t('admin.riskControl.blockedKeywordsLimit', { max: blockedKeywordMax }) }}
+              </p>
+            </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between">
                 <label class="input-label mb-0">{{ t('admin.riskControl.hardBlockedKeywords') }}</label>
                 <span class="inline-flex rounded-md bg-red-50 px-2 py-1 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-300">
                   {{ t('admin.riskControl.hardBlockedKeywordCount', { count: hardBlockedKeywordCount }) }}
@@ -1087,6 +1106,9 @@
             <div v-if="inputDetailRow.matched_keyword" class="rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
               <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
               <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="inputDetailRow.matched_keyword">{{ inputDetailRow.matched_keyword }}</p>
+              <p v-if="inputDetailRow.matched_role || inputDetailRow.matched_source" class="mt-1 truncate text-xs text-red-600 dark:text-red-300" :title="inputDetailRow.matched_source">
+                {{ t('admin.riskControl.matchedSource') }}: {{ inputDetailRow.matched_role || '-' }} / {{ inputDetailRow.matched_source || '-' }}
+              </p>
             </div>
           </div>
 
@@ -1331,6 +1353,7 @@ const configForm = reactive({
   pre_hash_check_enabled: false,
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
+  context_observation_keywords_text: '',
   hard_blocked_keywords_text: '',
   keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
   model_filter_type: 'all' as ContentModerationModelFilterType,
@@ -1463,6 +1486,7 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: '', label: t('admin.riskControl.result.all') },
   { value: 'hit', label: t('admin.riskControl.result.hit') },
   { value: 'blocked', label: t('admin.riskControl.result.blocked') },
+  { value: 'observe', label: t('admin.riskControl.result.observe') },
   { value: 'pass', label: t('admin.riskControl.result.pass') },
   { value: 'error', label: t('admin.riskControl.result.error') },
 ])
@@ -1507,6 +1531,10 @@ const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).l
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
 const blockedKeywordCount = computed(() => blockedKeywordList.value.length)
+
+const contextObservationKeywordList = computed(() => parseBlockedKeywords(configForm.context_observation_keywords_text))
+
+const contextObservationKeywordCount = computed(() => contextObservationKeywordList.value.length)
 
 const hardBlockedKeywordList = computed(() => parseBlockedKeywords(configForm.hard_blocked_keywords_text))
 
@@ -1810,7 +1838,13 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.non_hit_retention_days = Math.min(Math.max(config.non_hit_retention_days || 3, 1), 3)
   configForm.pre_hash_check_enabled = config.pre_hash_check_enabled ?? false
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
-  configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
+  const userObservationKeywords = Array.isArray(config.user_observation_keywords)
+    ? config.user_observation_keywords
+    : config.blocked_keywords
+  configForm.blocked_keywords_text = Array.isArray(userObservationKeywords) ? userObservationKeywords.join('\n') : ''
+  configForm.context_observation_keywords_text = Array.isArray(config.context_observation_keywords)
+    ? config.context_observation_keywords.join('\n')
+    : ''
   configForm.hard_blocked_keywords_text = Array.isArray(config.hard_blocked_keywords) ? config.hard_blocked_keywords.join('\n') : ''
   configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
   const modelFilter = normalizeModelFilter(config.model_filter)
@@ -1902,6 +1936,8 @@ async function saveConfig() {
       pre_hash_check_enabled: configForm.pre_hash_check_enabled,
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
+      user_observation_keywords: blockedKeywordList.value,
+      context_observation_keywords: contextObservationKeywordList.value,
       hard_blocked_keywords: hardBlockedKeywordList.value,
       keyword_blocking_mode: configForm.keyword_blocking_mode,
       model_filter: modelFilterPayload,

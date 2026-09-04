@@ -63,6 +63,8 @@ export interface ContentModerationConfig {
   non_hit_retention_days: number
   pre_hash_check_enabled: boolean
   blocked_keywords: string[]
+  user_observation_keywords: string[]
+  context_observation_keywords: string[]
   hard_blocked_keywords: string[]
   keyword_blocking_mode: KeywordBlockingMode
   model_filter: ContentModerationModelFilter
@@ -148,6 +150,8 @@ export interface UpdateContentModerationConfig {
   non_hit_retention_days?: number
   pre_hash_check_enabled?: boolean
   blocked_keywords?: string[]
+  user_observation_keywords?: string[]
+  context_observation_keywords?: string[]
   hard_blocked_keywords?: string[]
   keyword_blocking_mode?: KeywordBlockingMode
   model_filter?: ContentModerationModelFilter
@@ -225,6 +229,10 @@ export interface ContentModerationLog {
   highest_category: string
   highest_score: number
   matched_keyword: string
+  matched_role: string
+  matched_source: string
+  matched_start: number
+  matched_end: number
   category_scores: Record<string, number>
   threshold_snapshot: Record<string, number>
   input_excerpt: string

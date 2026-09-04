@@ -4130,6 +4130,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				AuditStage:      auditStage,
 				TurnNumber:      requestEvidence.TurnNumber,
 				InputSnapshot:   conversationEvidence.Snapshot,
+				InputExcerpt:    conversationEvidence.Excerpt,
 				InputHash:       conversationEvidence.InputHash,
 				InputLength:     conversationEvidence.InputLength,
 				MessageCount:    conversationEvidence.MessageCount,

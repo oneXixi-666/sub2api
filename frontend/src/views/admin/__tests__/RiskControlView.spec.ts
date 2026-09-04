@@ -119,6 +119,8 @@ const baseConfig = (): ContentModerationConfig => ({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   blocked_keywords: [],
+  user_observation_keywords: [],
+  context_observation_keywords: [],
   hard_blocked_keywords: [],
   keyword_blocking_mode: 'keyword_and_api',
   thresholds: {
@@ -303,10 +305,12 @@ describe('admin RiskControlView', () => {
     expect(showError).not.toHaveBeenCalled()
   })
 
-  it('keeps observation and hard-block keyword libraries separate', async () => {
+  it('keeps user observation, context observation, and hard-block libraries separate', async () => {
     getConfig.mockResolvedValue({
       ...baseConfig(),
       blocked_keywords: ['broad-policy-term'],
+      user_observation_keywords: ['broad-policy-term'],
+      context_observation_keywords: ['tool-policy-term'],
       hard_blocked_keywords: ['explicit-harmful-intent'],
     })
     const wrapper = mount(RiskControlView, {
@@ -328,15 +332,19 @@ describe('admin RiskControlView', () => {
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
     await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
     expect(wrapper.get('[data-test="observation-keywords"]').element).toHaveProperty('value', 'broad-policy-term')
+    expect(wrapper.get('[data-test="context-observation-keywords"]').element).toHaveProperty('value', 'tool-policy-term')
     expect(wrapper.get('[data-test="hard-block-keywords"]').element).toHaveProperty('value', 'explicit-harmful-intent')
 
     await wrapper.get('[data-test="observation-keywords"]').setValue('broad-one\nbroad-two')
+    await wrapper.get('[data-test="context-observation-keywords"]').setValue('context-one\ncontext-two')
     await wrapper.get('[data-test="hard-block-keywords"]').setValue('hard-one\nhard-two')
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
     await flushPromises()
 
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       blocked_keywords: ['broad-one', 'broad-two'],
+      user_observation_keywords: ['broad-one', 'broad-two'],
+      context_observation_keywords: ['context-one', 'context-two'],
       hard_blocked_keywords: ['hard-one', 'hard-two'],
     }))
   })
@@ -571,6 +579,10 @@ describe('admin RiskControlView', () => {
       highest_category: 'cyber_policy',
       highest_score: 1,
       matched_keyword: '',
+      matched_role: '',
+      matched_source: '',
+      matched_start: 0,
+      matched_end: 0,
       category_scores: {},
       threshold_snapshot: {},
       input_excerpt: '[user] captured preview',

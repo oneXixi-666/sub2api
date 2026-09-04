@@ -51,7 +51,9 @@ func TestExtractConversationEvidencePreservesRolesOrderAndBounds(t *testing.T) {
 	require.True(t, evidence.Truncated)
 	require.Greater(t, evidence.InputLength, 48)
 	require.Len(t, evidence.InputHash, sha256.Size*2)
-	require.True(t, strings.HasPrefix(evidence.Snapshot, "[system]\npolicy\n\n[user]\nfirst request"))
+	require.True(t, strings.HasPrefix(evidence.Snapshot, "[user]\nlatest request"))
+	require.Contains(t, evidence.Snapshot, "[assistant]\nprior output")
+	require.Equal(t, "latest request", evidence.Excerpt)
 	require.NotContains(t, evidence.Snapshot, "IMAGE_SECRET")
 
 	full, err := ExtractConversationEvidence("openai_chat_completions", body, 4096)
@@ -59,6 +61,25 @@ func TestExtractConversationEvidencePreservesRolesOrderAndBounds(t *testing.T) {
 	require.False(t, full.Truncated)
 	require.Contains(t, full.Snapshot, "[assistant]\nprior output\n\n[user]\nlatest request")
 	require.Equal(t, evidence.InputHash, full.InputHash, "hash must describe the full normalized input, independent of storage limit")
+}
+
+func TestExtractConversationEvidencePrioritizesLatestUserOverLargeSystemPrompt(t *testing.T) {
+	body, err := json.Marshal(map[string]any{"messages": []map[string]any{
+		{"role": "system", "content": strings.Repeat("S", 14000)},
+		{"role": "assistant", "content": strings.Repeat("A", 6000)},
+		{"role": "user", "content": "latest user evidence"},
+	}})
+	require.NoError(t, err)
+
+	evidence, err := ExtractConversationEvidence("openai_chat_completions", body, DefaultConversationEvidenceMaxRunes)
+	require.NoError(t, err)
+	require.True(t, evidence.Truncated)
+	require.True(t, strings.HasPrefix(evidence.Snapshot, "[user]\nlatest user evidence"))
+	require.Contains(t, evidence.Snapshot, "[assistant]\n")
+	require.Contains(t, evidence.Snapshot, "[system]\n")
+	require.LessOrEqual(t, utf8.RuneCountInString(evidence.Snapshot), DefaultConversationEvidenceMaxRunes)
+	require.LessOrEqual(t, strings.Count(evidence.Snapshot, "S"), conversationSystemRunes)
+	require.Equal(t, "latest user evidence", evidence.Excerpt)
 }
 
 func TestExtractConversationEvidenceWebSocketFrame(t *testing.T) {
