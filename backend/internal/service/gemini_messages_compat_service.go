@@ -581,6 +581,7 @@ func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx cont
 }
 
 func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
+	ClearActualUpstreamEndpoint(c)
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -780,6 +781,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", err.Error())
 		}
 		requestIDHeader = idHeader
+		SetActualUpstreamEndpoint(c, upstreamReq.URL.Path)
 
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
@@ -1139,6 +1141,7 @@ func isGeminiSignatureRelatedError(respBody []byte) bool {
 }
 
 func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (*ForwardResult, error) {
+	ClearActualUpstreamEndpoint(c)
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -1332,6 +1335,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			return nil, s.writeGoogleError(c, http.StatusBadGateway, err.Error())
 		}
 		requestIDHeader = idHeader
+		SetActualUpstreamEndpoint(c, upstreamReq.URL.Path)
 
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
@@ -2360,6 +2364,9 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 	if usage.InputTokens > 0 {
 		usageObj["input_tokens"] = usage.InputTokens
 	}
+	if usage.CacheReadInputTokens > 0 {
+		usageObj["cache_read_input_tokens"] = usage.CacheReadInputTokens
+	}
 	writeSSE(c.Writer, "message_delta", map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
@@ -2941,6 +2948,14 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		stopReason = "tool_use"
 	}
 
+	usageObj := map[string]any{
+		"input_tokens":  usage.InputTokens,
+		"output_tokens": usage.OutputTokens,
+	}
+	if usage.CacheReadInputTokens > 0 {
+		usageObj["cache_read_input_tokens"] = usage.CacheReadInputTokens
+	}
+
 	resp := map[string]any{
 		"id":            generateAnthropicMsgID(),
 		"type":          "message",
@@ -2949,10 +2964,7 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		"content":       contentBlocks,
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
-		"usage": map[string]any{
-			"input_tokens":  usage.InputTokens,
-			"output_tokens": usage.OutputTokens,
-		},
+		"usage":         usageObj,
 	}
 
 	return resp, usage

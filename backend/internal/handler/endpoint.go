@@ -320,6 +320,13 @@ func GetUpstreamEndpoint(c *gin.Context, platform string) string {
 			return endpoint
 		}
 	}
+	// Ordinary Anthropic/Gemini forwarding can target a custom Sub2API or
+	// another protocol-compatible relay. Prefer the path actually sent on the
+	// wire over the platform-based fallback (for example, Gemini platform with
+	// a custom upstream that accepts /v1/messages).
+	if endpoint := service.GetActualUpstreamEndpoint(c); endpoint != "" {
+		return NormalizeInboundEndpoint(endpoint)
+	}
 	if c != nil {
 		if value, ok := c.Get(ctxKeyActualUpstreamEndpoint); ok {
 			if endpoint, ok := value.(string); ok && endpoint != "" {

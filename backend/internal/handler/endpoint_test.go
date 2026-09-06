@@ -194,6 +194,19 @@ func TestGetUpstreamEndpointUsesOpenAIRuntimeOverride(t *testing.T) {
 	require.Equal(t, EndpointChatCompletions, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
+func TestGetUpstreamEndpointPrefersActualServiceRuntimePath(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+	c.Set(ctxKeyInboundEndpoint, EndpointResponses)
+
+	service.SetActualUpstreamEndpoint(c, "/relay/v1/messages")
+	require.Equal(t, EndpointMessages, GetUpstreamEndpoint(c, service.PlatformGemini))
+
+	service.ClearActualUpstreamEndpoint(c)
+	require.Equal(t, EndpointGeminiModels, GetUpstreamEndpoint(c, service.PlatformGemini))
+}
+
 func TestResolveOpenAIUpstreamEndpointPrefersForwardResult(t *testing.T) {
 	tests := []struct {
 		name            string

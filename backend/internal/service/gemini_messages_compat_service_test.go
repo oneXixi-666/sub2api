@@ -907,6 +907,54 @@ func TestExtractGeminiUsage(t *testing.T) {
 	}
 }
 
+func TestConvertGeminiToClaudeMessageIncludesCacheReadUsage(t *testing.T) {
+	geminiResp := map[string]any{
+		"candidates": []any{
+			map[string]any{
+				"content": map[string]any{
+					"parts": []any{map[string]any{"text": "cached response"}},
+				},
+				"finishReason": "STOP",
+			},
+		},
+	}
+
+	resp, usage := convertGeminiToClaudeMessage(
+		geminiResp,
+		"gemini-3.8-pro",
+		[]byte(`{"usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":80,"candidatesTokenCount":7}}`),
+		false,
+	)
+
+	require.Equal(t, 20, usage.InputTokens)
+	require.Equal(t, 80, usage.CacheReadInputTokens)
+	responseUsage, ok := resp["usage"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, 20, responseUsage["input_tokens"])
+	require.Equal(t, 7, responseUsage["output_tokens"])
+	require.Equal(t, 80, responseUsage["cache_read_input_tokens"])
+}
+
+func TestGeminiMessagesHandleStreamingResponseIncludesCacheReadUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"candidates":[{"content":{"parts":[{"text":"cached"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":80,"candidatesTokenCount":7}}` + "\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	result, err := (&GeminiMessagesCompatService{}).handleStreamingResponse(c, resp, time.Now(), "gemini-3.8-pro")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 80, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":80`)
+}
+
 // ---------------------------------------------------------------------------
 // Task 8.2 — estimateGeminiCountTokens 测试
 // ---------------------------------------------------------------------------

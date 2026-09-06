@@ -121,6 +121,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if err != nil {
 		return nil, nil, err
 	}
+	SetActualUpstreamEndpoint(c, req.URL.Path)
 
 	// 设置认证头（保持原始大小写）
 	if tokenType == "oauth" {
@@ -297,6 +298,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicVertex(
 	if err != nil {
 		return nil, err
 	}
+	SetActualUpstreamEndpoint(c, req.URL.Path)
 
 	if c != nil && c.Request != nil {
 		for key, values := range c.Request.Header {
