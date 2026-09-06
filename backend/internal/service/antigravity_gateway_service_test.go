@@ -1336,6 +1336,65 @@ func TestHandleGeminiStreamingResponse_NormalComplete(t *testing.T) {
 	require.NotContains(t, body, "event: error")
 }
 
+func TestHandleGeminiStreamingResponse_PreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newAntigravityTestService(&config.Config{
+		Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	body := strings.Join([]string{
+		`data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}`,
+		`data: {"response":{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleGeminiStreamingResponse(c, resp, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 4506, result.usage.InputTokens)
+	require.Equal(t, 2665, result.usage.OutputTokens)
+	require.Equal(t, 463998, result.usage.CacheReadInputTokens)
+}
+
+func TestHandleGeminiStreamToNonStreaming_PreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newAntigravityTestService(&config.Config{
+		Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	body := strings.Join([]string{
+		`data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}`,
+		`data: {"response":{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleGeminiStreamToNonStreaming(c, resp, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 4506, result.usage.InputTokens)
+	require.Equal(t, 2665, result.usage.OutputTokens)
+	require.Equal(t, 463998, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cachedContentTokenCount":463998`)
+}
+
 // TestHandleClaudeStreamingResponse_NormalComplete
 // 验证：正常 Claude 流式转发（Gemini→Claude 转换），数据正确转换并输出
 func TestHandleClaudeStreamingResponse_NormalComplete(t *testing.T) {

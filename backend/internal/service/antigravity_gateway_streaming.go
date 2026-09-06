@@ -258,10 +258,7 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 					payload = string(inner)
 				}
 
-				// 解析 usage
-				if u := extractGeminiUsage(inner); u != nil {
-					usage = u
-				}
+				mergeGeminiUsageMetadata(usage, inner)
 				var parsed map[string]any
 				if json.Unmarshal(inner, &parsed) == nil {
 					// Check for MALFORMED_FUNCTION_CALL
@@ -339,6 +336,8 @@ func (s *AntigravityGatewayService) handleGeminiStreamToNonStreaming(c *gin.Cont
 	var lastWithParts map[string]any
 	var collectedImageParts []map[string]any // 收集所有包含图片的 parts
 	var collectedTextParts []string          // 收集所有文本片段
+	var aggregatedUsage antigravity.GeminiUsageMetadata
+	var usageSeen bool
 
 	type scanEvent struct {
 		line string
@@ -435,10 +434,14 @@ func (s *AntigravityGatewayService) handleGeminiStreamToNonStreaming(c *gin.Cont
 
 			last = parsed
 
-			// 提取 usage
-			if u := extractGeminiUsage(inner); u != nil {
-				usage = u
+			var usageEnvelope struct {
+				UsageMetadata *antigravity.GeminiUsageMetadata `json:"usageMetadata"`
 			}
+			if json.Unmarshal(inner, &usageEnvelope) == nil && usageEnvelope.UsageMetadata != nil {
+				antigravity.MergeGeminiUsageMetadata(&aggregatedUsage, usageEnvelope.UsageMetadata)
+				usageSeen = true
+			}
+			mergeGeminiUsageMetadata(usage, inner)
 
 			// Check for MALFORMED_FUNCTION_CALL
 			if candidates, ok := parsed["candidates"].([]any); ok && len(candidates) > 0 {
@@ -501,6 +504,9 @@ returnResponse:
 	// 如果收集到了文本，需要合并到最终响应中
 	if len(collectedTextParts) > 0 {
 		finalResponse = mergeTextPartsToResponse(finalResponse, collectedTextParts)
+	}
+	if usageSeen && finalResponse != nil {
+		finalResponse["usageMetadata"] = aggregatedUsage
 	}
 
 	respBody, err := json.Marshal(finalResponse)
@@ -812,6 +818,8 @@ func (s *AntigravityGatewayService) collectClaudeStreamResponse(c *gin.Context, 
 	var lastWithParts map[string]any
 	var collectedParts []map[string]any // 收集所有 parts（包括 text、thinking、functionCall、inlineData 等）
 	var meaningfulResponse bool
+	var aggregatedUsage antigravity.GeminiUsageMetadata
+	var usageSeen bool
 
 	type scanEvent struct {
 		line string
@@ -899,6 +907,13 @@ func (s *AntigravityGatewayService) collectClaudeStreamResponse(c *gin.Context, 
 			if err := json.Unmarshal(inner, &parsed); err != nil {
 				continue
 			}
+			var usageEnvelope struct {
+				UsageMetadata *antigravity.GeminiUsageMetadata `json:"usageMetadata"`
+			}
+			if json.Unmarshal(inner, &usageEnvelope) == nil && usageEnvelope.UsageMetadata != nil {
+				antigravity.MergeGeminiUsageMetadata(&aggregatedUsage, usageEnvelope.UsageMetadata)
+				usageSeen = true
+			}
 
 			last = parsed
 
@@ -945,6 +960,9 @@ returnResponse:
 	// 将收集的所有 parts 合并到最终响应中
 	if len(collectedParts) > 0 {
 		finalResponse = mergeCollectedPartsToResponse(finalResponse, collectedParts)
+	}
+	if usageSeen && finalResponse != nil {
+		finalResponse["usageMetadata"] = aggregatedUsage
 	}
 
 	// 序列化为 JSON（Gemini 格式）

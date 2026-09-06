@@ -38,3 +38,17 @@ func TestGeminiUsageMapping_NoCacheCreationTokens(t *testing.T) {
 		require.Zero(t, usage.CacheCreationInputTokens)
 	})
 }
+
+func TestStreamingProcessorMergesCacheUsageAcrossChunks(t *testing.T) {
+	p := NewStreamingProcessor("gemini-3.1-pro-preview")
+
+	first := p.ProcessLine(`data: {"response":{"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}`)
+	second := p.ProcessLine(`data: {"response":{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}`)
+	finalEvents, usage := p.Finish()
+
+	require.Contains(t, string(first), `"cache_read_input_tokens":463998`)
+	require.Contains(t, string(second)+string(finalEvents), `"cache_read_input_tokens":463998`)
+	require.Equal(t, 4506, usage.InputTokens)
+	require.Equal(t, 2665, usage.OutputTokens)
+	require.Equal(t, 463998, usage.CacheReadInputTokens)
+}

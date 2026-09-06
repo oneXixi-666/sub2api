@@ -171,6 +171,53 @@ type GeminiUsageMetadata struct {
 	PromptTokensDetails     []GeminiTokenDetail `json:"promptTokensDetails,omitempty"`
 }
 
+// MergeGeminiUsageMetadata merges cumulative usage snapshots without treating
+// an omitted field in a later response chunk as an authoritative zero. Gemini
+// streaming responses may report prompt/cache usage only on an early chunk and
+// output usage only on the terminal chunk.
+func MergeGeminiUsageMetadata(dst, src *GeminiUsageMetadata) bool {
+	if dst == nil || src == nil {
+		return false
+	}
+	if src.PromptTokenCount > dst.PromptTokenCount {
+		dst.PromptTokenCount = src.PromptTokenCount
+	}
+	if src.CandidatesTokenCount > dst.CandidatesTokenCount {
+		dst.CandidatesTokenCount = src.CandidatesTokenCount
+	}
+	if src.CachedContentTokenCount > dst.CachedContentTokenCount {
+		dst.CachedContentTokenCount = src.CachedContentTokenCount
+	}
+	if src.TotalTokenCount > dst.TotalTokenCount {
+		dst.TotalTokenCount = src.TotalTokenCount
+	}
+	if src.ThoughtsTokenCount > dst.ThoughtsTokenCount {
+		dst.ThoughtsTokenCount = src.ThoughtsTokenCount
+	}
+	mergeGeminiTokenDetails(&dst.CandidatesTokensDetails, src.CandidatesTokensDetails)
+	mergeGeminiTokenDetails(&dst.PromptTokensDetails, src.PromptTokensDetails)
+	return true
+}
+
+func mergeGeminiTokenDetails(dst *[]GeminiTokenDetail, src []GeminiTokenDetail) {
+	for _, incoming := range src {
+		found := false
+		for i := range *dst {
+			if (*dst)[i].Modality != incoming.Modality {
+				continue
+			}
+			if incoming.TokenCount > (*dst)[i].TokenCount {
+				(*dst)[i].TokenCount = incoming.TokenCount
+			}
+			found = true
+			break
+		}
+		if !found {
+			*dst = append(*dst, incoming)
+		}
+	}
+}
+
 // ImageOutputTokens 从 CandidatesTokensDetails 中提取 IMAGE 模态的 token 数
 func (m *GeminiUsageMetadata) ImageOutputTokens() int {
 	for _, d := range m.CandidatesTokensDetails {

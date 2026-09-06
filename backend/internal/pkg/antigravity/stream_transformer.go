@@ -37,6 +37,8 @@ type StreamingProcessor struct {
 
 	// 累计 usage
 	inputTokens       int
+	candidateTokens   int
+	thoughtsTokens    int
 	outputTokens      int
 	cacheReadTokens   int
 	imageOutputTokens int
@@ -110,11 +112,33 @@ func (p *StreamingProcessor) ProcessLine(line string) []byte {
 	// 注意：Gemini 的 promptTokenCount 包含 cachedContentTokenCount，
 	// 但 Claude 的 input_tokens 不包含 cache_read_input_tokens，需要减去
 	if geminiResp.UsageMetadata != nil {
-		cached := geminiResp.UsageMetadata.CachedContentTokenCount
-		p.inputTokens = geminiResp.UsageMetadata.PromptTokenCount - cached
-		p.outputTokens = geminiResp.UsageMetadata.CandidatesTokenCount + geminiResp.UsageMetadata.ThoughtsTokenCount
-		p.cacheReadTokens = cached
-		p.imageOutputTokens = geminiResp.UsageMetadata.ImageOutputTokens()
+		usage := geminiResp.UsageMetadata
+		promptTokens := p.inputTokens + p.cacheReadTokens
+		if usage.PromptTokenCount > promptTokens {
+			promptTokens = usage.PromptTokenCount
+		}
+		cachedTokens := p.cacheReadTokens
+		if usage.CachedContentTokenCount > cachedTokens {
+			cachedTokens = usage.CachedContentTokenCount
+		}
+		if promptTokens < cachedTokens {
+			promptTokens = cachedTokens
+		}
+		p.inputTokens = promptTokens - cachedTokens
+		if p.inputTokens < 0 {
+			p.inputTokens = 0
+		}
+		p.cacheReadTokens = cachedTokens
+		if usage.CandidatesTokenCount > p.candidateTokens {
+			p.candidateTokens = usage.CandidatesTokenCount
+		}
+		if usage.ThoughtsTokenCount > p.thoughtsTokens {
+			p.thoughtsTokens = usage.ThoughtsTokenCount
+		}
+		p.outputTokens = p.candidateTokens + p.thoughtsTokens
+		if imageTokens := usage.ImageOutputTokens(); imageTokens > p.imageOutputTokens {
+			p.imageOutputTokens = imageTokens
+		}
 	}
 
 	// 处理 parts

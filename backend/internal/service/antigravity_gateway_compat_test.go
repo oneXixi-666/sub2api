@@ -618,6 +618,50 @@ func TestAntigravityCompatChatStreamMapsToolCallAndUsage(t *testing.T) {
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), "data: [DONE]"))
 }
 
+func TestAntigravityCompatResponsesPreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := strings.Join([]string{
+		`data: {"response":{"responseId":"resp_cache","candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}`,
+		`data: {"response":{"responseId":"resp_cache","candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}`,
+		"",
+	}, "\n")
+
+	streamResult, err := svc.handleResponsesStreamingFromAntigravity(c, &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, time.Now(), "gemini-3.1-pro-preview")
+
+	require.NoError(t, err)
+	require.NotNil(t, streamResult)
+	require.Equal(t, 463998, streamResult.usage.CacheReadInputTokens)
+	require.Contains(t, recorder.Body.String(), `"cached_tokens":463998`)
+}
+
+func TestAntigravityCompatResponsesBufferedPreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
+	c, recorder := newAntigravityCompatContext(http.MethodPost, "/v1/responses", nil)
+	body := strings.Join([]string{
+		`data: {"response":{"responseId":"resp_cache","candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}`,
+		`data: {"response":{"responseId":"resp_cache","candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}`,
+		"",
+	}, "\n")
+
+	result, err := svc.handleResponsesNonStreamingFromAntigravity(c, &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, time.Now(), "gemini-3.1-pro-preview")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 463998, result.usage.CacheReadInputTokens)
+	require.Contains(t, recorder.Body.String(), `"cached_tokens":463998`)
+}
+
 func TestAntigravityCompatFirstEventTimeoutTriggersFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newAntigravityCompatService(

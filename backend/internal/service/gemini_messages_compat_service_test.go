@@ -171,6 +171,93 @@ func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *test
 	require.Contains(t, out, "data: [DONE]")
 }
 
+func TestGeminiForwardAsResponses_PreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamBody := `data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}` + "\n\n" +
+		`data: {"response":{"candidates":[{"content":{"parts":[{"text":" response"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		tokenProvider: &GeminiTokenProvider{},
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+	}
+	account := &Account{
+		ID:       201,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "ya29.test-token",
+			"project_id":   "project-1",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gemini-3.8-flash","input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Stream)
+	require.Equal(t, 4506, result.Usage.InputTokens)
+	require.Equal(t, 2665, result.Usage.OutputTokens)
+	require.Equal(t, 463998, result.Usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cached_tokens":463998`)
+	require.Contains(t, rec.Body.String(), `"input_tokens":468504`)
+}
+
+func TestGeminiForwardAsResponses_StreamPreservesCacheAcrossChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}` + "\n\n" +
+		`data: {"candidates":[{"content":{"parts":[{"text":" response"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream: httpStub,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:       202,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gemini-3.8-flash","stream":true,"input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Stream)
+	require.Equal(t, 4506, result.Usage.InputTokens)
+	require.Equal(t, 2665, result.Usage.OutputTokens)
+	require.Equal(t, 463998, result.Usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cached_tokens":463998`)
+}
+
 func TestGeminiForwardAsChatCompletions_FunctionNamedWebSearchStaysClientSide(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
