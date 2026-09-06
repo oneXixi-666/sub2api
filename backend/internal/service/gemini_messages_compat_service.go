@@ -1096,12 +1096,13 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			collectedBytes, _ := json.Marshal(collected)
 			upstreamResponseModelObserverFromContext(c).ObserveGemini(collectedBytes)
 			observeGeminiImageOutputs(c, collectedBytes)
-			claudeResp, usageObj2 := convertGeminiToClaudeMessage(collected, originalModel, collectedBytes, false)
-			c.JSON(http.StatusOK, claudeResp)
-			usage = usageObj2
-			if usageObj != nil && (usageObj.InputTokens > 0 || usageObj.OutputTokens > 0) {
+			claudeResp, convertedUsage := convertGeminiToClaudeMessage(collected, originalModel, collectedBytes, false)
+			usage = convertedUsage
+			if hasGeminiTokenUsage(usageObj) {
 				usage = usageObj
 			}
+			applyGeminiClaudeUsage(claudeResp, usage)
+			c.JSON(http.StatusOK, claudeResp)
 		} else {
 			usage, err = s.handleNonStreamingResponse(c, resp, originalModel)
 			if err != nil {
@@ -2330,9 +2331,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 			}
 		}
 
-		if u := extractGeminiUsage(unwrappedBytes); u != nil {
-			usage = *u
-		}
+		mergeGeminiUsageMetadata(&usage, unwrappedBytes)
 
 		// Process the final unterminated line at EOF as well.
 		if errors.Is(err, io.EOF) {
@@ -2478,9 +2477,7 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 					}
 					if parsed != nil {
 						last = parsed
-						if u := extractGeminiUsage(rawBytes); u != nil {
-							usage = u
-						}
+						mergeGeminiUsageMetadata(usage, rawBytes)
 						if parts := extractGeminiParts(parsed); len(parts) > 0 {
 							lastWithParts = parsed
 							// Collect text from each part for aggregation
@@ -2771,9 +2768,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 						rawBytes = []byte(payload)
 					}
 
-					if u := extractGeminiUsage(rawBytes); u != nil {
-						usage = u
-					}
+					mergeGeminiUsageMetadata(usage, rawBytes)
 					observer.ObserveGemini(rawBytes)
 					observeGeminiImageOutputs(c, rawBytes)
 
@@ -2948,14 +2943,6 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		stopReason = "tool_use"
 	}
 
-	usageObj := map[string]any{
-		"input_tokens":  usage.InputTokens,
-		"output_tokens": usage.OutputTokens,
-	}
-	if usage.CacheReadInputTokens > 0 {
-		usageObj["cache_read_input_tokens"] = usage.CacheReadInputTokens
-	}
-
 	resp := map[string]any{
 		"id":            generateAnthropicMsgID(),
 		"type":          "message",
@@ -2964,7 +2951,7 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		"content":       contentBlocks,
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
-		"usage":         usageObj,
+		"usage":         geminiClaudeUsageMap(usage),
 	}
 
 	return resp, usage
@@ -2985,39 +2972,6 @@ func isValidBase64(data string) bool {
 	}
 	_, err := base64.StdEncoding.DecodeString(data)
 	return err == nil
-}
-
-func extractGeminiUsage(data []byte) *ClaudeUsage {
-	usage := gjson.GetBytes(data, "usageMetadata")
-	if !usage.Exists() {
-		return nil
-	}
-	prompt := int(usage.Get("promptTokenCount").Int())
-	cand := int(usage.Get("candidatesTokenCount").Int())
-	cached := int(usage.Get("cachedContentTokenCount").Int())
-	thoughts := int(usage.Get("thoughtsTokenCount").Int())
-
-	// 从 candidatesTokensDetails 提取 IMAGE 模态 token 数
-	imageTokens := 0
-	candidateDetails := usage.Get("candidatesTokensDetails")
-	if candidateDetails.Exists() {
-		candidateDetails.ForEach(func(_, detail gjson.Result) bool {
-			if detail.Get("modality").String() == "IMAGE" {
-				imageTokens = int(detail.Get("tokenCount").Int())
-				return false
-			}
-			return true
-		})
-	}
-
-	// 注意：Gemini 的 promptTokenCount 包含 cachedContentTokenCount，
-	// 但 Claude 的 input_tokens 不包含 cache_read_input_tokens，需要减去
-	return &ClaudeUsage{
-		InputTokens:          prompt - cached,
-		OutputTokens:         cand + thoughts,
-		CacheReadInputTokens: cached,
-		ImageOutputTokens:    imageTokens,
-	}
 }
 
 func asInt(v any) (int, bool) {

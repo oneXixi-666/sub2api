@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -941,7 +942,8 @@ func TestGeminiMessagesHandleStreamingResponseIncludesCacheReadUsage(t *testing.
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"candidates":[{"content":{"parts":[{"text":"cached"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":80,"candidatesTokenCount":7}}` + "\n\n" +
+			`data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}` + "\n\n" +
+				`data: {"response":{"candidates":[{"content":{"parts":[{"text":" response"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}` + "\n\n" +
 				"data: [DONE]\n\n",
 		)),
 	}
@@ -951,8 +953,108 @@ func TestGeminiMessagesHandleStreamingResponseIncludesCacheReadUsage(t *testing.
 	result, err := (&GeminiMessagesCompatService{}).handleStreamingResponse(c, resp, time.Now(), "gemini-3.8-pro")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 80, result.usage.CacheReadInputTokens)
-	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":80`)
+	require.Equal(t, 4506, result.usage.InputTokens)
+	require.Equal(t, 2665, result.usage.OutputTokens)
+	require.Equal(t, 463998, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":463998`)
+}
+
+func TestGeminiMessagesCompatServiceForward_CodeAssistUsageOnlyChunkReachesClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamBody := `data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached response"}]},"finishReason":"STOP"}]}}` + "\n\n" +
+		`data: {"response":{"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998,"candidatesTokenCount":2665}}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		tokenProvider: &GeminiTokenProvider{},
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+	}
+	account := &Account{
+		ID:       104,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "ya29.test-token",
+			"project_id":   "project-1",
+		},
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"gemini-3.8-flash","max_tokens":4096,"messages":[{"role":"user","content":"hi"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Stream)
+	require.Equal(t, 4506, result.Usage.InputTokens)
+	require.Equal(t, 2665, result.Usage.OutputTokens)
+	require.Equal(t, 463998, result.Usage.CacheReadInputTokens)
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1internal:streamGenerateContent?alt=sse")
+
+	var clientResponse map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &clientResponse))
+	clientUsage, ok := clientResponse["usage"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(4506), clientUsage["input_tokens"])
+	require.Equal(t, float64(2665), clientUsage["output_tokens"])
+	require.Equal(t, float64(463998), clientUsage["cache_read_input_tokens"])
+}
+
+func TestGeminiCacheUsageSurvivesMessagesToResponsesBridge(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	geminiBody := `data: {"response":{"candidates":[{"content":{"parts":[{"text":"cached"}]}}],"usageMetadata":{"promptTokenCount":468504,"cachedContentTokenCount":463998}}}` + "\n\n" +
+		`data: {"response":{"candidates":[{"content":{"parts":[{"text":" response"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":468504,"candidatesTokenCount":2665}}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	geminiResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(geminiBody)),
+	}
+	messagesRecorder := httptest.NewRecorder()
+	messagesContext, _ := gin.CreateTestContext(messagesRecorder)
+
+	messagesResult, err := (&GeminiMessagesCompatService{}).handleStreamingResponse(
+		messagesContext,
+		geminiResp,
+		time.Now(),
+		"gemini-3.8-flash",
+	)
+	require.NoError(t, err)
+	require.Equal(t, 463998, messagesResult.usage.CacheReadInputTokens)
+
+	responsesRecorder := httptest.NewRecorder()
+	responsesContext, _ := gin.CreateTestContext(responsesRecorder)
+	responsesResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(messagesRecorder.Body.String())),
+	}
+	responsesResult, err := (&GatewayService{}).handleResponsesStreamingResponse(
+		responsesResp,
+		responsesContext,
+		"gemini-3.8-flash",
+		"gemini-3.8-flash",
+		nil,
+		time.Now(),
+		apicompat.ResponsesClientToolMapping{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 4506, responsesResult.Usage.InputTokens)
+	require.Equal(t, 2665, responsesResult.Usage.OutputTokens)
+	require.Equal(t, 463998, responsesResult.Usage.CacheReadInputTokens)
+	require.Contains(t, responsesRecorder.Body.String(), `"input_tokens":468504`)
+	require.Contains(t, responsesRecorder.Body.String(), `"cached_tokens":463998`)
 }
 
 // ---------------------------------------------------------------------------
