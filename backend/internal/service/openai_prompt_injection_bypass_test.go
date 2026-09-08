@@ -126,7 +126,7 @@ func TestCodexTransformPromptBypassSkipsSparkInstructions(t *testing.T) {
 }
 
 func TestSuppressCodexModelsManifestPromptInjection(t *testing.T) {
-	manifest := &CodexModelsManifest{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol","model_messages":{"instructions_template":"server prompt","approvals":{"ask":"prompt"}},"include_skills_usage_instructions":true,"include_plugin_usage_instructions":true,"include_apps_usage_instructions":true}]}`)}
+	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol","model_messages":{"instructions_template":"server prompt","approvals":{"ask":"prompt"}},"include_skills_usage_instructions":true,"include_plugin_usage_instructions":true,"include_apps_usage_instructions":true}]}`)}
 
 	require.NoError(t, SuppressCodexModelsManifestPromptInjection(manifest, ""))
 	require.NotEmpty(t, manifest.ETag)
@@ -138,7 +138,7 @@ func TestSuppressCodexModelsManifestPromptInjection(t *testing.T) {
 	require.False(t, gjson.GetBytes(manifest.Body, "models.0.include_apps_usage_instructions").Bool())
 
 	etag := manifest.ETag
-	manifest = &CodexModelsManifest{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol","model_messages":{"instructions_template":"server prompt"}}]}`)}
+	manifest = &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol","model_messages":{"instructions_template":"server prompt"}}]}`)}
 	require.NoError(t, SuppressCodexModelsManifestPromptInjection(manifest, etag))
 	require.True(t, manifest.NotModified)
 	require.Nil(t, manifest.Body)
