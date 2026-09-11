@@ -383,7 +383,7 @@ func TestRateLimitService_HandleUpstreamError_CodexPlanGatedModelIgnoresAPIKeyAc
 }
 
 func TestRateLimitService_HandleUpstreamError_CodexPlanGatedImageModelSkipsCooldown(t *testing.T) {
-	for _, model := range []string{"gpt-image-1", "gpt-image-1.5", "gpt-image-2"} {
+	for _, model := range []string{"gpt-image-1", "gpt-image-1.5", "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} {
 		t.Run(model, func(t *testing.T) {
 			repo := &modelNotFoundAccountRepoStub{}
 			svc := &RateLimitService{accountRepo: repo}

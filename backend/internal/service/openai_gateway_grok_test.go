@@ -1159,35 +1159,51 @@ func TestPrepareGrokImageEditNormalizesOfficialImageObjects(t *testing.T) {
 }
 
 func TestGrokOpenAIImageProtocolModelAllowlist(t *testing.T) {
-	require.True(t, IsGrokOpenAIImageProtocolModel("gpt-image-2"))
-	require.True(t, IsGrokOpenAIImageProtocolModel(" GPT-IMAGE-2 "))
+	for _, model := range []string{
+		"gpt-image-2",
+		" GPT-IMAGE-2 ",
+		"gpt-image-2.5",
+		"gpt-image-2.5-flare",
+		"gpt-image-2.5-sunburst",
+		"gpt-image-2.5-flare-2026-09-08",
+		"gpt-image-1",
+		"gpt-image-1.5",
+	} {
+		require.True(t, IsGrokOpenAIImageProtocolModel(model), model)
+	}
 	require.False(t, IsGrokOpenAIImageProtocolModel("grok-imagine-image-quality"))
+	require.False(t, IsGrokOpenAIImageProtocolModel("gpt-5.5"))
+	require.False(t, IsGrokOpenAIImageProtocolModel(""))
 }
 
 func TestPrepareGrokImageEditGPTImage2PreservesOpenAIImageURL(t *testing.T) {
-	body := []byte(`{
-		"model":"gpt-image-2",
+	for _, model := range []string{"gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} {
+		t.Run(model, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{
+		"model":%q,
 		"prompt":"replace the background",
 		"size":"1536x1024",
 		"images":[{"image_url":"https://example.com/source.png"}],
 		"mask":{"image_url":"https://example.com/mask.png"}
-	}`)
+	}`, model))
 
-	out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointImagesEdits, body, "application/json")
-	require.NoError(t, err)
-	require.Equal(t, "application/json", contentType)
-	require.JSONEq(t, string(body), string(out))
+			out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointImagesEdits, body, "application/json")
+			require.NoError(t, err)
+			require.Equal(t, "application/json", contentType)
+			require.JSONEq(t, string(body), string(out))
 
-	out, contentType, err = normalizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType)
-	require.NoError(t, err)
-	require.Equal(t, "application/json", contentType)
-	require.JSONEq(t, string(body), string(out))
+			out, contentType, err = normalizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType)
+			require.NoError(t, err)
+			require.Equal(t, "application/json", contentType)
+			require.JSONEq(t, string(body), string(out))
 
-	out, _, err = sanitizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType, true)
-	require.NoError(t, err)
-	require.Equal(t, "1536x1024", gjson.GetBytes(out, "size").String())
-	require.Equal(t, "https://example.com/source.png", gjson.GetBytes(out, "images.0.image_url").String())
-	require.False(t, gjson.GetBytes(out, "images.0.url").Exists())
+			out, _, err = sanitizeGrokMediaForwardBody(GrokMediaEndpointImagesEdits, out, contentType, true)
+			require.NoError(t, err)
+			require.Equal(t, "1536x1024", gjson.GetBytes(out, "size").String())
+			require.Equal(t, "https://example.com/source.png", gjson.GetBytes(out, "images.0.image_url").String())
+			require.False(t, gjson.GetBytes(out, "images.0.url").Exists())
+		})
+	}
 }
 
 func TestPrepareGrokImageEditGPTImage2MultipartUsesOpenAIImageURL(t *testing.T) {
@@ -1385,6 +1401,28 @@ func TestForwardGrokMediaAppliesAccountModelMappingAfterEndpointNormalization(t 
 			wantRequestModel: "grok-imagine-image-quality",
 			wantUpstream:     "grok-imagine-image-quality",
 			wantBody:         `{"model":"grok-imagine-image-quality","prompt":"draw"}`,
+			responseBody:     `{"data":[{"url":"https://images.test/mapped.png"}]}`,
+		},
+		{
+			name:             "gpt-image-2.5-flare ignores gpt-* text remap and keeps OpenAI size",
+			endpoint:         GrokMediaEndpointImagesGenerations,
+			path:             "/v1/images/generations",
+			body:             `{"model":"gpt-image-2.5-flare","prompt":"draw","size":"1536x1024"}`,
+			modelMapping:     map[string]any{"gpt-*": "grok-4.6"},
+			wantRequestModel: "gpt-image-2.5-flare",
+			wantUpstream:     "gpt-image-2.5-flare",
+			wantBody:         `{"model":"gpt-image-2.5-flare","prompt":"draw","size":"1536x1024"}`,
+			responseBody:     `{"data":[{"url":"https://images.test/mapped.png"}]}`,
+		},
+		{
+			name:             "gpt-image-2.5 can map onto another GPT image model",
+			endpoint:         GrokMediaEndpointImagesGenerations,
+			path:             "/v1/images/generations",
+			body:             `{"model":"gpt-image-2.5","prompt":"draw","size":"1024x1024"}`,
+			modelMapping:     map[string]any{"gpt-image-2.5": "gpt-image-2.5-sunburst"},
+			wantRequestModel: "gpt-image-2.5",
+			wantUpstream:     "gpt-image-2.5-sunburst",
+			wantBody:         `{"model":"gpt-image-2.5-sunburst","prompt":"draw","size":"1024x1024"}`,
 			responseBody:     `{"data":[{"url":"https://images.test/mapped.png"}]}`,
 		},
 	}

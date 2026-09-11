@@ -29,6 +29,7 @@ func TestFetchOpenAIAccountModelsOAuthPopulatesPickerFields(t *testing.T) {
 	for _, model := range models {
 		ids = append(ids, model.ID)
 	}
+	require.Contains(t, ids, "gpt-image-2.5")
 	require.Contains(t, ids, "gpt-image-2.5-flare")
 	require.Contains(t, ids, "gpt-image-2.5-sunburst")
 
@@ -82,5 +83,6 @@ func TestFetchOpenAIAccountModelsOAuthRespectsImageAllowlist(t *testing.T) {
 		ids = append(ids, model.ID)
 	}
 	require.Contains(t, ids, "gpt-image-2.5-flare")
+	require.NotContains(t, ids, "gpt-image-2.5")
 	require.NotContains(t, ids, "gpt-image-2.5-sunburst")
 }

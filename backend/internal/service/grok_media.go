@@ -36,17 +36,16 @@ const (
 	grokMediaMaxEditSourceImages = 3
 )
 
-// grokOpenAIImageProtocolModelAllowlist contains models exposed through a Grok
-// group whose upstream speaks the OpenAI Images edit schema instead of xAI's
-// media schema. Keep this explicit: changing the wire format for every Grok
-// model would break native xAI image generation.
-var grokOpenAIImageProtocolModelAllowlist = map[string]struct{}{
-	"gpt-image-2": {},
-}
-
+// IsGrokOpenAIImageProtocolModel reports whether a Grok-group image request
+// should keep the OpenAI Images wire format instead of being rewritten into
+// xAI's native media schema.
+//
+// GPT Image models (gpt-image-*) speak the OpenAI protocol, including family
+// aliases such as gpt-image-2.5 and dated snapshots like
+// gpt-image-2.5-flare-2026-09-08. Native grok-imagine-* models must stay on
+// xAI's schema; matching every gpt-* text model would also be wrong.
 func IsGrokOpenAIImageProtocolModel(model string) bool {
-	_, ok := grokOpenAIImageProtocolModelAllowlist[strings.ToLower(strings.TrimSpace(model))]
-	return ok
+	return IsGPTImageGenerationModel(model)
 }
 
 func (e GrokMediaEndpoint) RequiresRequestBody() bool {
@@ -660,7 +659,12 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	upstreamModel := requestInfo.Model
 	if endpoint.RequiresRequestBody() && gjson.ValidBytes(body) {
 		if mappedModel := strings.TrimSpace(account.GetMappedModel(requestInfo.Model)); mappedModel != "" {
-			upstreamModel = mappedModel
+			// Keep GPT Image IDs on the OpenAI Images wire. A Grok gpt-*
+			// cross-client wildcard would otherwise rewrite gpt-image-2.5*
+			// onto a text model after the protocol has already been preserved.
+			if !IsGrokOpenAIImageProtocolModel(requestInfo.Model) || IsGrokOpenAIImageProtocolModel(mappedModel) {
+				upstreamModel = mappedModel
+			}
 		}
 		if upstreamModel != requestInfo.Model {
 			body, err = sjson.SetBytes(body, "model", upstreamModel)

@@ -94,8 +94,14 @@ func TestIsImageGenerationIntentForPlatform_GrokPreservesHardSignals(t *testing.
 	))
 	require.True(t, IsImageGenerationIntentForPlatform(
 		openAIResponsesEndpoint,
+		"gpt-image-2.5-flare",
+		[]byte(`{"input":"draw"}`),
+		PlatformGrok,
+	))
+	require.True(t, IsImageGenerationIntentForPlatform(
+		openAIResponsesEndpoint,
 		"grok-4.5",
-		[]byte(`{"model":"gpt-image-2","input":"draw"}`),
+		[]byte(`{"model":"gpt-image-2.5-sunburst","input":"draw"}`),
 		PlatformGrok,
 	))
 }
