@@ -1118,7 +1118,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1459,17 +1459,6 @@ watch([showCreateModal, createProviderOptions], ([isOpen, providers], [wasOpen])
   if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
     formData.value.group_id = null
   }
-})
-
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
 })
 
 const copyToClipboard = async (text: string, keyId: number) => {
