@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { CONCRETE_PLATFORM_OPTIONS, GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
+import {
+  CONCRETE_PLATFORM_OPTIONS,
+  GROUP_PLATFORM_OPTIONS,
+  orderPresentPlatforms
+} from '@/constants/platforms'
 
 const concretePlatforms = [
   'anthropic',
@@ -23,6 +27,16 @@ describe('platform option catalogs', () => {
     expect(GROUP_PLATFORM_OPTIONS.map((option) => option.value)).toEqual([
       ...concretePlatforms,
       'composite'
+    ])
+  })
+
+  it('orders present platforms from the catalog and keeps unknown types', () => {
+    expect(orderPresentPlatforms(['minimax', 'openai', 'opencode_go', 'future_vendor', 'kimi'])).toEqual([
+      'openai',
+      'kimi',
+      'minimax',
+      'opencode_go',
+      'future_vendor'
     ])
   })
 })

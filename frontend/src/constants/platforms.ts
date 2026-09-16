@@ -28,3 +28,22 @@ export const GROUP_PLATFORM_OPTIONS = [
   ...CONCRETE_PLATFORM_OPTIONS,
   { value: 'composite', label: 'Composite' }
 ] as const satisfies readonly PlatformOption<GroupPlatform>[]
+
+export const GROUP_PLATFORM_VALUES: readonly GroupPlatform[] = GROUP_PLATFORM_OPTIONS.map((option) => option.value)
+
+/**
+ * Order platforms that actually appear in a collection by the shared catalog,
+ * then append any unknown values so newly added providers (MiniMax, OpenCode,
+ * …) show up in filters without another hardcoded list.
+ */
+export function orderPresentPlatforms(present: Iterable<string>): string[] {
+  const seen = new Set<string>()
+  for (const value of present) {
+    const platform = value.trim()
+    if (platform) seen.add(platform)
+  }
+  const catalog = new Set<string>(GROUP_PLATFORM_VALUES)
+  const known = GROUP_PLATFORM_VALUES.filter((platform) => seen.has(platform))
+  const unknown = [...seen].filter((platform) => !catalog.has(platform)).sort()
+  return [...known, ...unknown]
+}

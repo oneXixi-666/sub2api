@@ -58,8 +58,7 @@ describe('channel-monitor-v2 design system structure', () => {
   it('MonitorStatusCardGrid groups compact cards by platform', () => {
     const src = read('features/channel-monitor-v2/MonitorStatusCardGrid.vue')
     expect(src).toContain('platformGroups')
-    expect(src).toContain('PLATFORM_ORDER')
-    expect(src).toContain("const PLATFORM_ORDER = ['openai', 'anthropic', 'grok', 'gemini'")
+    expect(src).toContain('orderPresentPlatforms')
     expect(src).toContain('v-for="group in platformGroups"')
     expect(src).toContain('MonitorStatusCard')
     expect(src).toContain('sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4')

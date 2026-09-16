@@ -77,6 +77,7 @@ import type { MonitorCoverage, MonitorMatrixRow } from '@/api/channelMonitorV2'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
+import { orderPresentPlatforms } from '@/constants/platforms'
 import MonitorStatusCard from './MonitorStatusCard.vue'
 
 const props = defineProps<{
@@ -90,8 +91,6 @@ const props = defineProps<{
 const { t } = useI18n()
 const { providerLabel } = useChannelMonitorFormat()
 
-const PLATFORM_ORDER = ['openai', 'anthropic', 'grok', 'gemini', 'antigravity', 'kiro', 'kimi', 'deepseek', 'zhipu']
-
 const platformGroups = computed(() => {
   const groups = new Map<string, MonitorMatrixRow[]>()
   for (const row of props.rows) {
@@ -103,14 +102,10 @@ const platformGroups = computed(() => {
       groups.set(platform, [row])
     }
   }
-  return Array.from(groups, ([platform, rows]) => ({ platform, rows })).sort((left, right) => {
-    const leftIndex = PLATFORM_ORDER.indexOf(left.platform)
-    const rightIndex = PLATFORM_ORDER.indexOf(right.platform)
-    if (leftIndex >= 0 || rightIndex >= 0) {
-      return (leftIndex < 0 ? PLATFORM_ORDER.length : leftIndex) - (rightIndex < 0 ? PLATFORM_ORDER.length : rightIndex)
-    }
-    return left.platform.localeCompare(right.platform)
-  })
+  return orderPresentPlatforms(groups.keys()).map((platform) => ({
+    platform,
+    rows: groups.get(platform) || []
+  }))
 })
 
 function rowKey(row: MonitorMatrixRow) {

@@ -131,6 +131,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { Group, GroupPlatform } from '@/types'
+import { orderPresentPlatforms } from '@/constants/platforms'
 import {
   platformAccentColor,
   platformIconClass,
@@ -157,11 +158,9 @@ const searchQuery = ref('')
 const selectedPlatform = ref<'all' | GroupPlatform>('all')
 const searchInput = ref<HTMLInputElement | null>(null)
 
-const availablePlatforms = computed<GroupPlatform[]>(() => {
-  const preferred: GroupPlatform[] = ['openai', 'anthropic', 'gemini', 'grok', 'antigravity', 'kimi', 'zhipu', 'deepseek', 'composite']
-  const present = new Set(props.groups.map((group) => group.platform))
-  return preferred.filter((platform) => present.has(platform))
-})
+const availablePlatforms = computed<GroupPlatform[]>(() =>
+  orderPresentPlatforms(props.groups.map((group) => group.platform)) as GroupPlatform[]
+)
 
 // Sort by the rate the current user will actually pay, including personal overrides.
 const effectiveRate = (group: Group): number => props.userGroupRates[group.id] ?? group.rate_multiplier
@@ -181,7 +180,10 @@ const groupSections = computed(() => {
     if (current) current.push(group)
     else sections.set(group.platform, [group])
   }
-  return Array.from(sections, ([platform, groups]) => ({ platform, groups }))
+  return orderPresentPlatforms(sections.keys()).map((platform) => ({
+    platform: platform as GroupPlatform,
+    groups: sections.get(platform as GroupPlatform) || []
+  }))
 })
 
 const formatRate = (rate: number): string => {

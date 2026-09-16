@@ -160,6 +160,52 @@ func TestChannelMonitorV2MatrixForwardsGroupingAndAdminScope(t *testing.T) {
 	require.ErrorIs(t, err, ErrChannelMonitorV2InvalidGroupBy)
 }
 
+func TestEnsureChannelMonitorV2CatalogPlatformsAppendsMissingProviders(t *testing.T) {
+	cfg := ChannelMonitorV2Config{
+		Platforms: []ChannelMonitorV2PlatformConfig{
+			{Platform: "openai", Enabled: true, Models: []string{"gpt-5"}},
+			{Platform: "kimi", Enabled: false},
+		},
+	}
+	ensureChannelMonitorV2CatalogPlatforms(&cfg)
+
+	byPlatform := map[string]ChannelMonitorV2PlatformConfig{}
+	for _, platform := range cfg.Platforms {
+		byPlatform[platform.Platform] = platform
+	}
+	require.Equal(t, []string{"gpt-5"}, byPlatform["openai"].Models)
+	require.False(t, byPlatform["kimi"].Enabled)
+	for _, platform := range []string{PlatformMiniMax, PlatformOpenCodeGo, PlatformAnthropic, PlatformZhipu} {
+		got, ok := byPlatform[platform]
+		require.True(t, ok, platform)
+		require.True(t, got.Enabled, platform)
+		require.Empty(t, got.Models, platform)
+	}
+
+	before := len(cfg.Platforms)
+	ensureChannelMonitorV2CatalogPlatforms(&cfg)
+	require.Equal(t, before, len(cfg.Platforms))
+}
+
+func TestChannelMonitorV2GetConfigMergesCatalogPlatforms(t *testing.T) {
+	repo := &channelMonitorV2RepoStub{config: ChannelMonitorV2Config{
+		Enabled: true,
+		Platforms: []ChannelMonitorV2PlatformConfig{
+			{Platform: "openai", Enabled: true},
+		},
+	}}
+	cfg, err := NewChannelMonitorV2Service(repo).GetConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	got := map[string]bool{}
+	for _, platform := range cfg.Platforms {
+		got[platform.Platform] = platform.Enabled
+	}
+	require.True(t, got["openai"])
+	require.True(t, got[PlatformMiniMax])
+	require.True(t, got[PlatformOpenCodeGo])
+}
+
 func TestChannelMonitorV2ConfigValidation(t *testing.T) {
 	cfg := ChannelMonitorV2Config{
 		Platforms: []ChannelMonitorV2PlatformConfig{

@@ -284,6 +284,7 @@ import {
   DEFAULT_MINIMAX_ENDPOINT,
   DEFAULT_OPENCODE_GO_ENDPOINT,
   DEFAULT_INTERVAL_SECONDS,
+  PROVIDERS,
 } from '@/constants/channelMonitor'
 
 const props = defineProps<{
@@ -468,18 +469,9 @@ interface ProviderOption {
   label: string
 }
 
-const providerOptions = computed<ProviderOption[]>(() => [
-  { value: PROVIDER_ANTHROPIC, label: t('monitorCommon.providers.anthropic') },
-  { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
-  { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
-  { value: PROVIDER_GROK, label: t('monitorCommon.providers.grok') },
-  { value: PROVIDER_ANTIGRAVITY, label: t('monitorCommon.providers.antigravity') },
-  { value: PROVIDER_KIMI, label: t('monitorCommon.providers.kimi') },
-  { value: PROVIDER_ZHIPU, label: t('monitorCommon.providers.zhipu') },
-  { value: PROVIDER_DEEPSEEK, label: t('monitorCommon.providers.deepseek') },
-  { value: PROVIDER_MINIMAX, label: t('monitorCommon.providers.minimax') },
-  { value: PROVIDER_OPENCODE_GO, label: t('monitorCommon.providers.opencode_go') },
-])
+const providerOptions = computed<ProviderOption[]>(() =>
+  PROVIDERS.map((value) => ({ value, label: t(`monitorCommon.providers.${value}`) }))
+)
 
 // 国产 provider 预填的官方 endpoint（仅探活侧；配额模式 endpoint 可留空）。
 const PROVIDER_DEFAULT_ENDPOINTS: Partial<Record<Provider, string>> = {

@@ -420,11 +420,16 @@ func (s *ChannelMonitorV2Service) hideUserRankingForViewer(ctx context.Context, 
 }
 
 func (s *ChannelMonitorV2Service) GetConfig(ctx context.Context) (*ChannelMonitorV2Config, error) {
-	return s.repo.GetConfig(ctx)
+	cfg, err := s.repo.GetConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ensureChannelMonitorV2CatalogPlatforms(cfg)
+	return cfg, nil
 }
 
 func (s *ChannelMonitorV2Service) getEnabledConfig(ctx context.Context) (*ChannelMonitorV2Config, error) {
-	cfg, err := s.repo.GetConfig(ctx)
+	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +752,42 @@ func channelMonitorV2TopUsersWithSelf(items []ChannelMonitorV2UserRow, selfIndex
 		out = append(out, items[selfIndex])
 	}
 	return out
+}
+
+// ChannelMonitorV2CatalogPlatforms is the concrete account-platform catalog.
+// GetConfig appends any missing entries so newly added providers appear in
+// settings and aggregation without a one-off UI/filter list.
+var ChannelMonitorV2CatalogPlatforms = []string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformAntigravity,
+	PlatformGrok,
+	PlatformKimi,
+	PlatformZhipu,
+	PlatformDeepseek,
+	PlatformMiniMax,
+	PlatformOpenCodeGo,
+}
+
+func ensureChannelMonitorV2CatalogPlatforms(cfg *ChannelMonitorV2Config) {
+	if cfg == nil {
+		return
+	}
+	seen := make(map[string]struct{}, len(cfg.Platforms)+len(ChannelMonitorV2CatalogPlatforms))
+	for _, platform := range cfg.Platforms {
+		seen[strings.ToLower(strings.TrimSpace(platform.Platform))] = struct{}{}
+	}
+	for _, platform := range ChannelMonitorV2CatalogPlatforms {
+		if _, ok := seen[platform]; ok {
+			continue
+		}
+		cfg.Platforms = append(cfg.Platforms, ChannelMonitorV2PlatformConfig{
+			Platform: platform,
+			Enabled:  true,
+			Models:   []string{},
+		})
+	}
 }
 
 func normalizeChannelMonitorV2Config(cfg *ChannelMonitorV2Config) error {
