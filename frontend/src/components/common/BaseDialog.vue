@@ -42,6 +42,10 @@
   </Teleport>
 </template>
 
+<script lang="ts">
+let dialogIdCounter = 0
+</script>
+
 <script setup lang="ts">
 import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -50,7 +54,6 @@ import Icon from '@/components/icons/Icon.vue'
 const { t } = useI18n()
 
 // 生成唯一ID以避免多个对话框时ID冲突
-let dialogIdCounter = 0
 const dialogId = `modal-title-${++dialogIdCounter}`
 
 // 焦点管理
