@@ -456,6 +456,8 @@ describe('plan_type helpers', () => {
       expect(planTypeDisplayLabel('prolite')).toBe('Pro 5x')
       expect(planTypeDisplayLabel('free')).toBe('Free')
       expect(planTypeDisplayLabel('team')).toBe('Business Standard')
+      expect(planTypeDisplayLabel('business')).toBe('Business Standard')
+      expect(planTypeDisplayLabel('self_serve_business')).toBe('Business Standard')
       expect(planTypeDisplayLabel('self_serve_business_prolite')).toBe('Business Premium')
     })
     it('normalizes case, separators and surrounding blanks', () => {
@@ -465,7 +467,7 @@ describe('plan_type helpers', () => {
       expect(planTypeDisplayLabel('self-serve-business-pro-lite')).toBe('Business Premium')
     })
     it('returns unknown values verbatim', () => {
-      expect(planTypeDisplayLabel('self_serve_business')).toBe('self_serve_business')
+      expect(planTypeDisplayLabel('enterprise')).toBe('enterprise')
     })
   })
 
@@ -490,6 +492,7 @@ describe('plan_type helpers', () => {
         { value: 'plus', label: 'Plus' },
         { value: 'pro', label: 'Pro 20x' },
         { value: 'prolite', label: 'Pro 5x' },
+        { value: 'team', label: 'Business Standard' },
         { value: 'self_serve_business_prolite', label: 'Business Premium' },
         { value: 'free', label: 'Free' }
       ])
@@ -504,22 +507,22 @@ describe('plan_type helpers', () => {
         'plus',
         'chatgptpro',
         'prolite',
+        'team',
         'self_serve_business_prolite',
         'free'
       ])
     })
-    it('appends an unknown-but-labeled value (team) as its own option', () => {
-      const opts = buildPlanTypeOptions('team', clear)
-      expect(opts.find(o => o.value === 'team')).toEqual({ value: 'team', label: 'Business Standard' })
-      // presets untouched
+    it('keeps team as a preset and maps a business alias onto that label', () => {
+      const opts = buildPlanTypeOptions('business', clear)
+      expect(opts.find(o => o.label === 'Business Standard')).toEqual({ value: 'business', label: 'Business Standard' })
       expect(opts.map(o => o.value)).toEqual([
         '',
         'plus',
         'pro',
         'prolite',
+        'business',
         'self_serve_business_prolite',
-        'free',
-        'team'
+        'free'
       ])
     })
     it('appends a fully custom value with a raw label', () => {
@@ -534,6 +537,7 @@ describe('plan_type helpers', () => {
         'plus',
         'pro',
         'prolite',
+        'team',
         'self_serve_business_prolite',
         'free'
       ])

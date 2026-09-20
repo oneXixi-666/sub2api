@@ -279,6 +279,7 @@ func (h *OpenAIOAuthHandler) RefreshAccountToken(c *gin.Context) {
 			newCredentials[k] = v
 		}
 	}
+	service.PreserveOpenAICodexTicketTeamPlanType(account.Credentials, newCredentials)
 	newCredentials = service.NormalizeOpenAIPersonalAccessTokenCredentials(account, tokenInfo, newCredentials)
 
 	updatedAccount, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{

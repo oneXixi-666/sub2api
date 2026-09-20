@@ -17,13 +17,31 @@ export function normalizePlanType(value?: string | null): string {
 }
 
 /**
+ * ChatGPT Team / Business 工作区档位。打票按 332 首选，同时仍接受 292。
+ * `self_serve_business*`、字面 `business` 都算这一类。
+ */
+export function isOpenAITeamOrBusinessPlan(value?: string | null): boolean {
+  const normalized = normalizePlanType(value)
+  switch (normalized) {
+    case 'team':
+    case 'chatgptteam':
+    case 'business':
+    case 'chatgptbusiness':
+      return true
+    default:
+      return normalized.startsWith('selfservebusiness')
+  }
+}
+
+/**
  * ChatGPT 档位 → 展示标签；未知档位返回空串，由调用方决定是否回退为原始值。
  *
  * Pro 的倍率命名：`pro`/`chatgptpro` 为 Pro 20x，`prolite` 为 Pro 5x；
- * Team/Business：`team` 为 Business Standard，`self_serve_business_prolite` 为 Business Premium。
+ * Team/Business：`team` / `business` 为 Business Standard，`self_serve_business_prolite` 为 Business Premium。
  */
 export function openAIPlanTypeLabel(value?: string | null): string {
-  switch (normalizePlanType(value)) {
+  const normalized = normalizePlanType(value)
+  switch (normalized) {
     case 'plus':
       return 'Plus'
     case 'chatgptpro':
@@ -33,11 +51,9 @@ export function openAIPlanTypeLabel(value?: string | null): string {
       return 'Pro 5x'
     case 'selfservebusinessprolite':
       return 'Business Premium'
-    case 'team':
-      return 'Business Standard'
     case 'free':
       return 'Free'
     default:
-      return ''
+      return isOpenAITeamOrBusinessPlan(normalized) ? 'Business Standard' : ''
   }
 }

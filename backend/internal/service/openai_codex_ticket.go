@@ -92,21 +92,48 @@ func normalizeOpenAICodexTicketPlanType(planType string) string {
 	return b.String()
 }
 
-func isOpenAICodexTicketTeamAccount(account *Account) bool {
-	if account == nil {
-		return false
-	}
-	switch normalizeOpenAICodexTicketPlanType(account.GetCredential("plan_type")) {
-	case "team", "selfservebusinessprolite":
+func isOpenAICodexTicketTeamPlanType(planType string) bool {
+	normalized := normalizeOpenAICodexTicketPlanType(planType)
+	switch normalized {
+	case "team", "chatgptteam", "business", "chatgptbusiness":
 		return true
 	default:
-		return false
+		return strings.HasPrefix(normalized, "selfservebusiness")
 	}
 }
 
-// openAICodexTicketTargetLength returns the length required for one account.
-// Team/Business accounts always use the dedicated 332-byte ticket; personal
-// accounts retain the configured target length for backwards compatibility.
+func isOpenAICodexTicketTeamAccount(account *Account) bool {
+	return account != nil && isOpenAICodexTicketTeamPlanType(account.GetCredential("plan_type"))
+}
+
+func openAICodexTicketCanonicalLength(n int) bool {
+	return n == openAICodexTicketDefaultLength || n == openAICodexTicketTeamLength
+}
+
+func credentialPlanType(creds map[string]any) string {
+	if creds == nil {
+		return ""
+	}
+	planType, _ := creds["plan_type"].(string)
+	return planType
+}
+
+// PreserveOpenAICodexTicketTeamPlanType keeps an admin-set Team/Business plan
+// when token refresh would overwrite it with the personal JWT chatgpt_plan_type.
+func PreserveOpenAICodexTicketTeamPlanType(oldCreds, newCreds map[string]any) {
+	if newCreds == nil {
+		return
+	}
+	oldPlan := credentialPlanType(oldCreds)
+	if isOpenAICodexTicketTeamPlanType(oldPlan) && !isOpenAICodexTicketTeamPlanType(credentialPlanType(newCreds)) {
+		newCreds["plan_type"] = oldPlan
+	}
+}
+
+// openAICodexTicketTargetLength is the preferred harvest length for one account.
+// Team/Business accounts prefer 332; personal accounts keep the configured
+// length. Harvest still accepts the other canonical length (292 or 332) so a
+// Business workspace that sometimes returns 292 stays schedulable.
 func openAICodexTicketTargetLength(account *Account, configured int) int {
 	if isOpenAICodexTicketTeamAccount(account) {
 		return openAICodexTicketTeamLength
@@ -350,12 +377,13 @@ func (s *OpenAIGatewayService) openAICodexTicketHarvestProxyURLContext(ctx conte
 	return strings.TrimSpace(s.openAICodexTicketConfig().HarvestProxyURL)
 }
 
-func (t *openAICodexTicket) valid(now time.Time, targetLen int) bool {
+func (t *openAICodexTicket) valid(now time.Time, _ int) bool {
 	if t == nil {
 		return false
 	}
 	state := strings.TrimSpace(t.State)
-	if len(state) != targetLen || t.Length != targetLen || !strings.HasPrefix(state, openAICodexTicketStatePrefix) {
+	n := len(state)
+	if !openAICodexTicketCanonicalLength(n) || t.Length != n || !strings.HasPrefix(state, openAICodexTicketStatePrefix) {
 		return false
 	}
 	if t.ExpiresAt.IsZero() || !now.Before(t.ExpiresAt) {
@@ -727,8 +755,9 @@ func (s *OpenAIGatewayService) refreshOpenAICodexTickets(ctx context.Context) {
 			if model == "" {
 				continue
 			}
-			// 已有一张有效且未临近过期的票 → 本周期不打，省得白刷。
-			if t := s.lookupOpenAICodexTicket(&account, model); t.valid(now, targetLen) && !t.needsRefresh(now, refreshBefore) {
+			// 已有一张目标长度且未临近过期的票 → 本周期不打。292/332 都能调度，
+			// 但长度还不是该档位首选值时继续打，方便 Business 从 292 升到 332。
+			if t := s.lookupOpenAICodexTicket(&account, model); t.valid(now, targetLen) && t.Length == targetLen && !t.needsRefresh(now, refreshBefore) {
 				continue
 			}
 			acc := account
@@ -749,7 +778,7 @@ func (s *OpenAIGatewayService) refreshOpenAICodexTickets(ctx context.Context) {
 	}
 }
 
-// probeOnceOpenAICodexTicket 走打票代理打一发。命中合格目标长度（HTTP 200、长度==target、
+// probeOnceOpenAICodexTicket 走打票代理打一发。命中规范长度（HTTP 200、292 或 332、
 // gAAAAA 前缀）就落库；401 或 429 且额度耗尽时停止打票，其他 miss 交给下个周期重试。
 // 同一 key 并发去重，避免上一发还没回来又叠一发。
 func (s *OpenAIGatewayService) probeOnceOpenAICodexTicket(ctx context.Context, account *Account, model string) {
@@ -801,7 +830,7 @@ func (s *OpenAIGatewayService) probeOnceOpenAICodexTicket(ctx context.Context, a
 				zap.String("reason", "error"), zap.Error(perr))
 			return nil, nil
 		}
-		if status != http.StatusOK || state == "" || len(state) != targetLen || !strings.HasPrefix(state, openAICodexTicketStatePrefix) {
+		if status != http.StatusOK || state == "" || !openAICodexTicketCanonicalLength(len(state)) || !strings.HasPrefix(state, openAICodexTicketStatePrefix) {
 			length := len(state)
 			entry.Event, entry.HTTPStatus, entry.TicketLength = "miss", status, &length
 			switch {
@@ -813,7 +842,7 @@ func (s *OpenAIGatewayService) probeOnceOpenAICodexTicket(ctx context.Context, a
 				entry.Reason = "http_error"
 			case state == "":
 				entry.Reason = "missing_state"
-			case len(state) != targetLen:
+			case !openAICodexTicketCanonicalLength(len(state)):
 				entry.Reason = "length_mismatch"
 			default:
 				entry.Reason = "invalid_state"

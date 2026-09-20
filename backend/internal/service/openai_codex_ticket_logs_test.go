@@ -29,7 +29,8 @@ func TestCodexTicketLogsRecordProbeResultsWithoutSensitiveData(t *testing.T) {
 		{name: "HTTP failure", status: 503, state: fakeCodexTicketState(292), reason: "http_error", event: "miss"},
 		{name: "invalid token", status: 401, reason: "token_invalid", event: "miss"},
 		{name: "missing header", status: 200, reason: "missing_state", event: "miss"},
-		{name: "wrong length", status: 200, state: fakeCodexTicketState(332), reason: "length_mismatch", event: "miss"},
+		{name: "wrong length", status: 200, state: fakeCodexTicketState(312), reason: "length_mismatch", event: "miss"},
+		{name: "business 332 on personal preferred target", status: 200, state: fakeCodexTicketState(332), reason: "harvested", event: "success"},
 		{name: "invalid prefix", status: 200, state: strings.Repeat("S", 292), reason: "invalid_state", event: "miss"},
 		{name: "success", status: 200, state: fakeCodexTicketState(292), reason: "harvested", event: "success"},
 		{name: "network", err: errors.New("proxy socks5h://user:proxy-secret@private-host:1080 token bearer-secret"), reason: "network_error", event: "error"},
@@ -86,7 +87,7 @@ func TestCodexTicketLogsRecordProbeResultsWithoutSensitiveData(t *testing.T) {
 			require.Equal(t, 1, logs.Status.Attempts)
 			payload, err := json.Marshal(logs)
 			require.NoError(t, err)
-			for _, secret := range []string{"proxy-secret", "private-host", "bearer-secret", "private-header", "private-response-body", fakeCodexTicketState(292), fakeCodexTicketState(332), strings.Repeat("S", 292)} {
+			for _, secret := range []string{"proxy-secret", "private-host", "bearer-secret", "private-header", "private-response-body", fakeCodexTicketState(292), fakeCodexTicketState(332), fakeCodexTicketState(312), strings.Repeat("S", 292)} {
 				require.NotContains(t, string(payload), secret)
 			}
 		})
@@ -161,11 +162,11 @@ func TestCodexTicketLogsPreserveAttemptRoundsAndTeamLength(t *testing.T) {
 	logs, err := svc.OpenAICodexTicketLogs(context.Background(), account, openAICodexTicketDefaultModel, time.Now())
 	require.NoError(t, err)
 	require.Len(t, logs.Entries, 6)
-	for i, attempt := range []int{1, 1, 2, 2, 1, 1} {
+	for i, attempt := range []int{1, 1, 1, 1, 1, 1} {
 		require.Equal(t, attempt, logs.Entries[i].Attempt)
 		require.Equal(t, 332, logs.Entries[i].TargetLength)
 	}
-	require.Equal(t, "length_mismatch", logs.Entries[1].Reason)
+	require.Equal(t, "harvested", logs.Entries[1].Reason)
 	require.Equal(t, "harvested", logs.Entries[3].Reason)
 	require.Equal(t, "harvested", logs.Entries[5].Reason)
 }

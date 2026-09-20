@@ -45,6 +45,15 @@ describe('PlatformTypeBadge ChatGPT plan tiers', () => {
     expect(wrapper.html()).toContain('bg-indigo-100')
   })
 
+  it('labels literal business and self_serve_business as Team-class plans', () => {
+    for (const planType of ['business', 'self_serve_business', 'self_serve_business_usage_based']) {
+      const wrapper = mountPlan('openai', planType)
+
+      expect(wrapper.text()).toContain('Business Standard')
+      expect(wrapper.html()).toContain('bg-indigo-100')
+    }
+  })
+
   it('labels self_serve_business_prolite as Business Premium sharing the Team color', () => {
     for (const planType of ['self_serve_business_prolite', 'selfservebusinessprolite']) {
       const wrapper = mountPlan('openai', planType)
