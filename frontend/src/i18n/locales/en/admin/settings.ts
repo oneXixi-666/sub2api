@@ -543,9 +543,9 @@ export default {
         openaiCodexVersionAutoSyncHint: 'Fetches the latest stable client version from the official repository every 6 hours, so you never need to upgrade this service just to keep the version current. When disabled, only the version above or the built-in default is used.',
         openaiCodexVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
-        codexTicketEnabled: "Codex ticket harvest (Personal 292 / Team·Business 332)",
+        codexTicketEnabled: "Codex ticket harvest (Personal 292 / Team 332)",
         codexTicketEnabledDesc:
-          "When off, the gateway neither harvests nor injects x-codex-turn-state and forwards traffic as usual. When on, it harvests Codex tickets in the background (292 preferred for Personal, 332 preferred for Team/Business). Either canonical length is a valid ticket; degraded lengths are still discarded.",
+          "When off, the gateway neither harvests nor injects x-codex-turn-state and forwards traffic as usual. When on, it harvests Codex tickets in the background (292 bytes for Personal and 332 bytes for Team/Business) and overwrites that header on production requests.",
         codexTicketHarvestProxy: "Codex ticket harvest proxy",
         codexTicketHarvestProxyDesc:
           "Used only for minting Codex tickets (292 bytes for Personal and 332 bytes for Team) when the ticket feature is enabled. Changes apply to subsequent probes without a restart. Production traffic still uses each account's residential proxy. Paste a full HTTP or SOCKS5h proxy URL including username and password. The proxy provider must handle IP rotation. Leave blank when saving to keep the stored value.",

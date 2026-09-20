@@ -100,7 +100,7 @@ func TestOpenAICodexTicket_Team332Personal292AndWrongLengthIsolation(t *testing.
 	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), personal, openAICodexTicketDefaultModel, personalHeaders))
 	require.Equal(t, 292, len(personalHeaders.Get(openAICodexTurnStateHeader)))
 
-	// Business workspaces harvest both 292 and 332; either canonical length is injectable.
+	// Personal 292 and Team 332 are isolated; the other length cannot be injected.
 	svc.storeOpenAICodexTicket(context.Background(), team, &openAICodexTicket{
 		AccountID:  team.ID,
 		Model:      openAICodexTicketDefaultModel,
@@ -109,9 +109,7 @@ func TestOpenAICodexTicket_Team332Personal292AndWrongLengthIsolation(t *testing.
 		CapturedAt: time.Now(),
 		ExpiresAt:  time.Now().Add(time.Hour),
 	})
-	teamAlt := http.Header{}
-	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), team, openAICodexTicketDefaultModel, teamAlt))
-	require.Equal(t, 292, len(teamAlt.Get(openAICodexTurnStateHeader)))
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), team, openAICodexTicketDefaultModel, http.Header{}), ErrOpenAICodexTicketUnavailable)
 	svc.storeOpenAICodexTicket(context.Background(), personal, &openAICodexTicket{
 		AccountID:  personal.ID,
 		Model:      openAICodexTicketDefaultModel,
@@ -120,9 +118,7 @@ func TestOpenAICodexTicket_Team332Personal292AndWrongLengthIsolation(t *testing.
 		CapturedAt: time.Now(),
 		ExpiresAt:  time.Now().Add(time.Hour),
 	})
-	personalAlt := http.Header{}
-	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), personal, openAICodexTicketDefaultModel, personalAlt))
-	require.Equal(t, 332, len(personalAlt.Get(openAICodexTurnStateHeader)))
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), personal, openAICodexTicketDefaultModel, http.Header{}), ErrOpenAICodexTicketUnavailable)
 }
 
 func TestOpenAICodexTicketStatusesUsePerAccountTargetLength(t *testing.T) {
@@ -154,9 +150,8 @@ func TestOpenAICodexTicketStatusesUsePerAccountTargetLength(t *testing.T) {
 	personalStatus := OpenAICodexTicketStatuses(personal, cfg, now)[0]
 	require.True(t, teamStatus.Ready)
 	require.Equal(t, 332, teamStatus.Length)
-	require.True(t, personalStatus.Ready)
-	require.Equal(t, 332, personalStatus.Length)
-	require.False(t, personalStatus.Blocked)
+	require.False(t, personalStatus.Ready)
+	require.True(t, personalStatus.Blocked)
 }
 
 func TestApplyOpenAICodexTicket_ReplacesHeader(t *testing.T) {
@@ -390,7 +385,7 @@ func TestHarvestOpenAICodexTicket_TeamAccepts332(t *testing.T) {
 	require.True(t, ticket.valid(time.Now(), openAICodexTicketTeamLength))
 }
 
-func TestHarvestOpenAICodexTicket_BusinessAccepts292AndStaysSchedulable(t *testing.T) {
+func TestHarvestOpenAICodexTicket_BusinessRejects292(t *testing.T) {
 	state := fakeCodexTicketState(292)
 	header := http.Header{}
 	header.Set(openAICodexTurnStateHeader, state)
@@ -410,14 +405,8 @@ func TestHarvestOpenAICodexTicket_BusinessAccepts292AndStaysSchedulable(t *testi
 	account := ticketTestAccount(41)
 	account.Credentials["plan_type"] = "business"
 	svc.probeOnceOpenAICodexTicket(context.Background(), account, openAICodexTicketDefaultModel)
-	ticket := svc.lookupOpenAICodexTicket(account, openAICodexTicketDefaultModel)
-	require.NotNil(t, ticket)
-	require.Equal(t, 292, ticket.Length)
-	require.True(t, ticket.valid(time.Now(), openAICodexTicketTeamLength))
-	require.False(t, svc.openAICodexTicketBlocksAccount(account, openAICodexTicketDefaultModel))
-	headers := http.Header{}
-	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, openAICodexTicketDefaultModel, headers))
-	require.Equal(t, state, headers.Get(openAICodexTurnStateHeader))
+	require.Nil(t, svc.lookupOpenAICodexTicket(account, openAICodexTicketDefaultModel))
+	require.True(t, svc.openAICodexTicketBlocksAccount(account, openAICodexTicketDefaultModel))
 }
 
 func TestPreserveOpenAICodexTicketTeamPlanType(t *testing.T) {

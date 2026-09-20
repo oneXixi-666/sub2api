@@ -17,7 +17,7 @@ export function normalizePlanType(value?: string | null): string {
 }
 
 /**
- * ChatGPT Team / Business 工作区档位。打票按 332 首选，同时仍接受 292。
+ * ChatGPT Team / Business 工作区档位。打票只认 332，与个人号 292 区分。
  * `self_serve_business*`、字面 `business` 都算这一类。
  */
 export function isOpenAITeamOrBusinessPlan(value?: string | null): boolean {

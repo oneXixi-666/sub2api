@@ -543,9 +543,9 @@ export default {
         openaiCodexVersionAutoSyncHint: 'Récupère la dernière version stable du client depuis le dépôt officiel toutes les 6 heures, afin de ne jamais avoir à mettre à niveau ce service uniquement pour actualiser la version. Lorsque c’est désactivé, seules la version ci-dessus ou la valeur intégrée sont utilisées.',
         openaiCodexVersionSyncedValue: 'Actuellement synchronisé : {version}',
         codexHardeningTitle: "Paramètres Codex",
-        codexTicketEnabled: "Collecte de tickets Codex (Personnel 292 / Team·Business 332)",
+        codexTicketEnabled: "Collecte de tickets Codex (Personnel 292 / Team 332)",
         codexTicketEnabledDesc:
-          "Lorsque c’est désactivé, la passerelle ne collecte ni n’injecte x-codex-turn-state et transmet le trafic comme d’habitude. Lorsque c’est activé, elle collecte des tickets Codex en arrière-plan (292 préféré pour Personnel, 332 pour Team/Business). Les deux longueurs canoniques sont valides ; les longueurs dégradées restent rejetées.",
+          "Lorsque c’est désactivé, la passerelle ne collecte ni n’injecte x-codex-turn-state et transmet le trafic comme d’habitude. Lorsque c’est activé, elle collecte des tickets Codex en arrière-plan (292 octets pour Personnel, 332 pour Team/Business) et écrase cet en-tête sur les requêtes de production.",
         codexTicketHarvestProxy: "Proxy de collecte de tickets Codex",
         codexTicketHarvestProxyDesc:
           "Utilisé uniquement pour émettre des tickets Codex (292 octets pour Personnel, 332 pour Team) lorsque la fonction tickets est activée. Les modifications s’appliquent aux sondes suivantes sans redémarrage. Le trafic de production utilise toujours le proxy résidentiel de chaque compte. Collez une URL de proxy HTTP ou SOCKS5h complète incluant le nom d’utilisateur et le mot de passe. Le fournisseur de proxy doit gérer la rotation d’IP. Laissez vide à l’enregistrement pour conserver la valeur stockée.",
