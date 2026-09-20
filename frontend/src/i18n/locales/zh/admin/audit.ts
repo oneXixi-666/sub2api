@@ -5,6 +5,21 @@ export default {
     clearAll: '全部清理',
     empty: '暂无操作日志',
     loadFailed: '加载操作日志失败',
+    tabs: {
+      operations: '操作日志',
+      tickets: '打票日志'
+    },
+    ticketLogs: {
+      hint: '只读当前进程内存里的打票记录，不入库。重启或清空后即消失，最多保留最近 {count} 条。',
+      empty: '暂无打票日志',
+      loadFailed: '加载打票日志失败',
+      clear: '清空',
+      clearConfirmTitle: '清空打票日志',
+      clearConfirmMessage: '这只会清掉当前进程内存里的打票记录，不用二次验证。确定清空？',
+      clearSuccess: '已清空打票日志',
+      account: '账号',
+      model: '模型'
+    },
     filters: {
       all: '全部',
       q: '关键字',

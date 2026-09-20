@@ -76,7 +76,7 @@
 
           <template #cell-bonus_amount="{ value }">
             <span class="text-sm font-medium text-gray-900 dark:text-white">
-              ${{ value.toFixed(2) }}
+              {{ formatBillingAmount(value) }}
             </span>
           </template>
 
@@ -177,7 +177,7 @@
           />
         </div>
         <div>
-          <label class="input-label">{{ t('admin.promo.bonusAmount') }}</label>
+          <label class="input-label">{{ t('admin.promo.bonusAmount', { symbol: billingDisplay.symbol }) }}</label>
           <input
             v-model.number="createForm.bonus_amount"
             type="number"
@@ -252,7 +252,7 @@
           />
         </div>
         <div>
-          <label class="input-label">{{ t('admin.promo.bonusAmount') }}</label>
+          <label class="input-label">{{ t('admin.promo.bonusAmount', { symbol: billingDisplay.symbol }) }}</label>
           <input
             v-model.number="editForm.bonus_amount"
             type="number"
@@ -347,7 +347,7 @@
           </div>
           <div class="text-right">
             <span class="text-sm font-medium text-green-600 dark:text-green-400">
-              +${{ usage.bonus_amount.toFixed(2) }}
+              +{{ formatBillingAmount(usage.bonus_amount) }}
             </span>
           </div>
         </div>
@@ -392,6 +392,7 @@ import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { adminAPI } from '@/api/admin'
+import { billingDisplay, formatBillingAmount } from '@/constants/currency'
 import { formatDateTime, formatDateTimeLocalInput } from '@/utils/format'
 import type { PromoCode, PromoCodeUsage } from '@/types'
 import type { Column } from '@/components/common/types'

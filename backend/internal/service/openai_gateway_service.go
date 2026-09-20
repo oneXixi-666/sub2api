@@ -508,13 +508,20 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
-	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，292 长度门票。
-	openaiCodexTickets           sync.Map
-	openaiCodexTicketFlight      singleflight.Group
-	openaiCodexTicketLifecycleMu sync.Mutex
-	openaiCodexTicketCancel      context.CancelFunc
-	openaiCodexTicketDone        chan struct{}
-	openaiCodexTicketStopped     bool
+	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，个人 292 / Team 332 门票。
+	openaiCodexTickets             sync.Map
+	openaiCodexTicketQuotaPauses   sync.Map // account ID -> *openAICodexTicketHarvestPause
+	openaiCodexTicketInvalidTokens sync.Map // account ID -> *openAICodexTicketTokenInvalidation
+	openaiCodexTicketFlight        singleflight.Group
+	openaiCodexTicketLifecycleMu   sync.Mutex
+	openaiCodexTicketCancel        context.CancelFunc
+	openaiCodexTicketDone          chan struct{}
+	openaiCodexTicketStopped       bool
+	openaiCodexTicketStatusMu      sync.RWMutex
+	openaiCodexTicketProgress      map[string]openAICodexTicketProgress
+	openaiCodexTicketNextHarvest   time.Time
+	openaiCodexTicketLogs          openAICodexTicketLogStore
+	openaiCodexTicketCountries     openAICodexTicketCountryResolver
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

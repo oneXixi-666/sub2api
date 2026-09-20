@@ -108,7 +108,7 @@
           </a>
           <iframe
             :src="embeddedUrl"
-            :title="menuItem.label"
+            :title="menuItemTitle"
             class="custom-embed-frame"
             allowfullscreen
           ></iframe>
@@ -132,6 +132,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { buildApiUrl } from '@/api/client'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
+import { resolveCustomMenuLabel } from '@/utils/customMenuLabel'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -225,6 +226,8 @@ const menuItem = computed(() => {
   }
   return null
 })
+
+const menuItemTitle = computed(() => resolveCustomMenuLabel(menuItem.value, locale.value))
 
 const markdownSlug = computed(() => {
   const item = menuItem.value

@@ -312,6 +312,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 
 	handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+	s.observeOpenAICodexTicketWatchdogFromGin(c, account, handshakeTurnState)
 	logOpenAIWSModeDebug(
 		"handshake account_id=%d conn_id=%s has_turn_state=%v turn_state_len=%d",
 		account.ID,

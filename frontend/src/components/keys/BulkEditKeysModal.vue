@@ -56,7 +56,7 @@
               class="checkbox"
               :data-test="`enable-${field.key}`"
             />
-            {{ t(field.label) }}
+            {{ t(field.label, billingCurrencyLabel) }}
           </label>
           <div v-if="enabled[field.key]">
             <input
@@ -66,7 +66,7 @@
               step="any"
               required
               class="input"
-              :aria-label="t(field.label)"
+              :aria-label="t(field.label, billingCurrencyLabel)"
               :data-test="`${field.key}-input`"
             />
             <p class="input-hint">{{ t('keys.bulkEdit.limitHint') }}</p>
@@ -103,14 +103,14 @@
               class="checkbox"
               :data-test="`enable-${field.key}`"
             />
-            {{ t(field.label) }}
+            {{ t(field.label, billingCurrencyLabel) }}
           </label>
           <div v-if="enabled[field.key]">
             <textarea
               v-model="ipLists[field.key]"
               rows="3"
               class="input font-mono text-sm"
-              :aria-label="t(field.label)"
+              :aria-label="t(field.label, billingCurrencyLabel)"
               :data-test="`${field.key}-input`"
             />
             <p class="input-hint">{{ t('keys.bulkEdit.ipHint') }}</p>
@@ -151,6 +151,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { billingDisplay } from '@/constants/currency'
 import { keysAPI } from '@/api'
 import { useAppStore } from '@/stores/app'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -174,6 +175,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const billingCurrencyLabel = computed(() => ({
+  symbol: billingDisplay.symbol,
+  currency: billingDisplay.currency,
+}))
 const submitting = ref(false)
 const pendingKeys = ref<SelectedKey[]>([])
 const failures = ref<Array<{ id: number; name: string; message: string }>>([])

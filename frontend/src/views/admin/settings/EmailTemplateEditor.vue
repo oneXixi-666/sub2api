@@ -566,6 +566,12 @@ function formatLocale(locale: string): string {
   if (lower === "en" || lower.startsWith("en-")) {
     return t("admin.settings.emailTemplates.localeEn");
   }
+  if (lower === "fr" || lower.startsWith("fr-")) {
+    return t("admin.settings.emailTemplates.localeFr");
+  }
+  if (lower === "ru" || lower.startsWith("ru-")) {
+    return t("admin.settings.emailTemplates.localeRu");
+  }
   return locale;
 }
 

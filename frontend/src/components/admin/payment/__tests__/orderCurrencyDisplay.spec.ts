@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { billingDisplay } from '@/constants/currency'
 import type { PaymentOrder } from '@/types/payment'
 import AdminOrderDetail from '../AdminOrderDetail.vue'
 import AdminOrderTable from '../AdminOrderTable.vue'
@@ -52,7 +53,7 @@ function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
 }
 
 describe('admin order currency display', () => {
-  it('uses order currency for paid/base/fee amounts and USD for credited/refund amounts', () => {
+  it('uses order currency for paid/base/fee amounts and billing currency for credited/refund amounts', () => {
     const wrapper = mount(AdminOrderDetail, {
       props: {
         show: true,
@@ -69,8 +70,8 @@ describe('admin order currency display', () => {
     expect(text).toContain('¥100.00')
     expect(text).toContain('¥8.00')
     expect(text).toContain('¥108.00')
-    expect(text).toContain('$100.00')
-    expect(text).toContain('$25.00')
+    expect(text).toContain(`${billingDisplay.symbol}100.00`)
+    expect(text).toContain(`${billingDisplay.symbol}25.00`)
   })
 
   it('uses order currency for pay_amount and USD for refundable balance amounts', () => {
@@ -93,10 +94,10 @@ describe('admin order currency display', () => {
 
     const text = wrapper.text()
     expect(text).toContain('$108.00')
-    expect(text).toContain('$100.00')
-    expect(text).toContain('$20.00')
-    expect(text).toContain('$80.00')
-    expect(text).toContain('$200.00')
+    expect(text).toContain(`${billingDisplay.symbol}100.00`)
+    expect(text).toContain(`${billingDisplay.symbol}20.00`)
+    expect(text).toContain(`${billingDisplay.symbol}80.00`)
+    expect(text).toContain(`${billingDisplay.symbol}200.00`)
   })
 
   it('renders payment currency consistently in the shared order table', () => {
@@ -120,7 +121,7 @@ describe('admin order currency display', () => {
     const text = wrapper.text()
     expect(text).toContain('$108.00')
     expect(text).toContain('¥108.00')
-    expect(text).toContain('$100.00')
+    expect(text).toContain(`${billingDisplay.symbol}100.00`)
   })
 
   it('renders payment currency consistently in the admin order table', () => {
@@ -148,6 +149,6 @@ describe('admin order currency display', () => {
     const text = wrapper.text()
     expect(text).toContain('$108.00')
     expect(text).toContain('¥108.00')
-    expect(text).toContain('$100.00')
+    expect(text).toContain(`${billingDisplay.symbol}100.00`)
   })
 })

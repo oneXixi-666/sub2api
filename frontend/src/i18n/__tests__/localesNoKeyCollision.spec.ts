@@ -20,6 +20,26 @@ import zhCommon from '../locales/zh/common'
 import zhDashboard from '../locales/zh/dashboard'
 import zhLanding from '../locales/zh/landing'
 import zhMisc from '../locales/zh/misc'
+import frAdminAccounts from '../locales/fr/admin/accounts'
+import frAdminChannels from '../locales/fr/admin/channels'
+import frAdminOps from '../locales/fr/admin/ops'
+import frAdminOverview from '../locales/fr/admin/overview'
+import frAdminResources from '../locales/fr/admin/resources'
+import frAdminSettings from '../locales/fr/admin/settings'
+import frCommon from '../locales/fr/common'
+import frDashboard from '../locales/fr/dashboard'
+import frLanding from '../locales/fr/landing'
+import frMisc from '../locales/fr/misc'
+import ruAdminAccounts from '../locales/ru/admin/accounts'
+import ruAdminChannels from '../locales/ru/admin/channels'
+import ruAdminOps from '../locales/ru/admin/ops'
+import ruAdminOverview from '../locales/ru/admin/overview'
+import ruAdminResources from '../locales/ru/admin/resources'
+import ruAdminSettings from '../locales/ru/admin/settings'
+import ruCommon from '../locales/ru/common'
+import ruDashboard from '../locales/ru/dashboard'
+import ruLanding from '../locales/ru/landing'
+import ruMisc from '../locales/ru/misc'
 
 // locales/{zh,en}/index.ts 与 admin/index.ts 使用对象展开聚合各域模块，
 // 展开模块之间若出现同名顶层键会静默覆盖。本测试将该风险固化为显式失败。
@@ -43,7 +63,9 @@ function collisions(modules: Modules): string[] {
 
 const roots: Record<string, Modules> = {
   zh: { landing: zhLanding, common: zhCommon, dashboard: zhDashboard, misc: zhMisc },
-  en: { landing: enLanding, common: enCommon, dashboard: enDashboard, misc: enMisc }
+  en: { landing: enLanding, common: enCommon, dashboard: enDashboard, misc: enMisc },
+  fr: { landing: frLanding, common: frCommon, dashboard: frDashboard, misc: frMisc },
+  ru: { landing: ruLanding, common: ruCommon, dashboard: ruDashboard, misc: ruMisc }
 }
 
 const admins: Record<string, Modules> = {
@@ -62,6 +84,22 @@ const admins: Record<string, Modules> = {
     resources: enAdminResources,
     ops: enAdminOps,
     settings: enAdminSettings
+  },
+  fr: {
+    overview: frAdminOverview,
+    channels: frAdminChannels,
+    accounts: frAdminAccounts,
+    resources: frAdminResources,
+    ops: frAdminOps,
+    settings: frAdminSettings
+  },
+  ru: {
+    overview: ruAdminOverview,
+    channels: ruAdminChannels,
+    accounts: ruAdminAccounts,
+    resources: ruAdminResources,
+    ops: ruAdminOps,
+    settings: ruAdminSettings
   }
 }
 

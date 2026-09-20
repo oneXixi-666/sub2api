@@ -69,6 +69,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		settingKeyForwardedClientIPModeV2:                   "true",
 		SettingKeySiteName:                                  "Sub2API",
 		SettingKeySiteLogo:                                  "",
+		SettingKeyDisplayLocales:                            DefaultDisplayLocalesJSON(),
+		SettingKeyDefaultLocale:                             DefaultDisplayLocale,
+		SettingKeyDisplayCurrency:                           DefaultDisplayCurrency,
+		SettingKeyDisplayCurrencySymbol:                     DefaultDisplayCurrencySymbol,
 		SettingKeyPurchaseSubscriptionEnabled:               "false",
 		SettingKeyPurchaseSubscriptionURL:                   "",
 		SettingKeyTableDefaultPageSize:                      "20",
@@ -295,6 +299,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	if loginAgreementUpdatedAt == "" {
 		loginAgreementUpdatedAt = defaultLoginAgreementDate
 	}
+	displayLocales, defaultLocale, displayCurrency, displayCurrencySymbol := parseStoredDisplaySettings(settings)
 	apiKeyACLTrustForwardedIP := false
 	forwardedClientIPHeaders := []string{}
 	if s != nil && s.cfg != nil {
@@ -359,6 +364,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteName:                               s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                               settings[SettingKeySiteLogo],
 		SiteSubtitle:                           s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		DisplayLocales:                         displayLocales,
+		DefaultLocale:                          defaultLocale,
+		DisplayCurrency:                        displayCurrency,
+		DisplayCurrencySymbol:                  displayCurrencySymbol,
 		APIBaseURL:                             settings[SettingKeyAPIBaseURL],
 		ContactInfo:                            settings[SettingKeyContactInfo],
 		DocURL:                                 settings[SettingKeyDocURL],

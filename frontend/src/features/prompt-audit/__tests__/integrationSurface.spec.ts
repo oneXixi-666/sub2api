@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import en from '@/i18n/locales/en'
 import zh from '@/i18n/locales/zh'
+import fr from '@/i18n/locales/fr'
+import ru from '@/i18n/locales/ru'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (path: string) => readFileSync(resolve(here, path), 'utf8')
@@ -28,8 +30,12 @@ describe('Prompt Audit integration surface', () => {
 
   it('keeps Prompt Audit locale trees symmetric and all operational controls named', () => {
     expect(Object.keys(zh.admin.promptAudit)).toEqual(Object.keys(en.admin.promptAudit))
+    expect(Object.keys(fr.admin.promptAudit)).toEqual(Object.keys(en.admin.promptAudit))
+    expect(Object.keys(ru.admin.promptAudit)).toEqual(Object.keys(en.admin.promptAudit))
     expect(zh.nav.securityAudit).toBeTruthy()
     expect(en.nav.securityAudit).toBeTruthy()
+    expect(fr.nav.securityAudit).toBeTruthy()
+    expect(ru.nav.securityAudit).toBeTruthy()
     const endpoint = read('../components/EndpointPool.vue')
     const events = read('../components/EventWorkspace.vue')
     expect(endpoint).toContain('aria-label')

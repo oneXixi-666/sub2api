@@ -3,16 +3,20 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import CustomPageView from '../CustomPageView.vue'
 
-const { appStore } = vi.hoisted(() => ({
-  appStore: {
-    publicSettingsLoaded: true,
-    cachedPublicSettings: { custom_menu_items: [{ id: 'docs', url: 'https://example.com/docs' }] },
-  },
-}))
+const { appStore, locale } = vi.hoisted(() => {
+  const { ref } = require('vue') as typeof import('vue')
+  return {
+    appStore: {
+      publicSettingsLoaded: true,
+      cachedPublicSettings: { custom_menu_items: [{ id: 'docs', url: 'https://example.com/docs' }] },
+    },
+    locale: ref('en'),
+  }
+})
 
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: 'docs' } }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: { value: 'en' } }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale }) }))
 vi.mock('@/stores', () => ({ useAppStore: () => appStore }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: false, user: { id: 7 }, token: 'test-token' }) }))
 vi.mock('@/stores/adminSettings', () => ({ useAdminSettingsStore: () => ({ customMenuItems: [] }) }))
@@ -66,6 +70,7 @@ function click(button: HTMLElement, detail = 1) {
 
 describe('custom page open button', () => {
   beforeEach(() => {
+    locale.value = 'en'
     appStore.cachedPublicSettings.custom_menu_items = [{ id: 'docs', url: 'https://example.com/docs' }]
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: () => void) { notifyResize = callback }
@@ -77,6 +82,18 @@ describe('custom page open button', () => {
   afterEach(() => {
     wrappers.splice(0).forEach(wrapper => wrapper.unmount())
     vi.unstubAllGlobals()
+  })
+
+  it('uses the localized custom menu name as the iframe title', () => {
+    locale.value = 'fr'
+    appStore.cachedPublicSettings.custom_menu_items = [{
+      id: 'docs',
+      label: 'Help Center',
+      labels: { fr: 'Centre d’aide' },
+      url: 'https://example.com/docs',
+    }]
+    const wrapper = mountPage()
+    expect(wrapper.get('iframe').attributes('title')).toBe('Centre d’aide')
   })
 
   it.each([undefined, false, true])('honors the per-menu hide button setting %s while keeping the iframe', (hidden) => {

@@ -156,6 +156,10 @@ type UpdateSettingsRequest struct {
 	SiteName                    string                `json:"site_name"`
 	SiteLogo                    string                `json:"site_logo"`
 	SiteSubtitle                string                `json:"site_subtitle"`
+	DisplayLocales              []string              `json:"display_locales"`
+	DefaultLocale               string                `json:"default_locale"`
+	DisplayCurrency             string                `json:"display_currency"`
+	DisplayCurrencySymbol       string                `json:"display_currency_symbol"`
 	APIBaseURL                  string                `json:"api_base_url"`
 	ContactInfo                 string                `json:"contact_info"`
 	DocURL                      string                `json:"doc_url"`
@@ -1277,6 +1281,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		for i, item := range items {
+			dto.NormalizeCustomMenuItemLabels(&items[i])
+			item = items[i]
 			if strings.TrimSpace(item.Label) == "" {
 				response.BadRequest(c, "Custom menu item label is required")
 				return
@@ -1284,6 +1290,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			if len(item.Label) > maxMenuItemLabelLen {
 				response.BadRequest(c, "Custom menu item label is too long (max 50 characters)")
 				return
+			}
+			for _, localized := range item.Labels {
+				if len(localized) > maxMenuItemLabelLen {
+					response.BadRequest(c, "Custom menu item label is too long (max 50 characters)")
+					return
+				}
 			}
 			urlTrimmed := strings.TrimSpace(item.URL)
 			if strings.HasPrefix(urlTrimmed, "md:") {
@@ -1622,6 +1634,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                               req.SiteName,
 		SiteLogo:                               req.SiteLogo,
 		SiteSubtitle:                           req.SiteSubtitle,
+		DisplayLocales:                         req.DisplayLocales,
+		DefaultLocale:                          req.DefaultLocale,
+		DisplayCurrency:                        req.DisplayCurrency,
+		DisplayCurrencySymbol:                  req.DisplayCurrencySymbol,
 		APIBaseURL:                             req.APIBaseURL,
 		ContactInfo:                            req.ContactInfo,
 		DocURL:                                 req.DocURL,
@@ -2275,6 +2291,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                                               updatedSettings.SiteName,
 		SiteLogo:                                               updatedSettings.SiteLogo,
 		SiteSubtitle:                                           updatedSettings.SiteSubtitle,
+		DisplayLocales:                                         updatedSettings.DisplayLocales,
+		DefaultLocale:                                          updatedSettings.DefaultLocale,
+		DisplayCurrency:                                        updatedSettings.DisplayCurrency,
+		DisplayCurrencySymbol:                                  updatedSettings.DisplayCurrencySymbol,
 		APIBaseURL:                                             updatedSettings.APIBaseURL,
 		ContactInfo:                                            updatedSettings.ContactInfo,
 		DocURL:                                                 updatedSettings.DocURL,

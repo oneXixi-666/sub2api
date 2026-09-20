@@ -200,6 +200,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { resolveCustomMenuLabel } from '@/utils/customMenuLabel'
 
 interface NavItem {
   path: string
@@ -238,7 +239,7 @@ function applyFeatureFlags(items: NavItem[]): NavItem[] {
   return out
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -743,7 +744,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
-      label: item.label,
+      label: resolveCustomMenuLabel(item, locale.value),
       icon: null,
       iconSvg: item.icon_svg,
       isCustom: true,
@@ -856,14 +857,14 @@ const adminNavItems = computed((): NavItem[] => {
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
     for (const cm of customMenuItemsForAdmin.value) {
-      filtered.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg, isCustom: true })
+      filtered.push({ path: `/custom/${cm.id}`, label: resolveCustomMenuLabel(cm, locale.value), icon: null, iconSvg: cm.icon_svg, isCustom: true })
     }
     return filtered
   }
 
   visible.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
   for (const cm of customMenuItemsForAdmin.value) {
-    visible.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg, isCustom: true })
+    visible.push({ path: `/custom/${cm.id}`, label: resolveCustomMenuLabel(cm, locale.value), icon: null, iconSvg: cm.icon_svg, isCustom: true })
   }
   return visible
 })

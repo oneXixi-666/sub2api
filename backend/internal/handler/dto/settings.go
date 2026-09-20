@@ -9,14 +9,60 @@ import (
 
 // CustomMenuItem represents a user-configured custom menu entry.
 type CustomMenuItem struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	IconSVG        string `json:"icon_svg"`
-	URL            string `json:"url"`
-	PageSlug       string `json:"page_slug,omitempty"`
-	Visibility     string `json:"visibility"` // "user" or "admin"
-	SortOrder      int    `json:"sort_order"`
-	HideOpenButton bool   `json:"hide_open_button,omitempty"`
+	ID             string            `json:"id"`
+	Label          string            `json:"label"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	IconSVG        string            `json:"icon_svg"`
+	URL            string            `json:"url"`
+	PageSlug       string            `json:"page_slug,omitempty"`
+	Visibility     string            `json:"visibility"` // "user" or "admin"
+	SortOrder      int               `json:"sort_order"`
+	HideOpenButton bool              `json:"hide_open_button,omitempty"`
+}
+
+var customMenuLocaleCodes = map[string]struct{}{
+	"en": {},
+	"zh": {},
+	"fr": {},
+	"ru": {},
+}
+
+var customMenuLocaleOrder = []string{"en", "zh", "fr", "ru"}
+
+// NormalizeCustomMenuItemLabels trims localized names, drops empty/unknown
+// locale keys, and fills Label from the first translated name when it is empty.
+func NormalizeCustomMenuItemLabels(item *CustomMenuItem) {
+	if item == nil {
+		return
+	}
+	item.Label = strings.TrimSpace(item.Label)
+	if len(item.Labels) == 0 {
+		item.Labels = nil
+		return
+	}
+	cleaned := make(map[string]string, len(item.Labels))
+	for code, value := range item.Labels {
+		code = strings.ToLower(strings.TrimSpace(code))
+		value = strings.TrimSpace(value)
+		if _, ok := customMenuLocaleCodes[code]; !ok || value == "" {
+			continue
+		}
+		cleaned[code] = value
+	}
+	if len(cleaned) == 0 {
+		item.Labels = nil
+	} else {
+		item.Labels = cleaned
+	}
+	if item.Label != "" {
+		return
+	}
+	for _, code := range customMenuLocaleOrder {
+		if value := cleaned[code]; value != "" {
+			item.Label = value
+			return
+		}
+	}
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -152,6 +198,10 @@ type SystemSettings struct {
 	SiteName                    string           `json:"site_name"`
 	SiteLogo                    string           `json:"site_logo"`
 	SiteSubtitle                string           `json:"site_subtitle"`
+	DisplayLocales              []string         `json:"display_locales"`
+	DefaultLocale               string           `json:"default_locale"`
+	DisplayCurrency             string           `json:"display_currency"`
+	DisplayCurrencySymbol       string           `json:"display_currency_symbol"`
 	APIBaseURL                  string           `json:"api_base_url"`
 	ContactInfo                 string           `json:"contact_info"`
 	DocURL                      string           `json:"doc_url"`
@@ -387,6 +437,10 @@ type PublicSettings struct {
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
+	DisplayLocales                      []string                 `json:"display_locales"`
+	DefaultLocale                       string                   `json:"default_locale"`
+	DisplayCurrency                     string                   `json:"display_currency"`
+	DisplayCurrencySymbol               string                   `json:"display_currency_symbol"`
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
 	DocURL                              string                   `json:"doc_url"`

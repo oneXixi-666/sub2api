@@ -8,7 +8,10 @@ vi.mock('@/i18n', () => {
     'nav.subscribe': '订阅',
     'nav.buySubscription': '充值/订阅',
   }
-  return { i18n: { global: { t: (key: string) => messages[key] ?? key } } }
+  return {
+    i18n: { global: { t: (key: string) => messages[key] ?? key } },
+    getLocale: () => 'en',
+  }
 })
 
 describe('resolveDocumentTitle', () => {
@@ -55,6 +58,26 @@ describe('resolveRouteDocumentTitle', () => {
         sort_order: 0
       }
     ])).toBe('账号调度器 - EzouAPI')
+  })
+
+  it('uses the localized custom menu name when present', () => {
+    const route = {
+      name: 'CustomPage',
+      params: { id: 'help' },
+      meta: { title: 'Custom Page' }
+    }
+
+    expect(resolveRouteDocumentTitle(route, 'EzouAPI', [
+      {
+        id: 'help',
+        label: 'Help Center',
+        labels: { en: 'Help Center', zh: '帮助中心', fr: 'Centre d’aide' },
+        icon_svg: '',
+        url: 'https://example.com/help',
+        visibility: 'user',
+        sort_order: 0
+      }
+    ])).toBe('Help Center - EzouAPI')
   })
 })
 

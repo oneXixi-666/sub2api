@@ -60,6 +60,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
+import { billingDisplay } from '@/constants/currency'
 import type { CNProviderBalanceEntry, CNProviderBalanceResult } from '@/api/admin/cnProviders'
 import type { Account } from '@/types'
 import { platformTextClass } from '@/utils/platformColors'
@@ -122,7 +123,7 @@ const currentEntries = computed<CNProviderBalanceEntry[]>(() => {
 
 const formatEntry = (entry: CNProviderBalanceEntry): string => {
   const fixed = entry.balance >= 100 ? entry.balance.toFixed(0) : entry.balance.toFixed(2)
-  return `${entry.currency || '¥'} ${fixed}`
+  return `${entry.currency || billingDisplay.symbol} ${fixed}`
 }
 
 const balanceLabel = computed(() => {

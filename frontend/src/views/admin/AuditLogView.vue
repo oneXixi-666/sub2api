@@ -1,6 +1,24 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <div class="card mb-6 flex flex-wrap items-center border-b border-gray-200 px-2 dark:border-dark-700 sm:px-4">
+      <button
+        v-for="tab in sectionTabs"
+        :key="tab.key"
+        type="button"
+        data-testid="audit-section-tab"
+        :data-tab="tab.key"
+        class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition-colors sm:px-4"
+        :class="activeTab === tab.key
+          ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-dark-500 dark:hover:text-gray-200'"
+        @click="switchTab(tab.key)"
+      >
+        <Icon :name="tab.icon" size="sm" />
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <TablePageLayout v-show="activeTab === 'audit'">
       <!-- Filters -->
       <template #filters>
         <div class="card p-4 sm:p-6">
@@ -158,6 +176,8 @@
         />
       </template>
     </TablePageLayout>
+
+    <CodexTicketLogsPanel v-if="ticketsMounted" v-show="activeTab === 'tickets'" />
 
     <!-- Detail dialog -->
     <BaseDialog
@@ -358,6 +378,7 @@ import { adminAPI, type AuditLog } from '@/api/admin'
 import { totpAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import CodexTicketLogsPanel from '@/views/admin/CodexTicketLogsPanel.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import type { Column } from '@/components/common/types'
 import Pagination from '@/components/common/Pagination.vue'
@@ -369,6 +390,19 @@ import { useAppStore } from '@/stores'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+
+type AuditSectionTab = 'audit' | 'tickets'
+const activeTab = ref<AuditSectionTab>('audit')
+const ticketsMounted = ref(false)
+const sectionTabs = computed(() => [
+  { key: 'audit' as const, label: t('admin.audit.tabs.operations'), icon: 'shield' as const },
+  { key: 'tickets' as const, label: t('admin.audit.tabs.tickets'), icon: 'document' as const },
+])
+
+function switchTab(tab: AuditSectionTab) {
+  activeTab.value = tab
+  if (tab === 'tickets') ticketsMounted.value = true
+}
 
 const loading = ref(false)
 const logs = ref<AuditLog[]>([])

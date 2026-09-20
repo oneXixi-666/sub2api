@@ -6351,6 +6351,109 @@
                 </div>
               </div>
 
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                  {{ t("admin.settings.site.displayLocalesTitle") }}
+                </h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.displayLocalesDescription") }}
+                </p>
+                <div class="mt-4 space-y-3">
+                  <div
+                    v-for="localePack in availableLocales"
+                    :key="localePack.code"
+                    class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-600"
+                  >
+                    <div>
+                      <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ localePack.name }}
+                      </p>
+                      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {{ localePack.code }}
+                      </p>
+                    </div>
+                    <Toggle
+                      :model-value="form.display_locales.includes(localePack.code)"
+                      :data-testid="`display-locale-${localePack.code}`"
+                      @update:model-value="toggleDisplayLocale(localePack.code, $event)"
+                    />
+                  </div>
+                </div>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.displayLocalesHint") }}
+                </p>
+                <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.site.defaultLocale") }}
+                    </label>
+                    <select
+                      v-model="form.default_locale"
+                      class="input"
+                      data-testid="default-locale-select"
+                    >
+                      <option
+                        v-for="code in form.display_locales"
+                        :key="code"
+                        :value="code"
+                      >
+                        {{ localePackLabel(code) }}
+                      </option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.site.defaultLocaleHint") }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.site.displayCurrency") }}
+                    </label>
+                    <input
+                      v-model="form.display_currency"
+                      type="text"
+                      maxlength="3"
+                      class="input font-mono uppercase"
+                      data-testid="display-currency"
+                      :placeholder="t('admin.settings.site.displayCurrencyPlaceholder')"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.site.displayCurrencyHint") }}
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.site.displayCurrencySymbol") }}
+                    </label>
+                    <input
+                      v-model="form.display_currency_symbol"
+                      type="text"
+                      maxlength="16"
+                      class="input"
+                      data-testid="display-currency-symbol"
+                      :placeholder="displayCurrencySymbolPlaceholder"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.site.displayCurrencySymbolHint") }}
+                    </p>
+                  </div>
+                </div>
+                <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                  {{ t("admin.settings.site.displayCurrencyPreview") }}:
+                  <span class="font-medium text-gray-900 dark:text-white">{{ displayCurrencyPreview }}</span>
+                </p>
+              </div>
+
               <!-- API Base URL -->
               <div>
                 <label
@@ -6675,11 +6778,9 @@
                 <div class="mb-3 flex items-center justify-between">
                   <span
                     class="min-w-0 truncate text-sm font-bold text-gray-700 dark:text-gray-300"
-                    :title="item.label || t('admin.settings.customMenu.itemLabel', { n: index + 1 })"
+                    :title="customMenuItemHeading(item, index)"
                   >
-                    {{
-                      t("admin.settings.customMenu.itemLabel", { n: index + 1 })
-                    }}
+                    {{ customMenuItemHeading(item, index) }}
                   </span>
                   <div class="flex items-center gap-2">
                     <!-- Move up -->
@@ -6726,6 +6827,7 @@
                       v-model="item.label"
                       type="text"
                       class="input text-sm"
+                      data-testid="custom-menu-label"
                       :placeholder="
                         t('admin.settings.customMenu.namePlaceholder')
                       "
@@ -6747,6 +6849,40 @@
                         {{ t("admin.settings.customMenu.visibilityAdmin") }}
                       </option>
                     </select>
+                  </div>
+
+                  <!-- Localized names -->
+                  <div class="sm:col-span-2">
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ t("admin.settings.customMenu.nameTranslations") }}
+                    </label>
+                    <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.customMenu.nameTranslationsHint") }}
+                    </p>
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div
+                        v-for="menuLocale in availableLocales"
+                        :key="menuLocale.code"
+                      >
+                        <label
+                          class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                        >
+                          {{ menuLocale.code }} · {{ menuLocale.name }}
+                        </label>
+                        <input
+                          v-model="customMenuLabelsOf(item)[menuLocale.code]"
+                          type="text"
+                          class="input text-sm"
+                          :data-testid="`custom-menu-label-${menuLocale.code}`"
+                          :placeholder="
+                            item.label ||
+                            t('admin.settings.customMenu.namePlaceholder')
+                          "
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <!-- URL (full width) -->
@@ -8839,6 +8975,7 @@ import type {
 } from "@/api/admin/settings";
 import type {
   AdminGroup,
+  CustomMenuItem,
   LoginAgreementDocument,
   NotifyEmailEntry,
   Proxy,
@@ -8877,6 +9014,23 @@ import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSi
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
+import {
+  availableLocales,
+  normalizeDefaultLocale,
+  normalizeDisplayLocales,
+  type LocaleCode,
+} from "@/i18n";
+import {
+  defaultSymbolForCurrency,
+  normalizeDisplayCurrency,
+  normalizeDisplayCurrencySymbol,
+} from "@/constants/currency";
+import {
+  emptyCustomMenuLabels,
+  ensureCustomMenuItemLabels,
+  resolveCustomMenuLabel,
+  serializeCustomMenuItem,
+} from "@/utils/customMenuLabel";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
 import {
   isRegistrationEmailSuffixDomainValid,
@@ -9614,6 +9768,10 @@ const form = reactive<SettingsForm>({
   site_name: "Sub2API",
   site_logo: "",
   site_subtitle: "Subscription to API Conversion Platform",
+  display_locales: ["en", "zh", "fr", "ru"],
+  default_locale: "en",
+  display_currency: "CNY",
+  display_currency_symbol: "¥",
   api_base_url: "",
   contact_info: "",
   doc_url: "",
@@ -9649,15 +9807,7 @@ const form = reactive<SettingsForm>({
   payment_alipay_mobile_precreate_deep_link: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
-  custom_menu_items: [] as Array<{
-    id: string;
-    label: string;
-    icon_svg: string;
-    url: string;
-    visibility: "user" | "admin";
-    sort_order: number;
-    hide_open_button?: boolean;
-  }>,
+  custom_menu_items: [] as CustomMenuItem[],
   custom_endpoints: [] as Array<{
     name: string;
     endpoint: string;
@@ -10628,10 +10778,25 @@ async function setAndCopyOIDCRedirectUrl() {
 }
 
 // Custom menu item management
+function customMenuItemHeading(item: CustomMenuItem, index: number): string {
+  return (
+    resolveCustomMenuLabel(item, locale.value) ||
+    t("admin.settings.customMenu.itemLabel", { n: index + 1 })
+  );
+}
+
+function customMenuLabelsOf(item: CustomMenuItem): Record<"en" | "zh" | "fr" | "ru", string> {
+  if (!item.labels) {
+    item.labels = emptyCustomMenuLabels();
+  }
+  return item.labels as Record<"en" | "zh" | "fr" | "ru", string>;
+}
+
 function addMenuItem() {
   form.custom_menu_items.push({
     id: "",
     label: "",
+    labels: emptyCustomMenuLabels(),
     icon_svg: "",
     url: "",
     visibility: "user",
@@ -10899,6 +11064,19 @@ async function loadSettings() {
         ? settings.table_page_size_options
         : [10, 20, 50, 100],
     );
+    form.display_locales = normalizeDisplayLocales(form.display_locales);
+    form.default_locale = normalizeDefaultLocale(
+      form.default_locale,
+      form.display_locales,
+    );
+    form.display_currency = normalizeDisplayCurrency(form.display_currency);
+    form.display_currency_symbol =
+      typeof settings.display_currency_symbol === "string"
+        ? settings.display_currency_symbol
+        : defaultSymbolForCurrency(form.display_currency);
+    form.custom_menu_items = (form.custom_menu_items || []).map((item) =>
+      ensureCustomMenuItemLabels(item),
+    );
     registrationEmailSuffixWhitelistDraft.value = "";
     form.smtp_password = "";
     smtpPasswordManuallyEdited.value = false;
@@ -11084,9 +11262,51 @@ const siteBillingModeHint = computed(() =>
   t(`admin.settings.features.siteBillingMode.hints.${SITE_BILLING_MODE_I18N_KEYS[siteBillingMode.value]}`),
 );
 
+function localePackLabel(code: string): string {
+  return availableLocales.find((locale) => locale.code === code)?.name || code.toUpperCase();
+}
+
+function toggleDisplayLocale(code: LocaleCode, enabled: boolean) {
+  const next = new Set(form.display_locales);
+  if (enabled) {
+    next.add(code);
+  } else {
+    if (next.size <= 1) {
+      appStore.showError(t("admin.settings.site.displayLocalesRequired"));
+      return;
+    }
+    next.delete(code);
+  }
+  form.display_locales = normalizeDisplayLocales([...next]);
+  if (!form.display_locales.includes(form.default_locale)) {
+    form.default_locale = form.display_locales[0];
+  }
+}
+
+const displayCurrencySymbolPlaceholder = computed(() =>
+  defaultSymbolForCurrency(form.display_currency),
+);
+
+const displayCurrencyPreview = computed(() => {
+  const symbol = normalizeDisplayCurrencySymbol(
+    form.display_currency_symbol,
+    form.display_currency,
+  );
+  return `${symbol}123.45`;
+});
+
 async function saveSettings() {
   saving.value = true;
   try {
+    if (normalizeDisplayLocales(form.display_locales).length === 0) {
+      appStore.showError(t("admin.settings.site.displayLocalesRequired"));
+      return;
+    }
+    const currencyCode = String(form.display_currency || "").trim();
+    if (currencyCode && !/^[A-Za-z]{3}$/.test(currencyCode)) {
+      appStore.showError(t("admin.settings.site.displayCurrencyFormatError"));
+      return;
+    }
     const normalizedTableDefaultPageSize = Math.floor(
       Number(form.table_default_page_size),
     );
@@ -11274,6 +11494,16 @@ async function saveSettings() {
       site_name: form.site_name,
       site_logo: form.site_logo,
       site_subtitle: form.site_subtitle,
+      display_locales: normalizeDisplayLocales(form.display_locales),
+      default_locale: normalizeDefaultLocale(
+        form.default_locale,
+        form.display_locales,
+      ),
+      display_currency: normalizeDisplayCurrency(form.display_currency),
+      display_currency_symbol: normalizeDisplayCurrencySymbol(
+        form.display_currency_symbol,
+        form.display_currency,
+      ),
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
       doc_url: form.doc_url,
@@ -11283,7 +11513,9 @@ async function saveSettings() {
       hide_ccs_import_button: form.hide_ccs_import_button,
       table_default_page_size: form.table_default_page_size,
       table_page_size_options: form.table_page_size_options,
-      custom_menu_items: form.custom_menu_items,
+      custom_menu_items: form.custom_menu_items.map((item) =>
+        serializeCustomMenuItem(item),
+      ),
       custom_endpoints: form.custom_endpoints,
       frontend_url: form.frontend_url,
       smtp_host: form.smtp_host,
@@ -11599,9 +11831,15 @@ async function saveSettings() {
     );
     for (const [key, value] of Object.entries(updated)) {
       if (key === "openai_fast_policy_settings") continue;
+      if (key === "custom_menu_items") continue;
       if (value !== null && value !== undefined) {
         (form as Record<string, unknown>)[key] = value;
       }
+    }
+    if (Array.isArray(updated.custom_menu_items)) {
+      form.custom_menu_items = updated.custom_menu_items.map((item) =>
+        ensureCustomMenuItemLabels(item),
+      );
     }
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);

@@ -185,9 +185,12 @@ export interface SendVerifyCodeResponse {
   countdown: number
 }
 
+export type CustomMenuLocale = 'en' | 'zh' | 'fr' | 'ru'
+
 export interface CustomMenuItem {
   id: string
   label: string
+  labels?: Partial<Record<CustomMenuLocale, string>>
   icon_svg: string
   url: string
   page_slug?: string
@@ -235,6 +238,10 @@ export interface PublicSettings {
   site_name: string
   site_logo: string
   site_subtitle: string
+  display_locales?: string[]
+  default_locale?: string
+  display_currency?: string
+  display_currency_symbol?: string
   api_base_url: string
   contact_info: string
   doc_url: string
@@ -1175,6 +1182,12 @@ export interface Account {
     remaining_seconds: number
     blocked: boolean
     expires_at?: string
+    harvest_enabled?: boolean
+    harvest_paused?: boolean
+    token_invalid?: boolean
+    attempts?: number
+    harvesting?: boolean
+    next_harvest_at?: string
   }>
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
@@ -1300,6 +1313,41 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface CodexTicketLogEntry {
+  id: number
+  time: string
+  attempt: number
+  event: 'started' | 'success' | 'miss' | 'error' | 'skipped' | 'invalidated'
+  reason: string
+  http_status?: number
+  egress_ip?: string
+  egress_country_code?: string
+  egress_error?: {
+    reason: string
+    http_status?: number
+  }
+  ticket_length?: number
+  target_length: number
+  duration_ms?: number
+}
+
+export interface CodexTicketLogsResponse {
+  model: string
+  entries: CodexTicketLogEntry[]
+  status: NonNullable<Account['codex_turn_tickets']>[number] | null
+  limit: number
+}
+
+export interface CodexTicketLogFeedItem extends CodexTicketLogEntry {
+  account_id: number
+  model: string
+}
+
+export interface CodexTicketLogFeed {
+  items: CodexTicketLogFeedItem[]
+  limit: number
 }
 
 // The admin account list may return this compact shape when lite=1. Detail

@@ -301,10 +301,12 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { formatBillingAmount } from '@/constants/currency'
+import { resolveCustomMenuLabel } from '@/utils/customMenuLabel'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
@@ -364,7 +366,8 @@ const pageTitle = computed(() => {
     const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
     const menuItem = publicItems.find((item) => item.id === id)
       ?? (authStore.isAdmin ? adminSettingsStore.customMenuItems.find((item) => item.id === id) : undefined)
-    if (menuItem?.label) return menuItem.label
+    const menuTitle = resolveCustomMenuLabel(menuItem, locale.value)
+    if (menuTitle) return menuTitle
   }
   const titleKey = routeMetaKeys.value.titleKey
   if (titleKey) {
@@ -410,8 +413,7 @@ function handleReplayGuide() {
 }
 
 function formatHeaderMoney(value: number) {
-  if (!Number.isFinite(value)) return '¥0.00'
-  return `¥${value.toFixed(2)}`
+  return formatBillingAmount(value)
 }
 
 function handleClickOutside(event: MouseEvent) {

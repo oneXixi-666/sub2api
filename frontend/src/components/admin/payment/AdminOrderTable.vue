@@ -144,6 +144,7 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { statusBadgeClass, canRefund, formatOrderDateTime } from '@/components/payment/orderUtils'
 import { currencySymbol } from '@/components/payment/currency'
+import { billingDisplay } from '@/constants/currency'
 
 const { t } = useI18n()
 
@@ -168,7 +169,7 @@ const emit = defineEmits<{
 
 const searchQuery = ref('')
 const filters = reactive({ status: '', payment_type: '', order_type: '' })
-const creditedAmountSymbol = currencySymbol('USD')
+const creditedAmountSymbol = computed(() => billingDisplay.symbol)
 
 function paymentAmountSymbol(order: PaymentOrder): string {
   return currencySymbol(order.currency)

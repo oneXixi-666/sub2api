@@ -203,3 +203,33 @@ func TestUpdateSettingsSubscriptionEnabledIsWritableAndKeptWhenOmitted(t *testin
 	require.Equal(t, "false", repo.values[service.SettingKeySubscriptionEnabled],
 		"a payload without subscription_enabled must not flip the stored value back to true")
 }
+
+// Old admin clients that PUT settings without the display locale/currency keys
+// must keep whatever was injected at startup (or previously saved).
+func TestUpdateSettingsOmittedDisplayLocaleCurrencyKeepStoredValues(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyDisplayLocales:        `["zh"]`,
+		service.SettingKeyDefaultLocale:         "zh",
+		service.SettingKeyDisplayCurrency:       "USD",
+		service.SettingKeyDisplayCurrencySymbol: "US$",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{"site_name": "Example Gateway"}, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `["zh"]`, repo.values[service.SettingKeyDisplayLocales])
+	require.Equal(t, "zh", repo.values[service.SettingKeyDefaultLocale])
+	require.Equal(t, "USD", repo.values[service.SettingKeyDisplayCurrency])
+	require.Equal(t, "US$", repo.values[service.SettingKeyDisplayCurrencySymbol])
+
+	rec = doUpdateSettings(t, h, map[string]any{
+		"display_locales":         []string{"en", "fr"},
+		"default_locale":          "fr",
+		"display_currency":        "eur",
+		"display_currency_symbol": "€",
+	}, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `["en","fr"]`, repo.values[service.SettingKeyDisplayLocales])
+	require.Equal(t, "fr", repo.values[service.SettingKeyDefaultLocale])
+	require.Equal(t, "EUR", repo.values[service.SettingKeyDisplayCurrency])
+	require.Equal(t, "€", repo.values[service.SettingKeyDisplayCurrencySymbol])
+}

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import en from '../locales/en'
 import zh from '../locales/zh'
+import fr from '../locales/fr'
+import ru from '../locales/ru'
 
 describe('usage ipGeo locale keys', () => {
   it('contains zh labels for IP geolocation UI', () => {
@@ -20,5 +22,23 @@ describe('usage ipGeo locale keys', () => {
     expect(en.usage.ipGeo.private).toBe('Private address')
     expect(en.usage.ipGeo.batchFetch).toBe('Batch fetch regions')
     expect(en.usage.ipGeo.pending).toBe('{count} IPs pending')
+  })
+
+  it('contains fr labels for IP geolocation UI', () => {
+    expect(fr.usage.ipGeo.fetch).toBe('Récupérer la région')
+    expect(fr.usage.ipGeo.fetching).toBe('Récupération...')
+    expect(fr.usage.ipGeo.failed).toBe('Échec')
+    expect(fr.usage.ipGeo.private).toBe('Adresse privée')
+    expect(fr.usage.ipGeo.batchFetch).toBe('Récupérer les régions en lot')
+    expect(fr.usage.ipGeo.pending).toBe('{count} IP en attente')
+  })
+
+  it('contains ru labels for IP geolocation UI', () => {
+    expect(ru.usage.ipGeo.fetch).toBe('Получить регион')
+    expect(ru.usage.ipGeo.fetching).toBe('Получение...')
+    expect(ru.usage.ipGeo.failed).toBe('Ошибка')
+    expect(ru.usage.ipGeo.private).toBe('Частный адрес')
+    expect(ru.usage.ipGeo.batchFetch).toBe('Пакетно получить регионы')
+    expect(ru.usage.ipGeo.pending).toBe('Ожидают {count} IP')
   })
 })

@@ -339,6 +339,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeySiteName] = settings.SiteName
 	updates[SettingKeySiteLogo] = settings.SiteLogo
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
+	displayLocales := NormalizeDisplayLocales(settings.DisplayLocales)
+	displayLocalesJSON, err := marshalDisplayLocales(displayLocales)
+	if err != nil {
+		return nil, err
+	}
+	updates[SettingKeyDisplayLocales] = displayLocalesJSON
+	updates[SettingKeyDefaultLocale] = NormalizeDefaultLocale(settings.DefaultLocale, displayLocales)
+	displayCurrency := NormalizeDisplayCurrency(settings.DisplayCurrency)
+	updates[SettingKeyDisplayCurrency] = displayCurrency
+	updates[SettingKeyDisplayCurrencySymbol] = NormalizeDisplayCurrencySymbol(settings.DisplayCurrencySymbol, displayCurrency)
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL

@@ -66,7 +66,12 @@ type AccountHandler struct {
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	codexTicketSettings     *service.SettingService
+	codexTicketStatus       codexTicketStatusProvider
 	cfg                     *config.Config
+}
+
+type codexTicketStatusProvider interface {
+	OpenAICodexTicketStatuses(context.Context, *service.Account, time.Time) []service.OpenAICodexTicketStatus
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -81,6 +86,10 @@ func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUs
 // SetCodexTicketSettings supplies the live policy without mutating shared config.
 func (h *AccountHandler) SetCodexTicketSettings(settings *service.SettingService) {
 	h.codexTicketSettings = settings
+}
+
+func (h *AccountHandler) SetCodexTicketStatusProvider(provider codexTicketStatusProvider) {
+	h.codexTicketStatus = provider
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -363,10 +372,20 @@ func (h *AccountHandler) accountListResponseFromService(account *service.Account
 }
 
 func (h *AccountHandler) enrichCodexTicketStatus(account *service.Account, out *dto.Account) {
-	if h != nil && h.cfg != nil && out != nil {
+	if h == nil || out == nil {
+		return
+	}
+	if h.codexTicketStatus != nil {
+		out.CodexTurnTickets = h.codexTicketStatus.OpenAICodexTicketStatuses(context.Background(), account, time.Now())
+		return
+	}
+	if h.cfg != nil {
 		cfg := h.cfg.Gateway.OpenAICodexTicket
 		if h.codexTicketSettings != nil {
 			cfg.Enabled = h.codexTicketSettings.GetOpenAICodexTicketEnabled(context.Background(), cfg.Enabled)
+			if proxy := h.codexTicketSettings.GetOpenAICodexTicketHarvestProxyURL(context.Background()); proxy != "" {
+				cfg.HarvestProxyURL = proxy
+			}
 		}
 		out.CodexTurnTickets = service.OpenAICodexTicketStatuses(account, cfg, time.Now())
 	}

@@ -1,0 +1,160 @@
+/** Channel Monitor V2 (user + admin passive monitor UI) */
+export default {
+  channelMonitorV2: {
+    title: 'État des canaux',
+    updating: 'Mise à jour des données',
+    updatedTo: 'Mis à jour au {time}',
+    partialCoverage: 'Couverture historique partielle',
+    bootstrap: {
+      title: 'Construction des données historiques de surveillance',
+      description:
+        'Lors de la première activation, l’agrégation passive complète silencieusement les fenêtres de 90 min, 24 h, 7 j et 30 j en arrière-plan. Toutes les plages deviennent complètes une fois cette opération terminée.',
+      progress: '{percent} % terminé',
+      working: 'Agrégation en arrière-plan…',
+    },
+    timeRange: 'Plage temporelle',
+    clearFilters: 'Réinitialiser',
+    refreshingFilters: 'Filtres modifiés ; actualisation de la matrice, de la tendance et des détails…',
+    switchingData: 'Changement des données filtrées…',
+    summaryAria: 'Résumé de la plage sélectionnée',
+    loadFailed: 'Échec du chargement de la surveillance des canaux',
+    detailLoadFailed: 'Échec du chargement des détails de la surveillance des canaux',
+    otherModels: 'Autres modèles',
+    ignored: 'Ignoré',
+    currentUser: 'Utilisateur actuel',
+    ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
+    filters: {
+      platform: 'Plateforme', allPlatforms: 'Tous', group: 'Groupe', allGroups: 'Tous', model: 'Modèle', allModels: 'Tous',
+      empty: 'Aucune option', selectedCount: '{count}', labelValue: '{label} : {value}'
+    },
+    groupBy: {
+      label: 'Regrouper par', platform: 'Plateforme', platformGroup: 'Plateforme / Groupe', platformModel: 'Plateforme / Modèle', platformGroupModel: 'Plateforme / Groupe / Modèle'
+    },
+    trendView: { label: 'Vue de tendance', pulse: 'Matrice d’impulsions', line: 'Graphique en courbes' },
+    healthMode: { label: 'Affichage de santé', overall: 'Global', success: 'Taux d’erreur', ttft: 'Premier jeton', cache: 'Taux de cache' },
+    cards: {
+      title: 'État des canaux',
+      count: '{count} dimensions',
+      platformCount: '{count} dimensions',
+      availability: 'Disponibilité',
+      firstToken: 'Premier jeton',
+      rate: 'Taux utilisateur {value}',
+      history: '{count} derniers intervalles',
+      historyAria: '{count} derniers intervalles de surveillance',
+      past: 'Passé',
+      now: 'Maintenant',
+      status: { healthy: 'Opérationnel', warning: 'Dégradé', critical: 'En panne', unknown: 'Données insuffisantes' },
+    },
+    tabs: { aria: 'Dimension de détail', models: 'Modèles', errors: 'Causes d’erreur', users: 'Classement des utilisateurs' },
+    metrics: {
+      rpm: 'RPM',
+      tpm: 'TPM',
+      tps: 'Jetons/s',
+      rpmDetail: 'Requêtes par minute',
+      tpmDetail: 'Jetons par minute',
+      tpsDetail: 'Calculé comme TPM ÷ 60',
+      errorRate: 'Taux d’erreur',
+      ttft: 'Premier jeton',
+      ttftP50: 'Premier jeton P50',
+      durationP50: 'Durée P50',
+      cacheRate: 'Taux de cache',
+      cacheDetail: 'Part de lecture du cache',
+      successRate: 'Taux de succès',
+      successRateValue: 'Taux de succès {value}',
+      errorRateValue: 'Taux d’erreur {value}',
+      rpmValue: 'RPM {value}',
+      tpmValue: 'TPM {value}',
+      tpsValue: 'Jetons/s {value}',
+      ttftValue: 'Premier jeton {value}',
+      durationValue: 'Durée {value}',
+      cacheRateValue: 'Taux de cache {value}',
+    },
+    table: { platformModel: 'Plateforme / Modèle', rank: 'Rang', user: 'Utilisateur' },
+    empty: { title: 'Aucune donnée à afficher', description: 'Essayez de modifier la plage temporelle ou les filtres' },
+    bucket: { minutes: 'Intervalles de {count} minutes', hours: 'Intervalles de {count} heures', days: 'Intervalles de {count} jours' },
+    matrix: {
+      title: 'Tendance de disponibilité', description: 'Chaque ligne est une dimension de canal et chaque bloc un intervalle agrégé ; survolez pour les détails', wheelZoom: 'Faites défiler les blocs pour zoomer (plage plus étroite, blocs plus larges)', wheelZoomX: 'Faites défiler les blocs pour zoomer (plage plus étroite, blocs plus larges)', dimension: 'Dimension de canal', emptyTitle: 'Aucune donnée de matrice pour la fenêtre sélectionnée', legendAria: 'Légende du score de santé', bad: 'Mauvais', good: 'Bon', healthyLegend: 'Sain (≥80)', warningLegend: 'À surveiller (50–79)', criticalLegend: 'Critique (<50)', unknownLegend: 'Aucun trafic / échantillons insuffisants', noTraffic: 'Aucun trafic dans cet intervalle', noTrafficAt: '{time} · aucun trafic', scoreLine: 'Score de santé {score}', resetZoom: 'Réinitialiser le zoom'
+    },
+    chart: {
+      title: 'Tendance de disponibilité', description: 'Tendance lissée : taux d’erreur · premier jeton P50 · taux de cache', emptyTitle: 'Aucune donnée de tendance pour la fenêtre sélectionnée', errorLegend: 'Taux d’erreur (axe gauche %)', cacheLegend: 'Taux de cache (axe gauche %)', ttftLegend: 'Premier jeton P50 (axe droit)', errorDataset: 'Tendance du taux d’erreur %', cacheDataset: 'Tendance du taux de cache %', ttftDataset: 'Tendance du premier jeton P50 (ms)', percentAxis: 'Taux %', resetZoom: 'Réinitialiser le zoom'
+    },
+    errorDetail: { http: 'HTTP {code}', upstream: 'Amont {code}', noMessage: 'Aucun message d’erreur', empty: 'Taux par catégorie uniquement (les messages d’échantillon sont réservés aux administrateurs)' },
+    errorCategories: {
+      content_policy: 'Politique de contenu', authentication: 'Authentification', context_limit: 'Limite de contexte', invalid_request: 'Requête invalide', model_unsupported: 'Modèle non pris en charge', group_access: 'Accès au groupe', quota_or_balance: 'Quota ou solde', account_pool_unavailable: 'Pool de comptes indisponible', rate_or_capacity: 'Débit ou capacité', timeout: 'Délai dépassé', transport_or_stream: 'Transport ou flux', upstream_forbidden: 'Amont interdit', not_found: 'Introuvable', client_cancelled: 'Annulé par le client', upstream_5xx: 'Amont 5xx', internal: 'Interne', other: 'Autre'
+    },
+    rank: {
+      gold: 'Rang 1 or',
+      silver: 'Rang 2 argent',
+      bronze: 'Rang 3 bronze',
+      place: 'Rang {n}',
+      unranked: 'Non classé',
+    },
+    settings: {
+      title: 'Configuration du moniteur de données V2',
+      description:
+        'Configurez les dimensions d’agrégation d’usage passif (plateforme / modèle / groupe) et la cadence d’actualisation. Les couleurs de santé et les détails de la page utilisateur /monitor affichent des taux, le RPM et le TPM — pas le volume absolu de requêtes.',
+      save: 'Enregistrer',
+      loading: 'Chargement…',
+      loadFailed: 'Échec du chargement de la configuration V2',
+      saveSuccess: 'Configuration du moniteur V2 enregistrée',
+      saveFailed: 'Échec de l’enregistrement de la configuration V2',
+      modeBanner:
+        'Le mode système est actuellement {mode}. L’agrégation minute V2 ne s’exécutera pas ; cette configuration peut être préparée dès maintenant et prendra effet après le passage à {modeV2}. Changez de mode dans Paramètres système → Interrupteurs de fonctionnalités.',
+      modeClosed: 'Surveillance des canaux désactivée',
+      modeV1: 'Sondes actives V1',
+      modeV2: 'Surveillance passive V2',
+      enableTitle: 'Activer l’agrégation V2',
+      enableHint:
+        'S’applique lorsque le mode système est V2. Désactiver ceci n’arrête que l’agrégation de cette configuration ; le commutateur de mode système reste dans Interrupteurs de fonctionnalités.',
+      refreshTitle: 'Intervalle d’agrégation',
+      refreshHint: 'Affecte la granularité temporelle de la matrice et la cadence d’actualisation',
+      refreshAria: 'Intervalle d’agrégation',
+      platformsTitle: 'Plateformes et modèles',
+      platformsHint:
+        'Laisser vide = afficher tous les noms de modèles réels ; une fois renseigné, seuls les modèles listés ont leur propre ligne et le reste est regroupé dans « Autre »',
+      modelsPlaceholder: 'Vide = tous les modèles réels ; ou listez les modèles populaires (le reste → Autre)',
+      badgeAllModels: 'Tous les modèles',
+      badgeOther: '+ Autre',
+      groupsTitle: 'Groupes surveillés',
+      groupsSelected: '{count} groupes sélectionnés',
+      groupsAll: 'Tous les groupes',
+      groupsEmpty: 'Aucun groupe disponible',
+      errorsTitle: 'Catégories d’erreur et exclusions',
+      errorsHint:
+        'Les catégories cochées « ignorer » sont exclues du taux d’erreur et du score de santé, mais apparaissent toujours grisées dans la ventilation des erreurs. Les erreurs non correspondantes sont regroupées dans « Autre ».',
+      ignoredSummary: '{ignored} catégories ignorées · {counted} catégories comptées dans le taux d’erreur',
+      healthTitle: 'Seuils de santé',
+      healthHint:
+        'Contrôle les bandes de couleur côté utilisateur et le score global. Les valeurs par défaut sont tolérantes afin qu’un faible taux d’erreur ou un cache bas n’apparaisse pas immédiatement comme malsain.',
+      fields: {
+        minimumSample: 'Échantillons minimum',
+        warningError: 'Taux d’erreur à surveiller %',
+        criticalError: 'Taux d’erreur critique %',
+        targetTtft: 'Cible TTFT ms',
+        warningTtft: 'TTFT à surveiller ms',
+        criticalTtft: 'TTFT critique ms',
+        warningCache: 'Taux de cache à surveiller %',
+        criticalCache: 'Taux de cache critique %',
+      },
+      namedModelsEmpty: 'Les listes de modèles des plateformes sont vides : chaque nom de modèle réel sera affiché (sans regroupement dans « Autre »).',
+      namedModelsCount: 'Affichage de {count} dimensions de modèles nommés ; les modèles non listés sont regroupés dans « Autre » par plateforme.',
+      userContractTitle: 'Contrat d’affichage côté utilisateur',
+      userContract: {
+        health: 'Pondération des couleurs de santé : taux d’erreur 60 % + premier jeton P50 20 % + taux de cache 20 % (seuils configurables ci-dessus)',
+        trend: 'La tendance peut basculer entre matrice d’impulsions et graphique en courbes (erreur · cache · premier jeton)',
+        latency: 'La latence affiche AVG · P50 · P90 ; les volumes absolus de requêtes / erreurs ne sont pas affichés',
+        models: 'Des listes de modèles vides affichent les noms réels et ne regroupent jamais tout dans « Autre »',
+      },
+    },
+    admin: {
+      descriptionV1:
+        'Le mode système est Sondes actives V1 : gérez les moniteurs de sonde et lancez des contrôles maintenant ; l’agrégation V2 ne s’exécute pas.',
+      descriptionV2:
+        'Le mode système est Surveillance passive V2 : configurez les dimensions d’agrégation ; les sondes actives V1 ne s’exécutent pas.',
+      tabAria: 'Gestion de la surveillance',
+      tabV2: 'Configuration du moniteur de données V2',
+      tabV1Active: 'Sondes actives V1',
+      tabV1History: 'Historique V1 (sondes inactives dans le mode actuel)',
+    },
+  },
+}

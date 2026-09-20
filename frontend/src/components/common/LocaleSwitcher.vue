@@ -19,10 +19,10 @@
     <transition name="dropdown">
       <div
         v-if="isOpen"
-        class="locale-switcher-menu absolute right-0 z-50 mt-2 w-40 overflow-hidden"
+        class="locale-switcher-menu absolute right-0 z-50 mt-2 w-44 overflow-hidden"
       >
         <button
-          v-for="locale in availableLocales"
+          v-for="locale in enabledLocales"
           :key="locale.code"
           :disabled="switching"
           @click="selectLocale(locale.code)"
@@ -45,7 +45,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import { setLocale, availableLocales } from '@/i18n'
+import { setLocale, enabledLocales } from '@/i18n'
 
 const { locale } = useI18n()
 
@@ -54,7 +54,7 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const switching = ref(false)
 
 const currentLocaleCode = computed(() => locale.value)
-const currentLocale = computed(() => availableLocales.find((l) => l.code === locale.value))
+const currentLocale = computed(() => enabledLocales.value.find((l) => l.code === locale.value))
 
 function toggleDropdown() {
   isOpen.value = !isOpen.value

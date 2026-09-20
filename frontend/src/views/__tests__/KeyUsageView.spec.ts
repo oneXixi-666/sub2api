@@ -46,6 +46,9 @@ const messages: Record<string, string> = {
   'keyUsage.limitMonthly': 'Monthly Limit',
   'keyUsage.remainingQuota': 'Remaining Quota',
   'keyUsage.usedQuota': 'Used Quota',
+  'keyUsage.windowDay': 'D',
+  'keyUsage.windowWeek': 'W',
+  'keyUsage.windowMonth': 'M',
   'keyUsage.subscriptionType': 'Subscription Type',
   'keyUsage.billingType': 'Billing Type',
   'keyUsage.todayRequests': 'Today Requests',
@@ -209,7 +212,7 @@ describe('KeyUsageView daily detail', () => {
     expect(text).toContain('200')
     expect(text).toContain('30')
     expect(text).toContain('10')
-    expect(text).toContain('$0.12')
+    expect(text).toContain('¥0.12')
 
     wrapper.unmount()
   })

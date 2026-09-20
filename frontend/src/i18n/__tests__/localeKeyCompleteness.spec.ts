@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import en from '../locales/en'
 import zh from '../locales/zh'
+import fr from '../locales/fr'
+import ru from '../locales/ru'
 
 type LocaleValue = Record<string, unknown>
 
@@ -61,17 +63,21 @@ function missingKeys(usedKeys: string[], availableKeys: Set<string>): string[] {
 }
 
 describe('locale key completeness', () => {
+  const locales = { en, zh, fr, ru } as const
   const enKeys = new Set(flattenLeafKeys(en))
-  const zhKeys = new Set(flattenLeafKeys(zh))
   const usedKeys = [...new Set(sourceKeys())].sort()
 
-  it('keeps English and Chinese locale schemas identical', () => {
-    expect([...enKeys].filter((key) => !zhKeys.has(key)).sort()).toEqual([])
-    expect([...zhKeys].filter((key) => !enKeys.has(key)).sort()).toEqual([])
+  it('keeps all locale schemas identical to English', () => {
+    for (const [code, messages] of Object.entries(locales)) {
+      if (code === 'en') continue
+      const keys = new Set(flattenLeafKeys(messages))
+      expect([...enKeys].filter((key) => !keys.has(key)).sort(), `${code} missing vs en`).toEqual([])
+      expect([...keys].filter((key) => !enKeys.has(key)).sort(), `${code} extra vs en`).toEqual([])
+    }
   })
 
   it('contains a non-empty message for every locale leaf', () => {
-    for (const [locale, messages] of Object.entries({ en, zh })) {
+    for (const [locale, messages] of Object.entries(locales)) {
       const emptyKeys = flattenLeafKeys(messages).filter((key) => {
         let current: unknown = messages
         for (const segment of key.split('.')) {
@@ -84,7 +90,22 @@ describe('locale key completeness', () => {
   })
 
   it('contains every statically referenced production key', () => {
-    expect(missingKeys(usedKeys, enKeys), 'English locale is missing referenced keys').toEqual([])
-    expect(missingKeys(usedKeys, zhKeys), 'Chinese locale is missing referenced keys').toEqual([])
+    for (const [code, messages] of Object.entries(locales)) {
+      expect(
+        missingKeys(usedKeys, new Set(flattenLeafKeys(messages))),
+        `${code} locale is missing referenced keys`
+      ).toEqual([])
+    }
+  })
+
+  it('translates French and Russian user-facing copy', () => {
+    expect(fr.common.save).toBe('Enregistrer')
+    expect(ru.common.save).toBe('Сохранить')
+    expect(fr.nav.dashboard).not.toBe(en.nav.dashboard)
+    expect(ru.nav.dashboard).not.toBe(en.nav.dashboard)
+    expect(fr.home.heroSubtitle).not.toBe(en.home.heroSubtitle)
+    expect(ru.home.heroSubtitle).not.toBe(en.home.heroSubtitle)
+    expect(fr.keyUsage.windowDay).toBe('J')
+    expect(ru.keyUsage.windowDay).toBe('Д')
   })
 })

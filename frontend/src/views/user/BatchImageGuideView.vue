@@ -754,6 +754,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { formatBillingAmount } from '@/constants/currency'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -2385,8 +2386,8 @@ function friendlyItemError(error: BatchImageItem['error']) {
 }
 
 function formatMoney(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '$0.00'
-  return `$${Number(value).toFixed(2)}`
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return formatBillingAmount(0)
+  return formatBillingAmount(Number(value))
 }
 
 function terminalZeroCost(job: Pick<BatchImageJob, 'status' | 'actual_cost'>) {
@@ -2475,7 +2476,8 @@ function batchImageErrorReference(error: any) {
   if (code) parts.push(t('batchImage.messages.errorCodeRef', { code }))
   if (requestId) parts.push(t('batchImage.messages.requestIdRef', { id: requestId }))
   if (!code && status) parts.push(t('batchImage.messages.httpStatusRef', { status }))
-  return parts.length ? `（${parts.join(isZhLocale() ? '，' : ', ')}）` : ''
+  if (!parts.length) return ''
+  return isZhLocale() ? `（${parts.join('，')}）` : `(${parts.join(', ')})`
 }
 
 function batchImageAdminError(base: string, error: any) {

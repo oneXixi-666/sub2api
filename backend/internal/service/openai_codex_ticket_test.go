@@ -40,6 +40,117 @@ func ticketTestService(t *testing.T, cfg config.OpenAICodexTicketConfig, upstrea
 	}
 }
 
+func TestOpenAICodexTicketTargetLengthByPlan(t *testing.T) {
+	tests := []struct {
+		name       string
+		planType   string
+		configured int
+		want       int
+	}{
+		{name: "team canonical", planType: "team", configured: 292, want: 332},
+		{name: "business premium alias", planType: "self_serve_business_prolite", configured: 292, want: 332},
+		{name: "team separators and case", planType: " TEAM ", configured: 292, want: 332},
+		{name: "personal default", planType: "plus", configured: 0, want: 292},
+		{name: "personal configured target preserved", planType: "free", configured: 318, want: 318},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := ticketTestAccount(41)
+			account.Credentials["plan_type"] = tt.planType
+			require.Equal(t, tt.want, openAICodexTicketTargetLength(account, tt.configured))
+		})
+	}
+}
+
+func TestOpenAICodexTicket_Team332Personal292AndWrongLengthIsolation(t *testing.T) {
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled:      true,
+		TargetLength: 292,
+		TTLSeconds:   3600,
+		FailClosed:   true,
+	}, nil)
+	team := ticketTestAccount(41)
+	team.Credentials["plan_type"] = "team"
+	personal := ticketTestAccount(42)
+	now := time.Now()
+	svc.storeOpenAICodexTicket(context.Background(), team, &openAICodexTicket{
+		AccountID:  team.ID,
+		Model:      openAICodexTicketDefaultModel,
+		State:      fakeCodexTicketState(332),
+		Length:     332,
+		CapturedAt: now,
+		ExpiresAt:  now.Add(time.Hour),
+	})
+	svc.storeOpenAICodexTicket(context.Background(), personal, &openAICodexTicket{
+		AccountID:  personal.ID,
+		Model:      openAICodexTicketDefaultModel,
+		State:      fakeCodexTicketState(292),
+		Length:     292,
+		CapturedAt: now,
+		ExpiresAt:  now.Add(time.Hour),
+	})
+
+	teamHeaders := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), team, openAICodexTicketDefaultModel, teamHeaders))
+	require.Equal(t, 332, len(teamHeaders.Get(openAICodexTurnStateHeader)))
+	personalHeaders := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), personal, openAICodexTicketDefaultModel, personalHeaders))
+	require.Equal(t, 292, len(personalHeaders.Get(openAICodexTurnStateHeader)))
+
+	// A ticket from the other tier must never satisfy this account's target.
+	svc.storeOpenAICodexTicket(context.Background(), team, &openAICodexTicket{
+		AccountID:  team.ID,
+		Model:      openAICodexTicketDefaultModel,
+		State:      fakeCodexTicketState(292),
+		Length:     292,
+		CapturedAt: time.Now(),
+		ExpiresAt:  time.Now().Add(time.Hour),
+	})
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), team, openAICodexTicketDefaultModel, http.Header{}), ErrOpenAICodexTicketUnavailable)
+	svc.storeOpenAICodexTicket(context.Background(), personal, &openAICodexTicket{
+		AccountID:  personal.ID,
+		Model:      openAICodexTicketDefaultModel,
+		State:      fakeCodexTicketState(332),
+		Length:     332,
+		CapturedAt: time.Now(),
+		ExpiresAt:  time.Now().Add(time.Hour),
+	})
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), personal, openAICodexTicketDefaultModel, http.Header{}), ErrOpenAICodexTicketUnavailable)
+}
+
+func TestOpenAICodexTicketStatusesUsePerAccountTargetLength(t *testing.T) {
+	now := time.Now()
+	team := ticketTestAccount(41)
+	team.Credentials["plan_type"] = "team"
+	team.Extra = map[string]any{
+		openAICodexTicketExtraKey(openAICodexTicketDefaultModel): map[string]any{
+			"state":       fakeCodexTicketState(332),
+			"length":      332,
+			"model":       openAICodexTicketDefaultModel,
+			"captured_at": now.Add(-time.Minute),
+			"expires_at":  now.Add(time.Hour),
+		},
+	}
+	personal := ticketTestAccount(42)
+	personal.Credentials["plan_type"] = "plus"
+	personal.Extra = map[string]any{
+		openAICodexTicketExtraKey(openAICodexTicketDefaultModel): map[string]any{
+			"state":       fakeCodexTicketState(332),
+			"length":      332,
+			"model":       openAICodexTicketDefaultModel,
+			"captured_at": now.Add(-time.Minute),
+			"expires_at":  now.Add(time.Hour),
+		},
+	}
+	cfg := config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}
+	teamStatus := OpenAICodexTicketStatuses(team, cfg, now)[0]
+	personalStatus := OpenAICodexTicketStatuses(personal, cfg, now)[0]
+	require.True(t, teamStatus.Ready)
+	require.Equal(t, 332, teamStatus.Length)
+	require.False(t, personalStatus.Ready)
+	require.True(t, personalStatus.Blocked)
+}
+
 func TestApplyOpenAICodexTicket_ReplacesHeader(t *testing.T) {
 	state := fakeCodexTicketState(292)
 	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
@@ -242,6 +353,33 @@ func TestHarvestOpenAICodexTicket_StopsAt292AndUsesHarvestProxy(t *testing.T) {
 	require.Equal(t, openAICodexAstraMinVersion, upstream.requests[0].Header.Get("version"))
 	require.Equal(t, HTTPUpstreamProfileOpenAIHarvest, HTTPUpstreamProfileFromContext(upstream.requests[0].Context()))
 	require.True(t, upstream.requests[0].Close)
+}
+
+func TestHarvestOpenAICodexTicket_TeamAccepts332(t *testing.T) {
+	state := fakeCodexTicketState(332)
+	header := http.Header{}
+	header.Set(openAICodexTurnStateHeader, state)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader("data: {}\n\n")),
+	}}}
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled:                      true,
+		TargetLength:                 292,
+		TTLSeconds:                   3600,
+		HarvestProxyURL:              "socks5h://harvest.example:31",
+		HarvestAttemptTimeoutSeconds: 5,
+		FailClosed:                   true,
+	}, upstream)
+	account := ticketTestAccount(41)
+	account.Credentials["plan_type"] = "team"
+	svc.probeOnceOpenAICodexTicket(context.Background(), account, openAICodexTicketDefaultModel)
+	ticket := svc.lookupOpenAICodexTicket(account, openAICodexTicketDefaultModel)
+	require.NotNil(t, ticket)
+	require.Equal(t, state, ticket.State)
+	require.Equal(t, 332, ticket.Length)
+	require.True(t, ticket.valid(time.Now(), openAICodexTicketTeamLength))
 }
 
 func TestHarvestOpenAICodexTicket_HTTP503DoesNotAbortHunt(t *testing.T) {

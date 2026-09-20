@@ -379,6 +379,10 @@ const (
 	SettingKeySiteName                    = "site_name"                     // 网站名称
 	SettingKeySiteLogo                    = "site_logo"                     // 网站Logo (base64)
 	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
+	SettingKeyDisplayLocales              = "display_locales"               // 前台语言切换器启用的语言包（JSON 数组）
+	SettingKeyDefaultLocale               = "default_locale"                // 未匹配浏览器/本地缓存语言时的默认语言包
+	SettingKeyDisplayCurrency             = "display_currency"              // 余额/用量等展示用的货币代码
+	SettingKeyDisplayCurrencySymbol       = "display_currency_symbol"       // 余额/用量等展示用的货币符号
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接

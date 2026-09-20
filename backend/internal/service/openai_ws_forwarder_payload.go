@@ -141,8 +141,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if state := strings.TrimSpace(turnState); state != "" {
 		headers.Set(openAIWSTurnStateHeader, state)
 	}
-	if err := s.applyOpenAICodexTicket(ctx, account, routingModel, headers); err != nil {
+	receipt, err := s.applyOpenAICodexTicketWithReceipt(ctx, account, routingModel, headers)
+	if err != nil {
 		return nil, sessionResolution, err
+	}
+	if c != nil && receipt != nil {
+		c.Set(openAICodexTicketWSReceiptKey, receipt)
 	}
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)

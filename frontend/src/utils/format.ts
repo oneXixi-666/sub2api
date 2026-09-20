@@ -3,7 +3,13 @@
  * 参考 CRS 项目的 format.js 实现
  */
 
+import {
+  getBillingCurrency,
+  getBillingCurrencySymbol,
+  normalizeDisplayCurrency,
+} from '@/constants/currency'
 import { i18n, getLocale } from '@/i18n'
+import { toIntlLocale } from '@/i18n/intlLocale'
 
 /**
  * 格式化相对时间
@@ -39,7 +45,7 @@ export function formatRelativeTime(date: string | Date | null | undefined): stri
 export function formatNumber(num: number | null | undefined): string {
   if (num === null || num === undefined) return '0'
 
-  const locale = getLocale()
+  const locale = toIntlLocale(getLocale())
   const absNum = Math.abs(num)
 
   // Use Intl.NumberFormat for compact notation if supported and needed
@@ -55,23 +61,38 @@ export function formatNumber(num: number | null | undefined): string {
 /**
  * 格式化货币金额
  * @param amount 金额
- * @param currency 货币代码，默认 USD
- * @returns 格式化后的字符串，如 "$1.25"
+ * @param currency 货币代码，默认站点计费货币
+ * @returns 格式化后的字符串，如 "¥1.25"
  */
-export function formatCurrency(amount: number | null | undefined, currency: string = 'USD'): string {
-  if (amount === null || amount === undefined) return '$0.00'
-
-  const locale = getLocale()
-
-  // For very small amounts, show more decimals
-  const fractionDigits = amount > 0 && amount < 0.01 ? 6 : 2
-
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: currency,
+export function formatCurrency(amount: number | null | undefined, currency?: string): string {
+  const locale = toIntlLocale(getLocale())
+  const value = amount === null || amount === undefined ? 0 : amount
+  const fractionDigits = value > 0 && value < 0.01 ? 6 : 2
+  const billingCurrency = getBillingCurrency()
+  const requested = String(currency || '').trim()
+  const code = requested ? normalizeDisplayCurrency(requested) : billingCurrency
+  const number = new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits
-  }).format(amount)
+  }).format(value)
+
+  // Site billing amounts honor the 通用设置 symbol. Other explicit currencies
+  // (upstream wallets, payment-method money) keep Intl's own symbol.
+  if (!requested || code === billingCurrency) {
+    return `${getBillingCurrencySymbol()}${number}`
+  }
+
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits
+    }).format(value)
+  } catch {
+    return `${getBillingCurrencySymbol()}${number}`
+  }
 }
 
 /**
@@ -117,7 +138,7 @@ export function formatDate(
   const d = new Date(date)
   if (isNaN(d.getTime())) return ''
 
-  const locale = localeOverride ?? getLocale()
+  const locale = toIntlLocale(localeOverride ?? getLocale())
   return new Intl.DateTimeFormat(locale, options).format(d)
 }
 

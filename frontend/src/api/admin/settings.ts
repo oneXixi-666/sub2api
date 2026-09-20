@@ -479,6 +479,10 @@ export interface SystemSettings {
   site_name: string;
   site_logo: string;
   site_subtitle: string;
+  display_locales: string[];
+  default_locale: string;
+  display_currency: string;
+  display_currency_symbol: string;
   api_base_url: string;
   contact_info: string;
   doc_url: string;
@@ -826,6 +830,10 @@ export interface UpdateSettingsRequest {
   site_name?: string;
   site_logo?: string;
   site_subtitle?: string;
+  display_locales?: string[];
+  default_locale?: string;
+  display_currency?: string;
+  display_currency_symbol?: string;
   api_base_url?: string;
   contact_info?: string;
   doc_url?: string;

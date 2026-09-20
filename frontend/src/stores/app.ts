@@ -6,7 +6,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Toast, ToastType, PublicSettings } from '@/types'
-import { i18n } from '@/i18n'
+import { i18n, applyDisplayLocales, syncLocaleWithDisplaySettings } from '@/i18n'
+import { applyBillingDisplay } from '@/constants/currency'
 import {
   checkUpdates as checkUpdatesAPI,
   type VersionInfo,
@@ -294,6 +295,9 @@ export const useAppStore = defineStore('app', () => {
       window.__APP_CONFIG__ = { ...config }
     }
     cachedPublicSettings.value = config
+    applyBillingDisplay(config)
+    applyDisplayLocales(config)
+    void syncLocaleWithDisplaySettings()
     siteName.value = config.site_name || 'Sub2API'
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''

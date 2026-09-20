@@ -543,12 +543,12 @@ export default {
         openaiCodexVersionAutoSyncHint: 'Fetches the latest stable client version from the official repository every 6 hours, so you never need to upgrade this service just to keep the version current. When disabled, only the version above or the built-in default is used.',
         openaiCodexVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
-        codexTicketEnabled: "292 ticket harvest",
+        codexTicketEnabled: "Codex ticket harvest (Personal 292 / Team 332)",
         codexTicketEnabledDesc:
-          "When off, the gateway neither harvests nor injects x-codex-turn-state and forwards traffic as usual. When on, it harvests tickets in the background and overwrites that header on production requests.",
-        codexTicketHarvestProxy: "292 harvest proxy",
+          "When off, the gateway neither harvests nor injects x-codex-turn-state and forwards traffic as usual. When on, it harvests Codex tickets in the background (292 bytes for Personal and 332 bytes for Team) and overwrites that header on production requests.",
+        codexTicketHarvestProxy: "Codex ticket harvest proxy",
         codexTicketHarvestProxyDesc:
-          "Used only for minting 292 tickets when the ticket feature is enabled. Changes apply to subsequent probes without a restart. Production traffic still uses each account's residential proxy. Paste a full HTTP or SOCKS5h proxy URL including username and password. The proxy provider must handle IP rotation. Leave blank when saving to keep the stored value.",
+          "Used only for minting Codex tickets (292 bytes for Personal and 332 bytes for Team) when the ticket feature is enabled. Changes apply to subsequent probes without a restart. Production traffic still uses each account's residential proxy. Paste a full HTTP or SOCKS5h proxy URL including username and password. The proxy provider must handle IP rotation. Leave blank when saving to keep the stored value.",
         codexTicketHarvestProxyPlaceholder: "http://user:pass{'@'}proxy.example.com:1080",
         codexTicketHarvestProxyConfigured: "Configured (password hidden). Paste a full new proxy URL to replace it.",
         codexClientRestrictionTitle: "Codex client restriction",
@@ -677,7 +677,24 @@ export default {
         compactHome: 'Compact Home Page',
         compactHomeHint: 'Show a restrained site identity page when no custom home page content is set.',
         hideCcsImportButton: 'Hide CCS Import Button',
-        hideCcsImportButtonHint: 'When enabled, the "Import to CCS" button will be hidden on the API Keys page'
+        hideCcsImportButtonHint: 'When enabled, the "Import to CCS" button will be hidden on the API Keys page',
+        displayLocalesTitle: 'Display languages',
+        displayLocalesDescription:
+          'Choose which language packs appear in the language switcher. At least one language must stay enabled.',
+        displayLocalesHint:
+          'Users keep their current language unless you disable it; then they fall back to the default language.',
+        defaultLocale: 'Default language',
+        defaultLocaleHint: 'Used when the browser or saved language is not in the enabled list.',
+        displayCurrency: 'Display currency code',
+        displayCurrencyPlaceholder: 'CNY',
+        displayCurrencyHint:
+          'ISO 4217 three-letter code used when formatting balances, usage, and credited amounts. This does not change payment-method currencies.',
+        displayCurrencySymbol: 'Currency symbol',
+        displayCurrencySymbolHint:
+          'Shown before amounts. Leave empty to derive the symbol from the currency code (for example CNY → ¥).',
+        displayCurrencyPreview: 'Preview',
+        displayLocalesRequired: 'Keep at least one language pack enabled',
+        displayCurrencyFormatError: 'Currency code must be three letters (for example CNY or USD)'
       },
       purchase: {
         title: 'Recharge / Subscription Page',
@@ -696,8 +713,10 @@ export default {
         title: 'Custom Menu Pages',
         description: 'Add custom iframe pages to the sidebar navigation. Each page can be visible to regular users or administrators.',
         itemLabel: 'Menu Item #{n}',
-        name: 'Menu Name',
+        name: 'Default name',
         namePlaceholder: 'e.g. Help Center',
+        nameTranslations: 'Localized names',
+        nameTranslationsHint: 'Leave a language empty to use the default name.',
         url: 'Page URL',
         urlPlaceholder: 'https://example.com/page',
         hideOpenButton: 'Hide the “Open in new tab” button',
@@ -953,6 +972,8 @@ export default {
         locale: 'Locale',
         localeEn: 'English',
         localeZh: 'Chinese',
+        localeFr: 'French',
+        localeRu: 'Russian',
         subject: 'Subject',
         subjectPlaceholder: 'Enter the email subject',
         html: 'HTML Template',

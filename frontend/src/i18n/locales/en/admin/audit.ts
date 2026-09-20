@@ -5,6 +5,21 @@ export default {
     clearAll: 'Clear All',
     empty: 'No audit logs yet',
     loadFailed: 'Failed to load audit logs',
+    tabs: {
+      operations: 'Audit Logs',
+      tickets: 'Ticket Logs'
+    },
+    ticketLogs: {
+      hint: 'Reads in-memory ticket harvest records for this process only. They are not stored in the database and disappear after a restart or a clear. At most the latest {count} entries are kept.',
+      empty: 'No ticket logs yet',
+      loadFailed: 'Failed to load ticket logs',
+      clear: 'Clear',
+      clearConfirmTitle: 'Clear ticket logs',
+      clearConfirmMessage: 'This only drops the in-memory ticket harvest records for this process. No two-factor check is required. Continue?',
+      clearSuccess: 'Ticket logs cleared',
+      account: 'Account',
+      model: 'Model'
+    },
     filters: {
       all: 'All',
       q: 'Keyword',

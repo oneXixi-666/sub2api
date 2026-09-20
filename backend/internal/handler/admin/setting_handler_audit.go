@@ -320,6 +320,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.SiteName != after.SiteName {
 		changed = append(changed, "site_name")
 	}
+	if !equalStringSlice(before.DisplayLocales, after.DisplayLocales) {
+		changed = append(changed, "display_locales")
+	}
+	if before.DefaultLocale != after.DefaultLocale {
+		changed = append(changed, "default_locale")
+	}
+	if before.DisplayCurrency != after.DisplayCurrency {
+		changed = append(changed, "display_currency")
+	}
+	if before.DisplayCurrencySymbol != after.DisplayCurrencySymbol {
+		changed = append(changed, "display_currency_symbol")
+	}
 	if before.SiteLogo != after.SiteLogo {
 		changed = append(changed, "site_logo")
 	}

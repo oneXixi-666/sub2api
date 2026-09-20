@@ -11,6 +11,7 @@ import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { i18n } from '@/i18n'
 
 const router = useRouter()
 const route = useRoute()
@@ -53,6 +54,7 @@ watch(
     () => appStore.cachedPublicSettings?.payment_balance_disabled,
     () => authStore.isAdmin,
     () => adminSettingsStore.customMenuItems,
+    () => i18n.global.locale.value,
   ],
   updateDocumentTitle,
   { deep: true }

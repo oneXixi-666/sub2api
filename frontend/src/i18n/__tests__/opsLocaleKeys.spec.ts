@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import en from '@/i18n/locales/en'
 import zh from '@/i18n/locales/zh'
+import fr from '@/i18n/locales/fr'
+import ru from '@/i18n/locales/ru'
 
 function flattenKeys(obj: Record<string, any>, prefix = ''): string[] {
   const keys: string[] = []
@@ -30,18 +32,14 @@ describe('ops locale key completeness', () => {
     'admin.ops.errorDetail.payloads.upstream_events',
   ]
 
-  for (const key of requiredKeys) {
-    it(`en locale has ${key}`, () => {
-      const enKeys = flattenKeys(en)
-      expect(enKeys).toContain(key)
-    })
-  }
+  const locales = { en, zh, fr, ru }
 
-  for (const key of requiredKeys) {
-    it(`zh locale has ${key}`, () => {
-      const zhKeys = flattenKeys(zh)
-      expect(zhKeys).toContain(key)
-    })
+  for (const [code, messages] of Object.entries(locales)) {
+    for (const key of requiredKeys) {
+      it(`${code} locale has ${key}`, () => {
+        expect(flattenKeys(messages)).toContain(key)
+      })
+    }
   }
 })
 
@@ -59,9 +57,11 @@ describe('groups locale key completeness', () => {
   ]
 
   for (const key of webSearchPricingKeys) {
-    it(`en and zh locales both have ${key}`, () => {
+    it(`en, zh, fr, and ru locales all have ${key}`, () => {
       expect(flattenKeys(en)).toContain(key)
       expect(flattenKeys(zh)).toContain(key)
+      expect(flattenKeys(fr)).toContain(key)
+      expect(flattenKeys(ru)).toContain(key)
     })
   }
 })

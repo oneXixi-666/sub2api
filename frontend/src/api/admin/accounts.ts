@@ -28,7 +28,9 @@ import type {
   OllamaCloudUsageSettings,
   OllamaCloudUsageState,
   GrokMediaEligibilityMode,
-  GrokMediaEligibilityState
+  GrokMediaEligibilityState,
+  CodexTicketLogsResponse,
+  CodexTicketLogFeed
 } from '@/types'
 
 /**
@@ -385,6 +387,29 @@ export async function getUsage(id: number, source?: 'passive' | 'active', force?
 export interface BatchAccountUsageResponse {
   usage: Record<string, AccountUsageInfo>
   errors: Record<string, string>
+}
+
+export async function getCodexTicketLogs(
+  id: number,
+  model: string,
+  options?: { signal?: AbortSignal }
+): Promise<CodexTicketLogsResponse> {
+  const { data } = await apiClient.get<CodexTicketLogsResponse>(`/admin/accounts/${id}/codex-ticket-logs`, {
+    params: { model },
+    signal: options?.signal
+  })
+  return data
+}
+
+export async function listCodexTicketLogs(options?: { signal?: AbortSignal }): Promise<CodexTicketLogFeed> {
+  const { data } = await apiClient.get<CodexTicketLogFeed>('/admin/codex-ticket-logs', {
+    signal: options?.signal
+  })
+  return data
+}
+
+export async function clearCodexTicketLogs(): Promise<void> {
+  await apiClient.delete('/admin/codex-ticket-logs')
 }
 
 export async function getBatchUsage(accountIds: number[], force?: boolean): Promise<BatchAccountUsageResponse> {
@@ -1090,6 +1115,9 @@ export const accountsAPI = {
   getStats,
   clearError,
   getUsage,
+  getCodexTicketLogs,
+  listCodexTicketLogs,
+  clearCodexTicketLogs,
   getBatchUsage,
   getTodayStats,
   getBatchTodayStats,

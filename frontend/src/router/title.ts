@@ -1,6 +1,7 @@
-import { i18n } from '@/i18n'
+import { getLocale, i18n } from '@/i18n'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import type { CustomMenuItem } from '@/types'
+import { resolveCustomMenuLabel } from '@/utils/customMenuLabel'
 import type { SiteBillingMode } from '@/utils/siteBillingMode'
 
 /**
@@ -72,7 +73,7 @@ export function resolveRouteDocumentTitle(
   const menuItem = route.name === 'CustomPage' && id
     ? customMenuItems.find((item) => item.id === id)
     : undefined
-  const menuTitle = menuItem?.label.trim()
+  const menuTitle = resolveCustomMenuLabel(menuItem, getLocale())
   const { titleKey } = resolveRouteMetaKeys(route, options)
 
   return resolveDocumentTitle(menuTitle || route.meta.title, siteName, menuTitle ? undefined : titleKey)

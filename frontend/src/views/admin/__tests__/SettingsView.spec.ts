@@ -383,6 +383,10 @@ const baseSettingsResponse = {
   site_name: "Sub2API",
   site_logo: "",
   site_subtitle: "",
+  display_locales: ["en", "zh", "fr", "ru"],
+  default_locale: "en",
+  display_currency: "CNY",
+  display_currency_symbol: "¥",
   api_base_url: "",
   contact_info: "",
   doc_url: "",
@@ -770,12 +774,40 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
-    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
-      custom_menu_items: [
-        { ...menuItems[0], hide_open_button: true },
-        { ...menuItems[1], hide_open_button: false },
-      ],
-    }));
+    const savedItems = updateSettings.mock.calls[0]?.[0].custom_menu_items;
+    expect(savedItems).toEqual([
+      { ...menuItems[0], hide_open_button: true },
+      { ...menuItems[1], hide_open_button: false },
+    ]);
+    expect(savedItems[0].labels).toBeUndefined();
+    expect(savedItems[1].labels).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("saves localized custom menu names", async () => {
+    const menuItems = [
+      { id: "docs", label: "Docs", url: "https://example.com/docs", icon_svg: "", visibility: "user", sort_order: 0 },
+    ];
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, custom_menu_items: menuItems });
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="custom-menu-label-en"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="custom-menu-label-zh"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="custom-menu-label-fr"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="custom-menu-label-ru"]').exists()).toBe(true);
+
+    const frenchName = wrapper.get('[data-testid="custom-menu-label-fr"]');
+    await frenchName.setValue("Documentation");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings.mock.calls[0]?.[0].custom_menu_items).toEqual([
+      {
+        ...menuItems[0],
+        labels: { fr: "Documentation" },
+      },
+    ]);
     wrapper.unmount();
   });
 
@@ -793,6 +825,62 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ compact_home_enabled: true }),
     );
+  });
+
+  it("saves display language packs and currency from 通用设置", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      display_locales: ["en", "zh", "fr", "ru"],
+      default_locale: "en",
+      display_currency: "CNY",
+      display_currency_symbol: "¥",
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("admin.settings.site.displayLocalesTitle");
+    expect((wrapper.get('[data-testid="display-locale-en"]').element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.get('[data-testid="display-locale-fr"]').element as HTMLInputElement).checked).toBe(true);
+
+    await wrapper.get('[data-testid="display-locale-fr"]').setValue(false);
+    await wrapper.get('[data-testid="display-locale-ru"]').setValue(false);
+    await wrapper.get('[data-testid="default-locale-select"]').setValue("zh");
+    await wrapper.get('[data-testid="display-currency"]').setValue("usd");
+    await wrapper.get('[data-testid="display-currency-symbol"]').setValue("US$");
+    expect(wrapper.text()).toContain("US$123.45");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        display_locales: ["en", "zh"],
+        default_locale: "zh",
+        display_currency: "USD",
+        display_currency_symbol: "US$",
+      }),
+    );
+    expect(fetchPublicSettings).toHaveBeenCalledWith(true);
+    wrapper.unmount();
+  });
+
+  it("keeps at least one display language pack enabled", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      display_locales: ["en"],
+      default_locale: "en",
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="display-locale-en"]').setValue(false);
+    await flushPromises();
+    expect(showError).toHaveBeenCalled();
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings.mock.calls[0]?.[0].display_locales).toEqual(["en"]);
+    wrapper.unmount();
   });
 
   it("renders panel rate limit card and saves settings", async () => {

@@ -79,7 +79,7 @@
           v-if="form.deduct_balance && balanceInsufficient"
           class="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
         >
-          {{ t('payment.admin.insufficientBalance') }}
+          {{ t('payment.admin.insufficientBalance', { symbol: billingDisplay.symbol }) }}
         </div>
 
         <!-- No deduction info -->
@@ -170,6 +170,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PaymentOrder } from '@/types/payment'
 import { formatOrderDateTime } from '@/components/payment/orderUtils'
 import { currencySymbol } from '@/components/payment/currency'
+import { billingDisplay } from '@/constants/currency'
 
 const { t } = useI18n()
 
@@ -187,7 +188,7 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const creditedAmountSymbol = currencySymbol('USD')
+const creditedAmountSymbol = computed(() => billingDisplay.symbol)
 
 const paymentAmountSymbol = computed(() => currencySymbol(props.order?.currency))
 
