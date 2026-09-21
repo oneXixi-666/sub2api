@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func fakeCodexTicketState(n int) string {
@@ -356,6 +359,66 @@ func TestHarvestOpenAICodexTicket_StopsAt292AndUsesHarvestProxy(t *testing.T) {
 	require.Equal(t, openAICodexAstraMinVersion, upstream.requests[0].Header.Get("version"))
 	require.Equal(t, HTTPUpstreamProfileOpenAIHarvest, HTTPUpstreamProfileFromContext(upstream.requests[0].Context()))
 	require.True(t, upstream.requests[0].Close)
+	assertOpenAICodexHarvestWinningOutbound(t, upstream.requests[0], upstream.bodies[0])
+}
+
+func assertOpenAICodexHarvestWinningOutbound(t *testing.T, req *http.Request, body []byte) {
+	t.Helper()
+	require.NotNil(t, req)
+	require.Empty(t, req.Header.Get(openAICodexTurnStateHeader))
+	require.Equal(t, "text/event-stream", req.Header.Get("Accept"))
+	require.Equal(t, openai.CodexDefaultOriginator, req.Header.Get("originator"))
+	require.Equal(t, openAICodexAstraMinVersion, req.Header.Get("version"))
+	require.Equal(t, buildCodexCLIUserAgent(openAICodexAstraMinVersion), req.Header.Get("user-agent"))
+	require.NotEmpty(t, req.Header.Get("session_id"))
+	require.Empty(t, req.Header.Get("session-id"))
+	require.Empty(t, req.Header.Get("thread_id"))
+	require.Empty(t, req.Header.Get("thread-id"))
+	require.Empty(t, req.Header.Get("X-Codex-Installation-Id"))
+	require.Empty(t, req.Header.Get("X-Codex-Window-Id"))
+	require.Empty(t, req.Header.Get("X-Codex-Turn-Metadata"))
+	require.Empty(t, req.Header.Get("X-Codex-Routing-Hint"))
+	require.True(t, req.Close)
+	require.Equal(t, HTTPUpstreamProfileOpenAIHarvest, HTTPUpstreamProfileFromContext(req.Context()))
+	require.True(t, gjson.GetBytes(body, "stream").Bool())
+	require.True(t, gjson.GetBytes(body, "store").Exists())
+	require.False(t, gjson.GetBytes(body, "store").Bool())
+	require.False(t, gjson.GetBytes(body, "client_metadata").Exists())
+	require.Equal(t, "gpt-6-astra", gjson.GetBytes(body, "model").String())
+	require.JSONEq(t, string(openAICodexTicketHarvestProbeBody("gpt-6-astra")), string(body))
+}
+
+func TestHarvestOpenAICodexTicket_EmitsHoldingTUIIdentity(t *testing.T) {
+	state := fakeCodexTicketState(332)
+	header := http.Header{}
+	header.Set(openAICodexTurnStateHeader, state)
+	body := &codexTicketHeaderOnlyBody{}
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     header,
+		Body:       body,
+	}}}
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled:                      true,
+		TargetLength:                 292,
+		TTLSeconds:                   3600,
+		HarvestProxyURL:              "socks5h://harvest.example:31",
+		HarvestAttemptTimeoutSeconds: 5,
+		FailClosed:                   true,
+	}, upstream)
+	account := ticketTestAccount(41)
+	account.Credentials["plan_type"] = "self_serve_business_prolite"
+	svc.probeOnceOpenAICodexTicket(context.Background(), account, "gpt-6-astra")
+	require.Len(t, upstream.requests, 1)
+	assertOpenAICodexHarvestWinningOutbound(t, upstream.requests[0], upstream.bodies[0])
+	require.Zero(t, body.reads)
+	require.Equal(t, 1, body.closes)
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(upstream.bodies[0], &parsed))
+	require.Equal(t, true, parsed["stream"])
+	require.Equal(t, false, parsed["store"])
+	_, hasClientMeta := parsed["client_metadata"]
+	require.False(t, hasClientMeta)
 }
 
 func TestHarvestOpenAICodexTicket_TeamAccepts332(t *testing.T) {

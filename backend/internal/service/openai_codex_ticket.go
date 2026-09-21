@@ -565,7 +565,7 @@ func (s *OpenAIGatewayService) fireOpenAICodexTicketProbe(ctx context.Context, a
 	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
 
-	body := []byte(`{"model":` + jsonString(model) + `,"store":false,"stream":true,"instructions":"Reply with exactly: pong","input":[{"role":"user","content":[{"type":"input_text","text":"ping"}]}]}`)
+	body := openAICodexTicketHarvestProbeBody(model)
 	req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, chatgptCodexURL, bytes.NewReader(body))
 	if err != nil {
 		return "", 0, 0, egress, err
@@ -644,6 +644,12 @@ func jsonString(v string) string {
 	return string(b)
 }
 
+func openAICodexTicketHarvestProbeBody(model string) []byte {
+	return []byte(`{"model":` + jsonString(model) + `,"store":false,"stream":true,"instructions":"Reply with exactly: pong","input":[{"role":"user","content":[{"type":"input_text","text":"ping"}]}]}`)
+}
+
+// applyOpenAICodexTicketHarvestIdentity 为打票探针写入 Codex TUI Astra 最低版本身份。
+// Team 332 持票实测用这套头；installation/window/thread 或 Desktop originator 会把 follow-up 掉到 356。
 func applyOpenAICodexTicketHarvestIdentity(h http.Header, model string) {
 	ensureCodexIdentityHeaders(h)
 	enforceCodexIdentityHeaders(h)
