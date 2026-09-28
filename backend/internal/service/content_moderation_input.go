@@ -18,6 +18,34 @@ func ExtractContentModerationInput(protocol string, body []byte) ContentModerati
 	return extractContentModerationInputs(protocol, body).User
 }
 
+// Keyword checks share semantic moderation's current-user boundaries, but must
+// inspect client-supplied reminder blocks as ordinary user text.
+func extractContentModerationKeywordText(protocol string, body []byte) string {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return ""
+	}
+	var parts []string
+	var images []string
+	switch protocol {
+	case ContentModerationProtocolAnthropicMessages:
+		collectLastAnthropicUserMessage(gjson.GetBytes(body, "messages"), &parts, &images, false)
+	case ContentModerationProtocolOpenAIChat:
+		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images, false)
+	case ContentModerationProtocolOpenAIResponses:
+		collectLastResponsesInput(responsesModerationInput(body), &parts, &images, false)
+	case ContentModerationProtocolGemini:
+		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images, false)
+	case ContentModerationProtocolOpenAIImages:
+		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
+		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
+	default:
+		collectLastResponsesInput(responsesModerationInput(body), &parts, &images, false)
+		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images, false)
+		collectLastGeminiContent(gjson.GetBytes(body, "contents"), &parts, &images, false)
+	}
+	return normalizeContentModerationText(strings.Join(parts, "\n"))
+}
+
 // trustedContentModerationSourceContextKey is only set by server-owned code
 // after it has authenticated/signed an internal request. Never derive this
 // value from request JSON: a client can freely copy any textual envelope.
@@ -147,13 +175,19 @@ func collectLastAnthropicUserMessage(messages gjson.Result, parts *[]string, ima
 	if len(array) == 0 {
 		return
 	}
-	last := array[len(array)-1]
-	if strings.ToLower(strings.TrimSpace(last.Get("role").String())) != "user" {
+	// Anthropic requests may append a system message after the user turn. It
+	// does not represent a new model/tool turn, so retain the latest user
+	// content while continuing to reject assistant/tool-ended loops.
+	lastUser := len(array) - 1
+	for lastUser >= 0 && strings.ToLower(strings.TrimSpace(array[lastUser].Get("role").String())) == "system" {
+		lastUser--
+	}
+	if lastUser < 0 || strings.ToLower(strings.TrimSpace(array[lastUser].Get("role").String())) != "user" {
 		return
 	}
 	var candidate []string
 	var candidateImages []string
-	collectAnthropicUserContentValue(last.Get("content"), &candidate, &candidateImages)
+	collectAnthropicUserContentValue(array[lastUser].Get("content"), &candidate, &candidateImages)
 	cleaned := normalizeModerationUserText(strings.Join(candidate, "\n"), trustedInternalSource)
 	if normalizeContentModerationText(cleaned) == "" && len(candidateImages) == 0 {
 		return

@@ -76,10 +76,12 @@
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
         </a>
 
-        <!-- Model Plaza Entry -->
+        <!-- Model Plaza Entry (icon only below sm) -->
         <router-link
           v-if="user && modelPlazaEnabled"
           :to="{ path: '/model-plaza', query: { embedded: '1' } }"
+          :title="t('nav.modelPlaza')"
+          :aria-label="t('nav.modelPlaza')"
           class="promo-header-action hidden items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium sm:flex"
         >
           <Icon name="grid" size="sm" />
