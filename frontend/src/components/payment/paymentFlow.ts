@@ -88,6 +88,7 @@ export interface BuildCreateOrderPayloadInput {
   forceQRCode?: boolean
   /** When true, keep the real mobile signal so the backend can select precreate */
   mobilePrecreateDeepLink?: boolean
+  network?: string
 }
 
 type CreateOrderFlowResult = CreateOrderResult & {
@@ -141,6 +142,9 @@ export function buildCreateOrderPayload(input: BuildCreateOrderPayloadInput): Cr
   }
   if (normalizedOrigin) {
     payload.return_url = `${normalizedOrigin}/payment/result`
+  }
+  if (visibleMethod === 'usdt' && input.network) {
+    payload.network = input.network
   }
 
   return payload

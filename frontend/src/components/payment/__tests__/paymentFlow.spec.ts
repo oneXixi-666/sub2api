@@ -360,6 +360,21 @@ describe('buildCreateOrderPayload', () => {
     })
   })
 
+  it('sends the selected USDT network with the usdt payment type', () => {
+    expect(buildCreateOrderPayload({
+      amount: 50,
+      paymentType: 'usdt',
+      orderType: 'balance',
+      origin: 'https://app.example.com',
+      isMobile: false,
+      isWechatBrowser: false,
+      network: 'tron',
+    })).toMatchObject({
+      payment_type: 'usdt',
+      network: 'tron',
+    })
+  })
+
   it('still passes is_mobile: true when forceQRCode is enabled for non-alipay methods', () => {
     expect(buildCreateOrderPayload({
       amount: 50,

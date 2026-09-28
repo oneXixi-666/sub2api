@@ -18,6 +18,15 @@ const (
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
+	TypeBEpusdt      PaymentType = "bepusdt"
+	TypeUSDT         PaymentType = "usdt"
+)
+
+// USDT networks offered after the user selects the USDT payment method.
+const (
+	USDTNetworkTron     = "tron"
+	USDTNetworkEthereum = "ethereum"
+	USDTNetworkBSC      = "bsc"
 )
 
 // Order status constants shared across payment and service layers.
@@ -108,6 +117,7 @@ type CreatePaymentRequest struct {
 	OpenID      string // WeChat JSAPI payer OpenID when available
 	ClientIP    string // Payer's IP address
 	IsMobile    bool   // Whether the request comes from a mobile device
+	Network     string // USDT network selected after the USDT method: tron, ethereum, bsc
 	// AlipayMobilePrecreate routes a mobile Alipay request through
 	// alipay.trade.precreate instead of alipay.trade.wap.pay.
 	AlipayMobilePrecreate bool

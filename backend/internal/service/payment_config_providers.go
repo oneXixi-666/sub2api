@@ -116,6 +116,7 @@ var providerSensitiveConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}},
 	payment.TypeAirwallex: {"apikey": {}, "webhooksecret": {}},
+	payment.TypeBEpusdt:   {"apitoken": {}},
 }
 
 // providerPendingOrderProtectedConfigFields lists config keys that cannot be
@@ -128,6 +129,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
+	payment.TypeBEpusdt:   {"apitoken": {}, "apibase": {}, "fiat": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -178,7 +180,7 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 }
 
 var validProviderKeys = map[string]bool{
-	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true,
+	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true, payment.TypeBEpusdt: true,
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {
@@ -188,6 +190,13 @@ func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req C
 	}
 	if req.ProviderKey == payment.TypeEasyPay {
 		if err := validateEasyPayCustomMethods(req.Config, typesStr); err != nil {
+			return nil, err
+		}
+	}
+	if req.ProviderKey == payment.TypeBEpusdt {
+		req.RefundEnabled = false
+		req.AllowUserRefund = false
+		if err := validateBEpusdtSupportedTypes(typesStr); err != nil {
 			return nil, err
 		}
 	}
@@ -281,6 +290,14 @@ func validateEasyPayCustomMethods(config map[string]string, supportedTypes strin
 	return nil
 }
 
+func validateBEpusdtSupportedTypes(supportedTypes string) error {
+	types := splitTypes(supportedTypes)
+	if len(types) != 1 || types[0] != payment.TypeUSDT {
+		return infraerrors.BadRequest("VALIDATION_ERROR", "bepusdt only supports the usdt payment type")
+	}
+	return nil
+}
+
 func easyPayCustomMethodTypeConflictsWithBuiltin(methodType string) bool {
 	return strings.HasPrefix(methodType, payment.TypeAlipay) || strings.HasPrefix(methodType, payment.TypeWxpay)
 }
@@ -312,6 +329,14 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	nextSupportedTypes := current.SupportedTypes
 	if req.SupportedTypes != nil {
 		nextSupportedTypes = joinTypes(req.SupportedTypes)
+	}
+	if current.ProviderKey == payment.TypeBEpusdt {
+		disabled := false
+		req.RefundEnabled = &disabled
+		req.AllowUserRefund = &disabled
+		if err := validateBEpusdtSupportedTypes(nextSupportedTypes); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.validateVisibleMethodEnablementConflicts(ctx, id, current.ProviderKey, nextSupportedTypes, nextEnabled); err != nil {
 		return nil, err

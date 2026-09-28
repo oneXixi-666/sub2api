@@ -29,6 +29,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if normalized := NormalizeVisibleMethod(req.PaymentType); normalized != "" {
 		req.PaymentType = normalized
 	}
+	if req.PaymentType == payment.TypeUSDT {
+		req.Network = strings.ToLower(strings.TrimSpace(req.Network))
+	}
 	cfg, err := s.configService.GetPaymentConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get payment config: %w", err)
@@ -115,6 +118,11 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
+	if req.PaymentType == payment.TypeUSDT {
+		if _, ok := payment.BEpusdtTradeType(req.Network); !ok {
+			return nil, infraerrors.BadRequest("INVALID_USDT_NETWORK", "usdt payment requires network tron, ethereum, or bsc")
+		}
+	}
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
@@ -305,6 +313,15 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeBEpusdt {
+		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
+		if network := strings.ToLower(strings.TrimSpace(req.Network)); network != "" {
+			snapshot["network"] = network
+		}
+		if tradeType, ok := payment.BEpusdtTradeType(req.Network); ok {
+			snapshot["trade_type"] = tradeType
+		}
+	}
 
 	if len(snapshot) == 1 {
 		return nil
@@ -475,6 +492,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		"paymentType":    req.PaymentType,
 		"orderType":      req.OrderType,
 		"paymentSource":  NormalizePaymentSource(req.PaymentSource),
+		"network":        req.Network,
 	})
 	resultType := pr.ResultType
 	if resultType == "" {
@@ -520,6 +538,7 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		OpenID:             strings.TrimSpace(req.OpenID),
 		ClientIP:           req.ClientIP,
 		IsMobile:           req.IsMobile,
+		Network:            req.Network,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
 	}
 }

@@ -261,6 +261,10 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{payment.TypeAirwallex, "accountId", false},
 		{payment.TypeAirwallex, "currency", false},
 
+		{payment.TypeBEpusdt, "apiToken", true},
+		{payment.TypeBEpusdt, "apiBase", false},
+		{payment.TypeBEpusdt, "fiat", false},
+
 		// Unknown provider: never sensitive
 		{"unknown", "secretKey", false},
 	}
@@ -735,6 +739,8 @@ func providerPendingOrderPaymentType(providerKey string) string {
 		return payment.TypeAlipay
 	case payment.TypeAirwallex:
 		return payment.TypeAirwallex
+	case payment.TypeBEpusdt:
+		return payment.TypeUSDT
 	case payment.TypeStripe:
 		return payment.TypeStripe
 	default:

@@ -64,6 +64,10 @@
                 :selected="selectedMethod"
                 @select="selectedMethod = $event"
               />
+              <UsdtNetworkSelector
+                v-if="isUsdtMethod(selectedMethod)"
+                v-model="selectedUsdtNetwork"
+              />
             </div>
             <div v-if="validAmount > 0" class="card p-6">
               <div class="space-y-2 text-sm">
@@ -158,6 +162,10 @@
                   :methods="subMethodOptions"
                   :selected="selectedMethod"
                   @select="selectedMethod = $event"
+                />
+                <UsdtNetworkSelector
+                  v-if="isUsdtMethod(selectedMethod)"
+                  v-model="selectedUsdtNetwork"
                 />
               </div>
               <div v-if="feeRate > 0 && selectedPlan.price > 0" class="card p-6">
@@ -279,7 +287,8 @@ import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderTy
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
-import { METHOD_ORDER, getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
+import UsdtNetworkSelector from '@/components/payment/UsdtNetworkSelector.vue'
+import { METHOD_ORDER, getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod, isUsdtMethod, type UsdtNetworkId } from '@/components/payment/providerConfig'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
   buildCreateOrderPayload,
@@ -334,6 +343,7 @@ const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
+const selectedUsdtNetwork = ref<UsdtNetworkId | ''>('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
 
@@ -671,10 +681,13 @@ const amountError = computed(() => {
   return ''
 })
 
+const usdtNetworkReady = computed(() => !isUsdtMethod(selectedMethod.value) || selectedUsdtNetwork.value !== '')
+
 const canSubmit = computed(() =>
   validAmount.value > 0
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
+    && usdtNetworkReady.value
 )
 
 const subPaymentAmount = computed(() => {
@@ -718,6 +731,7 @@ const canSubmitSubscription = computed(() =>
   selectedPlan.value !== null
     && amountFitsMethod(subTotalAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
+    && usdtNetworkReady.value
 )
 
 // Auto-switch to first available method when current selection can't handle the amount
@@ -735,6 +749,7 @@ const paymentButtonClass = computed(() => {
   if (isBuiltInWxpayMethod(m)) return 'btn-wxpay'
   if (m === 'stripe') return 'btn-stripe'
   if (m === 'airwallex') return 'btn-airwallex'
+  if (isUsdtMethod(m)) return 'btn-usdt'
   return 'btn-primary'
 })
 
@@ -806,6 +821,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
       forceQRCode: !!(checkout.value.alipay_force_qrcode && normalizeVisibleMethod(requestType) === 'alipay'),
       mobilePrecreateDeepLink: checkout.value.alipay_mobile_precreate_deep_link === true,
+      network: isUsdtMethod(requestType) ? selectedUsdtNetwork.value : undefined,
     })
     if (options.openid) {
       payload.openid = options.openid
