@@ -49,6 +49,7 @@ export default {
     "accountCost": "Coût",
     "noDataAvailable": "Aucune donnée disponible",
     "recentUsage": "Usage récent",
+    "actualSpending": "Dépense réelle ($)",
     "viewModelDistribution": "Répartition des modèles",
     "viewSpendingRanking": "Classement des dépenses utilisateurs",
     "spendingRankingTitle": "Classement des dépenses utilisateurs",

@@ -880,6 +880,7 @@ export default {
     "enterCustomModelName": "Saisissez un nom de modèle personnalisé",
     "addModel": "Ajouter",
     "modelExists": "Le modèle existe déjà",
+    "modelMappingConflict": "Un mappage existe déjà pour {from} → {to}. Modifiez-le ou supprimez-le dans Mappage de modèles avant d’ajouter ce modèle à la liste blanche",
     "modelCount": "{count} modèles",
     "poolMode": "Mode pool",
     "poolModeHint": "Activez lorsque l'amont est un pool de comptes ; les erreurs ne marqueront pas le statut du compte local",
@@ -970,6 +971,20 @@ export default {
     "autoPause5hDisabled": "Désactiver la pause auto 5h",
     "autoPause7dDisabled": "Désactiver la pause auto 7d",
     "autoPauseDisabledHint": "Une fois activé, ce compte n'est jamais mis en pause automatiquement (même si un seuil global par défaut est configuré).",
+    "claudeResetCredits": {
+      "count": "Réinitialisations",
+      "countTooltipLoad": "Vérifier les réinitialisations Claude restantes (lecture seule, n’en consomme jamais)",
+      "countTooltipRefresh": "Actualiser les réinitialisations Claude restantes (lecture seule, n’en consomme jamais)",
+      "fetched": "Vérifié à {time}",
+      "error": "Impossible de vérifier les crédits de réinitialisation",
+      "ineligible": "Ce compte ne peut pas utiliser les réinitialisations pour le moment",
+      "cooldown": "Temps de recharge jusqu’à {time}",
+      "expiresAt": "Expire {time}",
+      "expiresAtFull": "Le crédit de réinitialisation expire à : {time}",
+      "clears": "Efface les fenêtres : {windows}",
+      "notUsableNow": "Inutilisable pour le moment",
+      "requiresLimit": "Utilisable uniquement après avoir atteint une limite"
+    },
     "autoResetCredit": {
       "title": "Utiliser automatiquement les crédits de réinitialisation",
       "hint": "Utilise le crédit disponible qui expire le plus tôt uniquement lorsque l'usage réel atteint un seuil. Désactivé par défaut ; le compte reste en pause si aucun crédit n'est disponible ou si la réinitialisation échoue.",

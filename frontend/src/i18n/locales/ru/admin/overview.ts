@@ -49,6 +49,7 @@ export default {
     "accountCost": "Стоимость",
     "noDataAvailable": "Нет доступных данных",
     "recentUsage": "Недавнее использование",
+    "actualSpending": "Фактические расходы ($)",
     "viewModelDistribution": "Распределение моделей",
     "viewSpendingRanking": "Рейтинг расходов пользователей",
     "spendingRankingTitle": "Рейтинг расходов пользователей",

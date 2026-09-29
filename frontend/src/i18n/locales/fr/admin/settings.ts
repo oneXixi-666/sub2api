@@ -81,6 +81,8 @@ export default {
         "enabledHint": "Lorsque c’est désactivé, l’entrée de la barre latérale d’administration est masquée et la modération de la passerelle est ignorée.",
         "cyberSessionBlock": "Blocage automatique des sessions cyber",
         "cyberSessionBlockHint": "Lorsque c’est activé, les sessions touchées par cyber_policy en amont sont bloquées localement pendant le TTL uniquement si leur groupe est dans le périmètre d’application du Contrôle des risques. Les autres groupes continuent de collecter des preuves.",
+        "riskControlUserAllowlist": "Liste blanche du contrôle des risques",
+        "riskControlUserAllowlistHint": "Saisissez un fragment d’e-mail pour rechercher les utilisateurs correspondants. Les utilisateurs de la liste blanche ne déclenchent ni bannissement de compte ni blocage local, mais les restrictions en amont s’appliquent toujours. Cette fonction sert généralement aux relais aval de confiance.",
         "cyberSessionBlockTTL": "TTL de blocage (secondes)"
       },
       "affiliate": {
