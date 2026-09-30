@@ -223,29 +223,33 @@ export default {
       "deepseek": {
         "description": "Configurez Claude Code, Codex ou OpenCode via le groupe DeepSeek actuel.",
         "codexDescription": "Configurez Codex avec authentification par clé API via le groupe DeepSeek actuel.",
-        "codexConfigTomlHint": "Téléchargez le catalogue de modèles ci-dessous, enregistrez les deux fichiers dans le répertoire de configuration Codex, puis redémarrez Codex.",
+        "codexConfigTomlHint": "Enregistrez config.toml et redémarrez Codex pour charger le catalogue distant. En mode fichier local, téléchargez aussi le catalogue vers le chemin configuré.",
         "codexNote": "Exportez SUB2API_API_KEY avant de démarrer Codex. Le catalogue téléchargé contient uniquement les métadonnées des modèles, pas votre clé API."
       },
       "minimax": {
         "description": "Configurez Claude Code, Codex ou OpenCode via le groupe MiniMax actuel.",
         "codexDescription": "Configurez Codex avec authentification par clé API via le groupe MiniMax actuel.",
-        "codexConfigTomlHint": "Téléchargez le catalogue de modèles ci-dessous, enregistrez les deux fichiers dans le répertoire de configuration Codex, puis redémarrez Codex.",
+        "codexConfigTomlHint": "Enregistrez config.toml et redémarrez Codex pour charger le catalogue distant. En mode fichier local, téléchargez aussi le catalogue vers le chemin configuré.",
         "codexNote": "Exportez SUB2API_API_KEY avant de démarrer Codex. Le catalogue téléchargé contient uniquement les métadonnées des modèles, pas votre clé API."
       },
       "composite": {
         "description": "Configurez les clients pris en charge via le groupe de routage Composite actuel.",
         "codexDescription": "Configurez Codex avec authentification par clé API et le catalogue de modèles complet de ce groupe Composite.",
-        "codexConfigTomlHint": "Téléchargez le catalogue de modèles ci-dessous, enregistrez les deux fichiers dans le répertoire de configuration Codex, puis redémarrez Codex.",
+        "codexConfigTomlHint": "Enregistrez config.toml et redémarrez Codex pour charger le catalogue distant. En mode fichier local, téléchargez aussi le catalogue vers le chemin configuré.",
         "codexNote": "Exportez SUB2API_API_KEY avant de démarrer Codex. Les requêtes de modèles sont routées selon le slug de catalogue sélectionné."
       },
       "routedCodex": {
         "description": "Configurez Codex avec le catalogue de modèles complet du groupe routé actuel.",
-        "configTomlHint": "Téléchargez le catalogue de modèles ci-dessous, enregistrez les deux fichiers dans le répertoire de configuration Codex, puis redémarrez Codex.",
+        "configTomlHint": "Enregistrez config.toml et redémarrez Codex pour charger le catalogue distant. En mode fichier local, téléchargez aussi le catalogue vers le chemin configuré.",
         "note": "Exportez SUB2API_API_KEY avant de démarrer Codex. Le catalogue téléchargé contient uniquement les métadonnées des modèles, pas votre clé API."
       },
       "codexModelCatalog": {
+        "mode": "Source du catalogue",
+        "remote": "Catalogue distant (Codex 0.156.0+)",
+        "local": "Fichier local (anciens clients)",
+        "oversized": "Le catalogue complet dépasse la limite distante de 1 Mio. Le mode fichier local est sélectionné ; téléchargez-le vers le chemin configuré.",
         "title": "Catalogue de modèles Codex",
-        "description": "Récupérez-le avec cette clé API, puis enregistrez le catalogue au chemin référencé par config.toml.",
+        "description": "Codex charge et actualise le catalogue distant avec l’authentification configurée. En mode fichier local, récupérez le catalogue ci-dessous et enregistrez-le au chemin configuré.",
         "fetch": "Récupérer le catalogue",
         "retry": "Réessayer",
         "download": "Télécharger le catalogue",

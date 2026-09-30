@@ -983,7 +983,33 @@ export default {
       "expiresAtFull": "Le crédit de réinitialisation expire à : {time}",
       "clears": "Efface les fenêtres : {windows}",
       "notUsableNow": "Inutilisable pour le moment",
-      "requiresLimit": "Utilisable uniquement après avoir atteint une limite"
+      "requiresLimit": "Utilisable uniquement après avoir atteint une limite",
+      "reset": "Réinitialiser",
+      "resetTooltipNeedQuery": "Vérifiez d’abord le nombre ; la réinitialisation est disponible dès qu’un crédit utilisable est trouvé",
+      "resetTooltipNone": "Aucune réinitialisation n’est utilisable pour le moment",
+      "resetTooltipReady": "Consommer 1 réinitialisation pour effacer les fenêtres de limite (demande confirmation)",
+      "confirmTitle": "Confirmer la réinitialisation Claude",
+      "confirmMessage": "Cela consommera 1 crédit de réinitialisation pour restaurer immédiatement la ou les fenêtres {windows} ({count} restantes). Cette action est irréversible. Continuer ?",
+      "windows": {
+        "fiveHour": "5h",
+        "sevenDay": "7d",
+        "sevenDayOverage": "dépassement 7d"
+      },
+      "outcome": {
+        "reset": "Réinitialisation appliquée ; fenêtres effacées : {windows}",
+        "alreadyUsed": "Cette réinitialisation a déjà été utilisée ; actualisation pour confirmer",
+        "cooldown": "Les réinitialisations sont en pause ; réessayez plus tard",
+        "cooldownUntil": "Les réinitialisations sont en pause jusqu’à {time}",
+        "notLimited": "Aucune limite atteinte : rien n’a été réinitialisé et aucun crédit n’a été utilisé",
+        "ineligible": "Ce compte ne peut pas utiliser les réinitialisations pour le moment",
+        "unknown": "Résultat non confirmé ; un nouvel échange est bloqué pour l’instant. Vérifiez plus tard",
+        "unavailable": "Le service de réinitialisation est temporairement indisponible ; réessayez plus tard",
+        "inProgress": "Cette demande de réinitialisation est encore en cours ; vérifiez bientôt",
+        "retryBackoff": "Cette demande de réinitialisation vient d’échouer ; réessayez dans un instant",
+        "busy": "Une autre réinitialisation est en cours ; réessayez plus tard",
+        "notAvailable": "Aucune réinitialisation n’est utilisable pour le moment ; aucun crédit n’a été utilisé",
+        "failed": "La demande de réinitialisation a échoué"
+      }
     },
     "autoResetCredit": {
       "title": "Utiliser automatiquement les crédits de réinitialisation",
