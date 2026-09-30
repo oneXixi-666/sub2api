@@ -19,6 +19,8 @@ const OpenAICodexTicketTokenInvalidExtraKey = openAICodexTicketExtraKeyPrefix + 
 
 var errOpenAICodexTicketTokenInvalid = errors.New("codex ticket harvest stopped after HTTP 401")
 
+var errOpenAICodexTicketSchedulingDisabled = errors.New("codex ticket harvest stopped because scheduling is disabled")
+
 type openAICodexTicketErrorSetter interface {
 	SetOpenAICodexTicketErrorIfTokenMatches(ctx context.Context, id int64, accountToken, rejectedToken, errorMsg string) (bool, error)
 }

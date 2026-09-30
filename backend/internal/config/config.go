@@ -1040,8 +1040,8 @@ type GatewayConfig struct {
 	// OpenAICompactModel: /responses/compact 上游使用的模型。
 	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
 	OpenAICompactModel string `mapstructure:"openai_compact_model"`
-	// OpenAICodexTicket: ChatGPT OAuth 账号按 (账号, 模型) 捕获 292 长度
-	// x-codex-turn-state，并在住宅 IP 业务请求中注入该头。默认关闭。
+	// OpenAICodexTicket: ChatGPT OAuth 账号按 (账号, 模型) 捕获 x-codex-turn-state，
+	// 并在住宅 IP 业务请求中注入该头。当前正常长度为 780；个人 292 与 Team 332 仍接受。默认关闭。
 	OpenAICodexTicket OpenAICodexTicketConfig `mapstructure:"openai_codex_ticket"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`

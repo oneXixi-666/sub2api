@@ -29,6 +29,8 @@ func ticketTestAccount(id int64) *Account {
 		ID:          id,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
 		Credentials: map[string]any{"access_token": "tok", "chatgpt_account_id": "acc-1"},
 	}
 }
@@ -448,6 +450,37 @@ func TestHarvestOpenAICodexTicket_TeamAccepts332(t *testing.T) {
 	require.True(t, ticket.valid(time.Now(), openAICodexTicketTeamLength))
 }
 
+func TestHarvestOpenAICodexTicket_Accepts780ForPersonalAndTeam(t *testing.T) {
+	state := fakeCodexTicketState(openAICodexTicketCurrentLength)
+	for _, planType := range []string{"plus", "team"} {
+		t.Run(planType, func(t *testing.T) {
+			header := http.Header{}
+			header.Set(openAICodexTurnStateHeader, state)
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{{
+				StatusCode: http.StatusOK,
+				Header:     header,
+				Body:       io.NopCloser(strings.NewReader("data: {}\n\n")),
+			}}}
+			svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+				Enabled:                      true,
+				TargetLength:                 292,
+				TTLSeconds:                   3600,
+				HarvestProxyURL:              "socks5h://harvest.example:31",
+				HarvestAttemptTimeoutSeconds: 5,
+				FailClosed:                   true,
+			}, upstream)
+			account := ticketTestAccount(41)
+			account.Credentials["plan_type"] = planType
+			svc.probeOnceOpenAICodexTicket(context.Background(), account, openAICodexTicketDefaultModel)
+			ticket := svc.lookupOpenAICodexTicket(account, openAICodexTicketDefaultModel)
+			require.NotNil(t, ticket)
+			require.Equal(t, openAICodexTicketCurrentLength, ticket.Length)
+			require.True(t, ticket.valid(time.Now(), openAICodexTicketTargetLength(account, 292)))
+			require.False(t, svc.openAICodexTicketBlocksAccount(account, openAICodexTicketDefaultModel))
+		})
+	}
+}
+
 func TestHarvestOpenAICodexTicket_BusinessRejects292(t *testing.T) {
 	state := fakeCodexTicketState(292)
 	header := http.Header{}
@@ -632,11 +665,13 @@ func TestOpenAICodexTicketStatuses_RespectRuntimeConfiguration(t *testing.T) {
 	require.Empty(t, OpenAICodexTicketStatuses(account, config.OpenAICodexTicketConfig{}, time.Now()))
 	cfg := config.OpenAICodexTicketConfig{Enabled: true, Models: []string{"custom-model"}}
 	status := OpenAICodexTicketStatuses(account, cfg, time.Now())
-	require.Len(t, status, 1)
-	require.Equal(t, "custom-model", status[0].Model)
+	require.Len(t, status, 2)
+	require.Equal(t, []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel}, []string{status[0].Model, status[1].Model})
 	require.False(t, status[0].Blocked)
 	cfg.FailClosed = true
-	require.True(t, OpenAICodexTicketStatuses(account, cfg, time.Now())[0].Blocked)
+	for _, item := range OpenAICodexTicketStatuses(account, cfg, time.Now()) {
+		require.True(t, item.Blocked)
+	}
 }
 func TestProbeOpenAICodexTicket_RejectsInvalidState(t *testing.T) {
 	for _, state := range []string{fakeCodexTicketState(312), strings.Repeat("X", 292), ""} {

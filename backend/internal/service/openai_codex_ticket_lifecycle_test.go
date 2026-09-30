@@ -102,11 +102,11 @@ func TestCodexTicketHarvesterStopCancelsInFlightWork(t *testing.T) {
 		t.Run(stage, func(t *testing.T) {
 			started := make(chan struct{})
 			cancelled := make(chan struct{})
-			var once sync.Once
+			var startOnce, cancelOnce sync.Once
 			block := func(ctx context.Context) error {
-				once.Do(func() { close(started) })
+				startOnce.Do(func() { close(started) })
 				<-ctx.Done()
-				close(cancelled)
+				cancelOnce.Do(func() { close(cancelled) })
 				return ctx.Err()
 			}
 			account := ticketTestAccount(41)
