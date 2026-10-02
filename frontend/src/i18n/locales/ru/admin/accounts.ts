@@ -92,6 +92,12 @@ export default {
     "schedulableEnabled": "Планирование включено",
     "schedulableDisabled": "Планирование отключено",
     "failedToToggleSchedulable": "Не удалось переключить статус планирования",
+    "priorityQuick": {
+      "raise": "Повысить приоритет (значение -1)",
+      "lower": "Понизить приоритет (значение +1)",
+      "editHint": "Нажмите, чтобы ввести значение; меньшее используется первым",
+      "failed": "Не удалось обновить приоритет"
+    },
     "groupCountTotal": "Всего групп: {count}",
     "platforms": {
       "anthropic": "Anthropic",
@@ -104,7 +110,8 @@ export default {
       "zhipu": "Zhipu GLM",
       "deepseek": "DeepSeek",
       "minimax": "MiniMax",
-      "opencode_go": "OpenCode"
+      "opencode_go": "OpenCode",
+      "typesafe": "TypeSafe / Jev"
     },
     "cnProviders": {
       "accountMode": {

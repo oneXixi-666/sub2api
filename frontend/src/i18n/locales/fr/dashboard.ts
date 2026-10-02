@@ -194,7 +194,12 @@ export default {
         "codexCli": "Codex CLI",
         "codexCliWs": "Codex CLI (WebSocket)",
         "grokCli": "Grok CLI",
+        "systemOne": "System One",
         "opencode": "OpenCode"
+      },
+      "typesafe": {
+        "description": "Appelez Jev via le point de terminaison natif TypeSafe System One.",
+        "note": "System One n’est pas diffusé en continu et n’est pas compatible avec Chat Completions, Responses, Claude Code ou les clients Codex."
       },
       "antigravity": {
         "description": "Configurez l’accès API pour le groupe Antigravity. Sélectionnez la méthode de configuration selon votre client.",

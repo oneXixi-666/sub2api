@@ -92,6 +92,12 @@ export default {
     "schedulableEnabled": "Planification activée",
     "schedulableDisabled": "Planification désactivée",
     "failedToToggleSchedulable": "Échec du changement de statut de planification",
+    "priorityQuick": {
+      "raise": "Augmenter la priorité (valeur -1)",
+      "lower": "Diminuer la priorité (valeur +1)",
+      "editHint": "Cliquez pour saisir une valeur ; la plus basse est utilisée en premier",
+      "failed": "Échec de la mise à jour de la priorité"
+    },
     "groupCountTotal": "{count} groupes au total",
     "platforms": {
       "anthropic": "Anthropic",
@@ -104,7 +110,8 @@ export default {
       "zhipu": "Zhipu GLM",
       "deepseek": "DeepSeek",
       "minimax": "MiniMax",
-      "opencode_go": "OpenCode"
+      "opencode_go": "OpenCode",
+      "typesafe": "TypeSafe / Jev"
     },
     "cnProviders": {
       "accountMode": {

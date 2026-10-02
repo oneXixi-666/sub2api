@@ -1029,6 +1029,7 @@ export default {
       "deepseek": "DeepSeek",
       "minimax": "MiniMax",
       "opencode_go": "OpenCode",
+      "typesafe": "TypeSafe / Jev",
       "composite": "Composite"
     },
     "deleteConfirm": "Вы уверены, что хотите удалить '{name}'? Все связанные API Keys больше не будут принадлежать ни одной группе.",
