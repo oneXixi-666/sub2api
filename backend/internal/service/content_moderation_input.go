@@ -38,6 +38,10 @@ func extractContentModerationKeywordText(protocol string, body []byte) string {
 	case ContentModerationProtocolOpenAIImages:
 		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
+	case ContentModerationProtocolTypeSafeSystemOne:
+		// System One carries no client-harness reminder blocks, so a literal
+		// <system-reminder> is ordinary user text and must never be skipped.
+		collectSystemOneInput(body, &parts)
 	default:
 		collectLastResponsesInput(responsesModerationInput(body), &parts, &images, false)
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images, false)
@@ -117,6 +121,8 @@ func extractContentModerationInputsWithTrust(protocol string, body []byte, trust
 	case ContentModerationProtocolOpenAIImages:
 		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
+	case ContentModerationProtocolTypeSafeSystemOne:
+		collectSystemOneInput(body, &parts)
 	default:
 		collectLastResponsesInput(responsesModerationInput(body), &parts, &images, trustedInternalSource)
 		collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images, trustedInternalSource)
@@ -135,6 +141,67 @@ func extractContentModerationInputsWithTrust(protocol string, body []byte, trust
 	}
 	audit.Normalize()
 	return contentModerationExtractedInputs{User: user, Audit: audit, Segments: segments, RequiresAPI: requiresAPI}
+}
+
+// collectSystemOneInput moderates every client-controlled text of a System One
+// request: question IDs, every question field except the validated type,
+// unknown top-level extension fields, and the evaluated state. Object keys are
+// sent to Jev as part of the JSON, so they are moderated like values.
+func collectSystemOneInput(body []byte, parts *[]string) {
+	root := gjson.ParseBytes(body)
+	questions := root.Get("questions")
+	if !questions.IsObject() {
+		collectSystemOneText(questions, parts)
+	}
+	questions.ForEach(func(id, question gjson.Result) bool {
+		addModerationText(parts, id.String())
+		if !question.IsObject() {
+			collectSystemOneText(question, parts)
+			return true
+		}
+		question.ForEach(func(field, value gjson.Result) bool {
+			switch field.String() {
+			case "type":
+				return true
+			case "instructions", "criteria":
+			default:
+				addModerationText(parts, field.String())
+			}
+			collectSystemOneText(value, parts)
+			return true
+		})
+		return true
+	})
+	root.ForEach(func(field, value gjson.Result) bool {
+		switch field.String() {
+		case "model", "stream", "state", "questions":
+			return true
+		}
+		addModerationText(parts, field.String())
+		collectSystemOneText(value, parts)
+		return true
+	})
+	collectSystemOneText(root.Get("state"), parts)
+}
+
+func collectSystemOneText(value gjson.Result, parts *[]string) {
+	switch {
+	case !value.Exists():
+		return
+	case value.Type == gjson.String:
+		addModerationText(parts, value.String())
+	case value.IsArray():
+		value.ForEach(func(_, child gjson.Result) bool {
+			collectSystemOneText(child, parts)
+			return true
+		})
+	case value.IsObject():
+		value.ForEach(func(key, child gjson.Result) bool {
+			addModerationText(parts, key.String())
+			collectSystemOneText(child, parts)
+			return true
+		})
+	}
 }
 
 func responsesModerationInput(body []byte) gjson.Result {
@@ -403,6 +470,12 @@ func collectModerationSegments(protocol string, body []byte, trustedInternalSour
 		appendValueSegments(&segments, gjson.GetBytes(body, "tools"), moderationRoleSystem, "tools", false)
 	case ContentModerationProtocolOpenAIImages:
 		appendTextSegment(&segments, moderationRoleUser, "prompt", gjson.GetBytes(body, "prompt").String(), true)
+	case ContentModerationProtocolTypeSafeSystemOne:
+		var parts []string
+		collectSystemOneInput(body, &parts)
+		for index, part := range parts {
+			appendTextSegment(&segments, moderationRoleUser, fmt.Sprintf("systemone[%d]", index), part, true)
+		}
 	default:
 		appendResponsesSegments(&segments, responsesModerationInput(body), trustedInternalSource)
 		appendMessageSegments(&segments, gjson.GetBytes(body, "messages"), "messages", trustedInternalSource)
