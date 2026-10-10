@@ -1006,7 +1006,10 @@ func ChannelMonitorV2HealthForWithThresholds(metrics ChannelMonitorV2Metric, thr
 		Overall: "unknown", ErrorRate: "unknown", TTFT: "unknown", Cache: "unknown",
 		MinimumSample: thresholds.MinimumSample, Thresholds: thresholds,
 	}
-	if metrics.RequestCount < result.MinimumSample {
+	// No requests at all: cache-token volume must not invent a score.
+	// A short bucket can still be under MinimumSample and keep whichever
+	// signals already cleared their own sample floor.
+	if metrics.RequestCount <= 0 {
 		return result
 	}
 

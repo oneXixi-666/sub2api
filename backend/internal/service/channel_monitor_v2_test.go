@@ -299,21 +299,33 @@ func TestChannelMonitorV2HealthBlendsErrorTTFTAndCache(t *testing.T) {
 }
 
 func TestChannelMonitorV2HealthRequiresRequestSamples(t *testing.T) {
-	for _, requestCount := range []int64{0, 8, 9, 49} {
-		t.Run(fmt.Sprintf("requests_%d", requestCount), func(t *testing.T) {
-			thresholds := DefaultChannelMonitorV2HealthThresholds()
-			thresholds.WarningCacheRate = 0.85
-			thresholds.CriticalCacheRate = 0.60
-			metrics := ChannelMonitorV2Metric{SuccessRequests: requestCount, RequestCount: requestCount}
-			if requestCount > 0 {
-				metrics.CacheRateDenominator = 448
-			}
-			health := ChannelMonitorV2HealthForWithThresholds(metrics, thresholds)
-			require.Equal(t, ChannelMonitorV2Health{
-				Overall: "unknown", ErrorRate: "unknown", TTFT: "unknown", Cache: "unknown",
-				MinimumSample: 50, Thresholds: NormalizeChannelMonitorV2HealthThresholds(thresholds),
-			}, health)
+	thresholds := DefaultChannelMonitorV2HealthThresholds()
+	thresholds.WarningCacheRate = 0.85
+	thresholds.CriticalCacheRate = 0.60
+	health := ChannelMonitorV2HealthForWithThresholds(thresholdsMetric(0, 448), thresholds)
+	require.Equal(t, ChannelMonitorV2Health{
+		Overall: "unknown", ErrorRate: "unknown", TTFT: "unknown", Cache: "unknown",
+		MinimumSample: 50, Thresholds: NormalizeChannelMonitorV2HealthThresholds(thresholds),
+	}, health)
+
+	for _, requestCount := range []int64{8, 9, 49} {
+		t.Run(fmt.Sprintf("requests_%d_keep_cache_score", requestCount), func(t *testing.T) {
+			health := ChannelMonitorV2HealthForWithThresholds(thresholdsMetric(requestCount, 448), thresholds)
+			require.Equal(t, "unknown", health.ErrorRate)
+			require.Equal(t, "unknown", health.TTFT)
+			require.Equal(t, "critical", health.Cache)
+			require.NotNil(t, health.Score)
+			require.Zero(t, *health.Score)
+			require.Equal(t, "critical", health.Overall)
 		})
+	}
+}
+
+func thresholdsMetric(requestCount, cacheDenom int64) ChannelMonitorV2Metric {
+	return ChannelMonitorV2Metric{
+		SuccessRequests:      requestCount,
+		RequestCount:         requestCount,
+		CacheRateDenominator: cacheDenom,
 	}
 }
 
@@ -341,10 +353,18 @@ func TestChannelMonitorV2HealthMinimumSampleBoundaries(t *testing.T) {
 				TTFT:                 ChannelMonitorV2Latency{SampleCount: 20000, P50Ms: &p50},
 			}
 			health := ChannelMonitorV2HealthForWithThresholds(metrics, thresholds)
-			require.Equal(t, ChannelMonitorV2Health{
-				Overall: "unknown", ErrorRate: "unknown", TTFT: "unknown", Cache: "unknown",
-				MinimumSample: test.wantMinimum, Thresholds: NormalizeChannelMonitorV2HealthThresholds(thresholds),
-			}, health)
+			require.Equal(t, test.wantMinimum, health.MinimumSample)
+			if metrics.RequestCount <= 0 {
+				require.Equal(t, "unknown", health.Overall)
+				require.Nil(t, health.Score)
+			} else {
+				require.Equal(t, "unknown", health.ErrorRate)
+				require.Equal(t, "healthy", health.TTFT)
+				require.Equal(t, "critical", health.Cache)
+				require.NotNil(t, health.Score)
+				require.InDelta(t, 50.0, *health.Score, 0.01)
+				require.Equal(t, "warning", health.Overall)
+			}
 
 			metrics.RequestCount = test.wantMinimum
 			metrics.SuccessRequests = test.wantMinimum
