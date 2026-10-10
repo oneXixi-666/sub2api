@@ -1261,5 +1261,6 @@ func isImageGenerationModel(model string) bool {
 		strings.HasPrefix(modelLower, "gemini-3-pro-image-") ||
 		modelLower == "gemini-2.5-flash-image" ||
 		modelLower == "gemini-2.5-flash-image-preview" ||
-		strings.HasPrefix(modelLower, "gemini-2.5-flash-image-")
+		strings.HasPrefix(modelLower, "gemini-2.5-flash-image-") ||
+		isGeminiNanoBananaImageModel(modelLower)
 }

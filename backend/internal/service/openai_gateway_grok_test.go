@@ -1173,6 +1173,7 @@ func TestGrokOpenAIImageProtocolModelAllowlist(t *testing.T) {
 	}
 	require.False(t, IsGrokOpenAIImageProtocolModel("grok-imagine-image-quality"))
 	require.False(t, IsGrokOpenAIImageProtocolModel("gpt-5.5"))
+	require.False(t, IsGrokOpenAIImageProtocolModel("gemini-nano-banana-2.1"))
 	require.False(t, IsGrokOpenAIImageProtocolModel(""))
 }
 

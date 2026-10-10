@@ -38,6 +38,9 @@ func TestIsImageGenerationModel_CaseInsensitive(t *testing.T) {
 	require.True(t, isImageGenerationModel("GEMINI-3-PRO-IMAGE"))
 	require.True(t, isImageGenerationModel("Gemini-3-Pro-Image"))
 	require.True(t, isImageGenerationModel("GEMINI-2.5-FLASH-IMAGE"))
+	require.True(t, isImageGenerationModel("gemini-nano-banana-2.1"))
+	require.True(t, isImageGenerationModel("models/gemini-nano-banana-2.1"))
+	require.False(t, isImageGenerationModel("gemini-nano-banana-2.10"))
 }
 
 // TestExtractImageSize_ValidSizes 测试有效尺寸解析

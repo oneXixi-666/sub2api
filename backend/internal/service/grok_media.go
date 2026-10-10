@@ -42,10 +42,22 @@ const (
 //
 // GPT Image models (gpt-image-*) speak the OpenAI protocol, including family
 // aliases such as gpt-image-2.5 and dated snapshots like
-// gpt-image-2.5-flare-2026-09-08. Native grok-imagine-* models must stay on
-// xAI's schema; matching every gpt-* text model would also be wrong.
+// gpt-image-2.5-flare-2026-09-08. Gemini Nano Banana 2.1 is not this protocol:
+// it is forwarded as a Gemini generateContent image request. Native
+// grok-imagine-* models must stay on xAI's schema; matching every gpt-* text
+// model would also be wrong.
 func IsGrokOpenAIImageProtocolModel(model string) bool {
 	return IsGPTImageGenerationModel(model)
+}
+
+// isGeminiNanoBananaImageModel reports Gemini's nano-banana 2.1 image model.
+// Dated snapshots keep a hyphen after the version, so gemini-nano-banana-2.10
+// is not treated as this model.
+func isGeminiNanoBananaImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.TrimPrefix(model, "models/")
+	const id = "gemini-nano-banana-2.1"
+	return model == id || strings.HasPrefix(model, id+"-")
 }
 
 func (e GrokMediaEndpoint) RequiresRequestBody() bool {
@@ -678,6 +690,9 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	}
 	if endpoint == GrokMediaEndpointVideoContent {
 		return s.forwardGrokMediaVideoContent(ctx, c, account, token, requestID, startTime)
+	}
+	if geminiReq, ok := resolveGrokGeminiNanoBananaImageRequest(account, endpoint, contentType, body); ok {
+		return s.forwardGrokGeminiNanoBananaImage(ctx, c, account, token, endpoint, geminiReq, startTime)
 	}
 	targetURL, err := buildGrokMediaURL(account, s.cfg, endpoint, requestID)
 	if err != nil {
