@@ -3,6 +3,8 @@ export default {
     "title": "Supervision Ops",
     "description": "Supervision opérationnelle et dépannage",
     "systemHealth": "Santé du système",
+    "outputTps": "TPS de sortie par requête",
+    "outputTpsSamples": "Échantillons valides : {count}",
     "overview": "Vue d’ensemble",
     "noSystemMetrics": "Aucune métrique système n’a encore été collectée.",
     "collectedAt": "Collecté à :",
@@ -794,6 +796,7 @@ export default {
       "accountError": "Erreur"
     },
     "tooltips": {
+      "outputTps": "Percentiles des tokens de sortie / durée totale de chaque enregistrement d'usage valide, attente du premier token comprise, pour la période, la plateforme et le groupe sélectionnés. La sortie peut inclure des tokens de raisonnement ; ils ne sont pas ajoutés une seconde fois. P50 est la médiane ; P5/P10 montrent les requêtes plus lentes. Plus c'est élevé, plus c'est rapide. Exclut les images, Live et les enregistrements sans sortie ou durée positive. Les échantillons viennent des journaux d'usage conservés ; — signifie aucun échantillon ou des statistiques temporairement indisponibles.",
       "totalRequests": "Nombre total de requêtes (réussies et échouées) dans la fenêtre temporelle sélectionnée.",
       "throughputTrend": "Requêtes/QPS + Tokens/TPS dans la fenêtre sélectionnée.",
       "switchRateTrend": "Tendance des changements de compte / requêtes totales sur les 5 dernières heures (changements moyens).",

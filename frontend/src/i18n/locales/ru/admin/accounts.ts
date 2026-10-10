@@ -76,6 +76,8 @@ export default {
     "editAccount": "Редактировать аккаунт",
     "deleteAccount": "Удалить аккаунт",
     "searchAccounts": "Поиск аккаунтов...",
+    "moreFilters": "Больше фильтров",
+    "moreFiltersActive": "Больше фильтров (активно: {count})",
     "notes": "Заметки",
     "notesPlaceholder": "Введите заметки",
     "notesHint": "Заметки необязательны",
@@ -174,7 +176,10 @@ export default {
         "add": "Добавить правило",
         "remove": "Удалить правило",
         "restoreDefaults": "Восстановить значения по умолчанию",
-        "fallback": "Несовпавшие модели → Chat Completions (/v1/chat/completions)"
+        "alsoSupports": "Также поддерживает",
+        "alsoSupportsHint": "Запросы, пришедшие по одному из этих протоколов, передаются без изменений и без преобразования протокола",
+        "fallback": "Несовпавшие модели → Chat Completions (/v1/chat/completions)",
+        "catalogFallback": "Несовпавшие модели → протоколы из списка моделей апстрима (supported_endpoints в /models); Chat Completions, если он недоступен"
       },
       "title": "OpenCode Go usage",
       "panelHint": "Usage windows reported by the upstream OpenCode Go account. Refreshed on demand or automatically when enabled.",
@@ -199,7 +204,8 @@ export default {
       "refreshSuccess": "OpenCode Go usage refreshed",
       "refreshFailed": "Failed to refresh OpenCode Go usage",
       "errors": {
-        "OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED": "Refresh is limited. Try again in {retry_after_seconds} seconds."
+        "OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED": "Refresh is limited. Try again in {retry_after_seconds} seconds.",
+        "forbidden": "Апстрим вернул 403: нет или истекла подписка OpenCode Go, либо сработал WAF / политика доступа. Проверьте сетевой путь и HTTP-статус."
       }
     },
     "types": {

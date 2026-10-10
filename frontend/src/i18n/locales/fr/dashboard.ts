@@ -396,6 +396,8 @@ export default {
     "latency": "Latence",
     "latencyFirstToken": "Premier",
     "latencyDuration": "Total",
+    "outputTps": "TPS de sortie",
+    "outputTpsHint": "Tokens de sortie divisés par la durée totale, attente du premier token comprise, en tok/s. Les tokens de sortie peuvent inclure des tokens de raisonnement.",
     "time": "Heure",
     "ws": "WS",
     "stream": "Flux",

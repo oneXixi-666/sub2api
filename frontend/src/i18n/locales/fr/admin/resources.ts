@@ -530,6 +530,8 @@ export default {
       allTypes: 'Tous les types',
       inputCost: 'Coût d\'entrée',
       outputCost: 'Coût de sortie',
+      longContext: 'Contexte long',
+      longContextPricingTooltip: 'La tarification long contexte a été appliquée. Les tarifs d\'entrée et de sortie dépendent du palier, pas d\'un multiplicateur uniforme.',
       cacheCreationCost: 'Coût de création du cache',
       cacheReadCost: 'Coût de lecture du cache',
       inputTokens: 'Tokens d\'entrée',

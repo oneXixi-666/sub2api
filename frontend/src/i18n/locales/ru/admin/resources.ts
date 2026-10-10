@@ -530,6 +530,8 @@ export default {
       allTypes: 'Все типы',
       inputCost: 'Стоимость входа',
       outputCost: 'Стоимость выхода',
+      longContext: 'Длинный контекст',
+      longContextPricingTooltip: 'Применена тарификация длинного контекста. Цены входа и выхода зависят от уровня, а не от единого множителя.',
       cacheCreationCost: 'Стоимость создания кэша',
       cacheReadCost: 'Стоимость чтения кэша',
       inputTokens: 'Входные tokens',

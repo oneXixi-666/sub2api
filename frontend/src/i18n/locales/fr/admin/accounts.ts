@@ -76,6 +76,8 @@ export default {
     "editAccount": "Modifier le compte",
     "deleteAccount": "Supprimer le compte",
     "searchAccounts": "Rechercher des comptes...",
+    "moreFilters": "Plus de filtres",
+    "moreFiltersActive": "Plus de filtres ({count} actifs)",
     "notes": "Notes",
     "notesPlaceholder": "Saisissez des notes",
     "notesHint": "Les notes sont facultatives",
@@ -174,7 +176,10 @@ export default {
         "add": "Ajouter une règle",
         "remove": "Supprimer la règle",
         "restoreDefaults": "Restaurer les valeurs par défaut",
-        "fallback": "Modèles non correspondants → Chat Completions (/v1/chat/completions)"
+        "alsoSupports": "Prend aussi en charge",
+        "alsoSupportsHint": "Les requêtes arrivant sur l'un de ces protocoles sont transmises telles quelles, sans conversion de protocole",
+        "fallback": "Modèles non correspondants → Chat Completions (/v1/chat/completions)",
+        "catalogFallback": "Modèles non correspondants → protocoles de la liste de modèles amont (supported_endpoints dans /models) ; Chat Completions s'il est indisponible"
       },
       "title": "OpenCode Go usage",
       "panelHint": "Usage windows reported by the upstream OpenCode Go account. Refreshed on demand or automatically when enabled.",
@@ -199,7 +204,8 @@ export default {
       "refreshSuccess": "OpenCode Go usage refreshed",
       "refreshFailed": "Failed to refresh OpenCode Go usage",
       "errors": {
-        "OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED": "Refresh is limited. Try again in {retry_after_seconds} seconds."
+        "OPENCODE_GO_USAGE_REFRESH_RATE_LIMITED": "Refresh is limited. Try again in {retry_after_seconds} seconds.",
+        "forbidden": "L'amont a renvoyé 403 : abonnement OpenCode Go absent ou expiré, ou blocage WAF / politique d'accès. Vérifiez le chemin réseau et le statut HTTP."
       }
     },
     "types": {
